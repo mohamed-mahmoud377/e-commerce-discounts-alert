@@ -9,9 +9,11 @@ id deals >/dev/null 2>&1 || useradd --system --home-dir /var/lib/deals --shell /
 install -d -o deals -g deals /var/lib/deals /var/lib/deals/worker
 install -d -m 750 -o root -g deals /etc/deals
 
-dpkg -s python3-venv >/dev/null 2>&1 || apt-get install -y -qq python3-venv >/dev/null
+for pkg in python3-venv sqlite3; do
+  dpkg -s "$pkg" >/dev/null 2>&1 || apt-get install -y -qq "$pkg" >/dev/null
+done
 [ -x "$APP/.venv/bin/python" ] || python3 -m venv "$APP/.venv"
-"$APP/.venv/bin/pip" install -q -e "$APP" 2>&1 | grep -v "notice" || true
+"$APP/.venv/bin/pip" install -q -e "$APP[tools]" 2>&1 | grep -v "notice" || true
 # Chromium solves amazon.eg's WAF challenge; the install is skipped when already present.
 "$APP/.venv/bin/python" -m playwright install --with-deps --only-shell chromium >/dev/null
 

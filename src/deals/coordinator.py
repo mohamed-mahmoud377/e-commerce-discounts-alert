@@ -20,7 +20,7 @@ from importlib.metadata import version as pkg_version
 from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel
 
-from deals import alerts, db, scheduler
+from deals import alerts, bot, db, scheduler
 from deals.config import Config
 from deals.db import iso, utcnow
 from deals.models import Listing, Slice
@@ -46,6 +46,7 @@ class ListingIn(BaseModel):
     rating: float | None = None
     reviews: int | None = None
     badges: list[str] = []
+    seller: str | None = None
 
     def to_listing(self) -> Listing:
         return Listing(**{**self.model_dump(), "badges": tuple(self.badges)})
@@ -85,11 +86,14 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
     # so requests are applied one at a time. Background threads open their own.
     conn = db.connect(cfg.db_path)
     scheduler.sync_watches(conn, cfg, utcnow())
+    bot.ensure_admin(conn, cfg, utcnow())
     stop = threading.Event()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         threads = [alerts.AlertSender(cfg, stop), Watchdog(cfg, stop)] if background else []
+        if background and cfg.telegram_token and cfg.telegram_chat_id:
+            threads.append(bot.BotListener(cfg, stop))
         for t in threads:
             t.start()
         yield
@@ -176,7 +180,8 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
             failures = scheduler.fail(conn, job, reason, now)
             if failures >= 3:
                 alerts.system_alert(conn, f"parser:{job['site']}",
-                                    f"{job['site']}: {reason} for {job['target']}", now)
+                                    f"{_site(job['site'])}: لم نستخرج أي منتج من {job['target']} رغم أنه كان يحتوي "
+                                    f"{job['expected_total']} منتج. ربما تغيّر تصميم الموقع.", now)
         else:
             scheduler.finish_crawl(conn, cfg, job, now)
 
@@ -193,8 +198,8 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
             oversized = [p for p in planned if p.oversized]
             if oversized:
                 alerts.system_alert(conn, f"oversized:{job['site']}:{job['root']}",
-                                    f"{job['grp']} on {job['site']}: {len(oversized)} slices are too big to "
-                                    f"crawl completely (e.g. {oversized[0].slice})", now, timedelta(days=7))
+                                    f"{job['grp']} على {_site(job['site'])}: {len(oversized)} شريحة أكبر من أن "
+                                    f"نجمعها بالكامل (مثل {oversized[0].slice})", now, timedelta(days=7))
         return {"ok": True, "slices": len(planned)}
 
     @app.post("/api/jobs/{job_id}/blocked")
@@ -208,8 +213,8 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
                                    (job["site"], ip)).fetchone()["strikes"]
             if strikes >= 3:
                 alerts.system_alert(conn, f"blocked:{job['site']}:{ip}",
-                                    f"{job['site']} keeps blocking worker {worker} ({ip}): {strikes} times in a row, "
-                                    f"paused until {until:%H:%M} UTC. Reason: {body.reason}", now)
+                                    f"{_site(job['site'])} يحظر الجهاز {worker} ({ip}) للمرة {strikes} على التوالي. "
+                                    f"متوقف عن هذا الموقع حتى {until:%H:%M} UTC. السبب: {body.reason}", now)
         log.warning("%s blocked on %s (%s) until %s", worker, job["site"], ip, until)
         return {"ok": True, "paused_until": iso(until)}
 
@@ -221,8 +226,8 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
             failures = scheduler.fail(conn, job, f"{worker}: {body.reason}", now)
             if failures >= 3:
                 alerts.system_alert(conn, f"failing:{job['id']}",
-                                    f"{job['kind']} job {job['site']} {job['target']} failed {failures} times: "
-                                    f"{body.reason}", now, timedelta(hours=24))
+                                    f"مهمة {job['kind']} على {_site(job['site'])} ({job['target']}) فشلت {failures} "
+                                    f"مرات: {body.reason}", now, timedelta(hours=24))
         return {"ok": True}
 
     @app.post("/api/jobs/{job_id}/release")
@@ -234,6 +239,10 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
         return {"ok": True}
 
     return app
+
+
+def _site(name: str) -> str:
+    return alerts.SITE_NAME.get(name, name)
 
 
 class Watchdog(threading.Thread):
@@ -261,16 +270,16 @@ class Watchdog(threading.Thread):
                 if overdue > timedelta(minutes=45) and (last_done is None or now - last_done > timedelta(hours=1)):
                     blocks = conn.execute("SELECT ip, until FROM blocks WHERE site = ? AND until > ?",
                                           (row["site"], iso(now))).fetchall()
-                    detail = ", ".join(f"{b['ip']} until {b['until'][11:16]}" for b in blocks) or "none"
+                    detail = "، ".join(f"{b['ip']} حتى {b['until'][11:16]}" for b in blocks) or "لا يوجد"
                     alerts.system_alert(conn, f"stalled:{row['site']}",
-                                        f"{row['site']} is stalled: work is {overdue.total_seconds() / 3600:.1f} h "
-                                        f"overdue and nothing finished in the last hour. Blocked IPs: {detail}. "
-                                        f"Is a worker for this site running?", now)
+                                        f"{_site(row['site'])} متوقف: العمل متأخر {overdue.total_seconds() / 3600:.1f} "
+                                        f"ساعة ولم يكتمل شيء خلال الساعة الأخيرة. الأجهزة المحظورة: {detail}. "
+                                        f"هل يوجد جهاز (worker) شغّال لهذا الموقع؟ (مثلًا الماك نائم)", now)
             for w in conn.execute("SELECT name, last_seen_at FROM workers").fetchall():
                 silent = now - db.parse_iso(w["last_seen_at"])
                 if timedelta(minutes=30) < silent < timedelta(days=2):
                     alerts.system_alert(conn, f"offline:{w['name']}",
-                                        f"worker {w['name']} has been silent for {silent.total_seconds() / 60:.0f} min",
+                                        f"الجهاز {w['name']} لم يتواصل منذ {silent.total_seconds() / 60:.0f} دقيقة",
                                         now, timedelta(hours=12))
         self.backup(conn, now)
 

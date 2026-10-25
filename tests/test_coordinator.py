@@ -121,7 +121,7 @@ def test_price_drop_creates_one_alert(client):
     assert len(alerts) == 1  # the second crawl at the same price doesn't repeat it
     a = alerts[0]
     assert a["kind"] == "price_drop" and a["drop_pct"] == 0.4 and a["reference_price"] == 1_000_000
-    assert "only 2 left" in a["message"] and "TV TV1" in a["message"]
+    assert "متبقٍ 2 فقط" in a["message"] and "TV TV1" in a["message"] and "انخفاض حقيقي" in a["message"]
 
 
 def test_config_change_removes_jobs(client, cfg):

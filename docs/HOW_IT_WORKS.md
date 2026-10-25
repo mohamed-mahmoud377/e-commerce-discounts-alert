@@ -31,8 +31,10 @@ on your Mac or your friends' routers.
    even with frequent re-crawls.
 7. **Deal check.** Products that are new, got cheaper, or came back in stock are evaluated (§7) against
    their own history. A deal is written to the `alerts` table (the outbox).
-8. **Delivery.** A background loop sends queued alerts to Telegram, retrying with backoff if
-   Telegram is down. Nothing is lost on restarts.
+8. **Delivery.** A background loop hands each alert to its recipients (deal alerts: every approved
+   subscriber; system alerts: only the admin) and sends them, retrying **per person** with backoff.
+   Nothing is lost on restarts. The bot reads /start, /stop and the admin's approve/reject buttons by
+   long polling, so no public port is needed.
 9. **Rescheduling.** When the last page is in, the slice's next visit is scheduled: sooner if prices
    moved, later if nothing changed (§5).
 10. **Replanning.** Every 7 days each root is planned again, to pick up new sub-categories and size
@@ -52,6 +54,12 @@ Category pages are `/s?rh=n:<node>,p_36:<min>-<max>` (price in piastres). A bare
 uses (`/_svc/catalog/api/v3/u/egypt-en/<category path>/?page=N&f[price][min]=…`) answers plain HTTP with
 50 structured products per request. An unknown category path silently returns a *different* category,
 so the worker checks the breadcrumb and fails loudly on typos.
+
+**noon sellers.** One noon product can be sold by several sellers at very different prices
+(the same earbuds at EGP 7,550, 1,000 and 495), and which offer a listing shows depends on the
+query. noon items are therefore tracked **per seller offer** (`SKU@seller`), so each seller has
+its own clean price history and a seller switch is never mistaken for a price drop. Amazon's listing
+card always shows the featured offer, so Amazon items are tracked per product (ASIN).
 
 **Which machine can reach what** (tested 2026-10-25):
 
@@ -153,21 +161,25 @@ new, got cheaper, or came back in stock.
 
 **With our own history** (≥ `min_history_days`, default 3 days in stock):
 
-| Kind | Rule (defaults) | Message |
+| Kind | Rule (defaults) | Message title (Arabic) |
 |---|---|---|
-| `price_error` | ≥ **60%** below typical_90d | 🚨 Possible price error |
-| `price_drop` | ≥ **30%** below typical_90d (per-group `min_drop` overrides) | 🔥 Real price drop |
-| `all_time_low` | lower than every earlier price **and** ≥ 20% below typical, with ≥ 14 days of history | 📉 All-time low |
+| `price_error` | ≥ **60%** below typical_90d | 🚨 خطأ محتمل في السعر |
+| `price_drop` | ≥ **30%** below typical_90d (per-group `min_drop` overrides) | 🔥 انخفاض حقيقي في السعر |
+| `all_time_low` | lower than every earlier price **and** ≥ 20% below typical, with ≥ 14 days of history | 📉 أقل سعر على الإطلاق |
 
 **Without enough history** (a new product, or a product we only just started tracking): the shop's
 claimed discount is the only reference, so it needs backing evidence:
 
 - the crossed-out price must be ≥ 30% higher, and not an absurd "80% off RRP";
-- plus at least **one** supporting signal: only ≤ 10 left, a limited-time / mega deal badge, noon's
-  "lowest price in 30 days / a year", "selling out fast", or Amazon's "Was:" price (its real recent price);
+- plus at least **one** supporting signal: only ≤ 3 left, a limited-time / mega deal badge, noon's
+  "lowest price in 30 days / a year", or Amazon's "Was:" price (its real recent price). "Selling out
+  fast" and "N sold recently" are marketing and don't count; "only N left" above 3 is too common
+  (about half of amazon.eg's listings) to mean anything;
 - during a slice's **first ever crawl**, where every product looks "new", it needs **two** signals.
   This prevents an alert flood on day one.
 - these alerts say *"new to us … not yet verified by our history"* and have confidence **low**.
+
+**Messages are in Arabic** (titles, reasons, signals, group names from each watch's `label`); product titles stay as the shop shows them.
 
 **Context in every alert**: typical price, all-time range, number of changes, how long we've tracked it,
 the price just before, and stock and deal signals. If the shop's crossed-out price is higher than
@@ -192,6 +204,7 @@ site-history badge, × confidence (high 1.0 / medium 0.85 / low 0.7).
 | A site has had no worker for a while | Watchdog: work > 45 min overdue and nothing finished for an hour → ⚙️ "noon_eg is stalled", listing blocked IPs. |
 | A worker goes silent | ⚙️ "worker mac has been silent for 40 min" (at most every 12 h). |
 | Telegram down / rate limited | Alert stays in the outbox; retried with backoff (30 s → 1 h), up to 10 times. |
+| A subscriber blocks the bot | Telegram answers 403; they're marked `blocked` and skipped. `/start` brings them back. |
 | Disk / database loss | Daily consistent backup (`/var/lib/deals/backups`, 7 kept). `deals backup` makes one on demand. |
 | Server reboot | systemd starts both services. The Mac worker is a launchd agent with KeepAlive. |
 
@@ -199,12 +212,14 @@ site-history badge, × confidence (high 1.0 / medium 0.85 / low 0.7).
 
 | Table | Holds |
 |---|---|
-| `products` | latest state per (site, sku): title, url, price, crossed-out price and kind, stock left, badges, rating, group, first/last seen, last change |
+| `products` | latest state per (site, sku), where noon skus are `SKU@seller`: title, url, price, crossed-out price and kind, stock left, badges, rating, seller, group, first/last seen, last change |
 | `price_history` | one row per price/stock change (the step function) |
 | `jobs` | plan and crawl jobs: target slice, group, revisit interval, next due, lease, failures, last results |
 | `workers` | last seen, IP, sites, pages, jobs done |
 | `blocks` | (site, IP) cooldowns |
 | `alerts` | outbox of deal and system alerts, with delivery state |
+| `subscribers` | Telegram users: admin, approved, pending, stopped, blocked |
+| `deliveries` | one row per (alert, person) with its own retries |
 
 Prices are integers in piastres (1 EGP = 100), so there are no float rounding errors. Migrations are
 append-only and applied automatically on start.

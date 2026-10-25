@@ -56,3 +56,5 @@ def test_noon_catalog():
     discounted = [x for x in result.listings if x.list_price]
     assert discounted and all(x.list_price > x.price and x.list_price_kind == "list" for x in discounted)
     assert result.subcategories[0].id == "electronics-and-mobiles/mobiles-and-accessories"
+    # tracked per seller offer, so different sellers' prices never mix in one history
+    assert all("@" in x.sku and x.seller for x in result.listings)

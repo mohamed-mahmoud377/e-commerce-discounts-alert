@@ -32,6 +32,7 @@ class Listing:
     rating: float | None = None
     reviews: int | None = None
     badges: tuple[str, ...] = ()
+    seller: str | None = None  # noon: one product can have several sellers at very different prices
 
 
 @dataclass(frozen=True)

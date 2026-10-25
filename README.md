@@ -65,6 +65,7 @@ Everything is driven by `make` from your Mac:
 | `make status` | `deals status` on the server |
 | `make alerts` / `make movers` | recent alerts / price moves, from the server |
 | `make logs` | follow the server logs |
+| `make dbweb` / `make sql` / `make db` | look at the database (see below) |
 | `make mac-worker-env` | fetch this Mac's worker token from the server into `worker.env` |
 | `make install-mac-worker` | run the worker in the background on this Mac (starts at login, restarts on crash) |
 | `make uninstall-mac-worker` | remove it |
@@ -90,6 +91,26 @@ New watches are planned within a minute; removed ones are dropped.
 That saves the token on the server, finds your chat id, sends a "✅ connected" test message and
 restarts the coordinator. If it says the bot has no messages yet, press Start in the bot and run it
 again. Until Telegram is connected, alerts are still stored and visible with `make alerts`.
+
+### Sharing alerts with friends
+
+Send friends the bot link (t.me/Jerrys_deals_bot). When they press **Start**, you get a message with
+**✅ موافقة / ❌ رفض** buttons; once approved they receive every deal alert (system warnings stay
+yours). They can send `/stop` to pause and `/start` to come back without a new approval. Send
+`/subscribers` to the bot to see who is subscribed. People who block the bot are dropped
+automatically.
+
+### Looking at the database
+
+The only real database is on the server (`/var/lib/deals/deals.db`). Three ways in:
+
+| Command | What you get |
+|---|---|
+| `make dbweb` | **live** database in your browser at http://localhost:8001: tables, filters, a SQL editor and the queries from `docs/queries.sql` as clickable pages. Read-only, through an SSH tunnel (nothing exposed to the internet). Ctrl+C to stop. |
+| `make sql` | **live** read-only SQL shell on the server (`.tables`, `.schema products`, any SELECT; `.quit` to leave) |
+| `make db` | downloads a snapshot to `data/server.db` to open in IntelliJ's Database tool (SQLite data source); run again to refresh |
+
+Prices are stored in piastres (divide by 100 for EGP); times are UTC.
 
 ### Adding a worker on another machine (a friend's PC, a laptop)
 

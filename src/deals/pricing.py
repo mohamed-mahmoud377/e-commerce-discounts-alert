@@ -16,6 +16,12 @@ from deals.models import LIMITED_DEAL, LOWEST_30D, LOWEST_365D, MEGA_DEAL, SELLI
 
 DAY = 86400.0
 
+# What can back up a shop's claimed discount on a product we have no history for.
+# Popularity ("sold recently") and urgency ("selling out fast") are marketing and
+# don't count; "only N left" only counts when N <= 3 (amazon.eg shows "only N left"
+# on about half its listings).
+STRONG_SIGNALS = {"mega_deal", "limited_deal", "lowest_365d", "lowest_30d"}
+
 
 @dataclass(frozen=True)
 class Point:
@@ -108,14 +114,21 @@ class ProductView:
 
 @dataclass(frozen=True)
 class Deal:
+    """Why a price is a deal, as facts; alerts.py turns them into a message."""
+
     kind: str  # price_drop | all_time_low | price_error | new_product
     price: int
     reference: int  # what the drop is measured against
     drop: float  # 0.42 = 42% below reference
     confidence: str  # high | medium | low
     score: int  # 0-100, for ranking
-    reasons: list[str] = field(default_factory=list)
-    signals: list[str] = field(default_factory=list)
+    all_time_low: bool = False
+    previous_low: int | None = None  # lowest earlier price, when this beats it
+    previous: int | None = None  # the price just before, when it differs from the reference
+    inflated_list_price: int | None = None  # site's crossed-out price above anything we saw
+    reference_days: float = 0  # how much history the reference covers
+    list_price_kind: str | None = None  # new_product: "was" or "list"
+    signals: list[tuple[str, int | None]] = field(default_factory=list)  # e.g. ("only_left", 3)
 
 
 def evaluate(product: ProductView, stats: PriceStats, rules: AlertRules, *,
@@ -134,6 +147,7 @@ def evaluate(product: ProductView, stats: PriceStats, rules: AlertRules, *,
         return None
     min_drop = rules.min_drop if min_drop is None else min_drop
     signals = _signals(product)
+    facts: dict = {}
 
     if stats.history_days >= rules.min_history_days and stats.typical_90d:
         reference = stats.typical_90d
@@ -150,15 +164,14 @@ def evaluate(product: ProductView, stats: PriceStats, rules: AlertRules, *,
             return None
 
         confidence = "high" if stats.history_days >= 14 else "medium"
-        reasons = [f"{drop:.0%} below its typical price over the last {min(stats.tracked_days, 90):.0f} days"]
+        facts["reference_days"] = min(stats.tracked_days, 90)
         if all_time_low:
-            reasons.append(f"lowest price we have ever seen (previous low {_egp(stats.low)})")
+            facts.update(all_time_low=True, previous_low=stats.low)
         if stats.previous and stats.previous != reference:
-            reasons.append(f"was {_egp(stats.previous)} just before")
+            facts["previous"] = stats.previous
         if (product.list_price and stats.high and stats.history_days >= 14
                 and product.list_price > stats.high * 1.15):
-            reasons.append(f"site's crossed-out price {_egp(product.list_price)} is higher than "
-                           f"anything we saw ({_egp(stats.high)}): ignore it")
+            facts["inflated_list_price"] = product.list_price
         score = drop * 100 + (10 if all_time_low else 0)
     else:
         # Not enough history of our own: rely on the site's claimed discount,
@@ -170,15 +183,13 @@ def evaluate(product: ProductView, stats: PriceStats, rules: AlertRules, *,
             return None
         if product.list_price_kind != "was" and drop >= 0.8:
             return None  # "80% off" an inflated RRP is almost always fake
-        # popularity says nothing about whether the discount is real
-        evidence = [s for s in signals if "sold recently" not in s]
+        evidence = [code for code, n in signals if code in STRONG_SIGNALS or (code == "only_left" and n <= 3)]
         if product.list_price_kind == "was":
-            evidence.append("was-price")
+            evidence.append("was_price")
         if len(evidence) < (2 if bootstrap else 1):
             return None
         kind, reference, confidence = "new_product", product.list_price, "low"
-        label = "recent price" if product.list_price_kind == "was" else "crossed-out price"
-        reasons = [f"new to us: {drop:.0%} below the site's {label} {_egp(product.list_price)} (not yet verified by our history)"]
+        facts["list_price_kind"] = product.list_price_kind
         score = drop * 100
 
     if product.stock_left is not None and product.stock_left <= 5:
@@ -189,27 +200,23 @@ def evaluate(product: ProductView, stats: PriceStats, rules: AlertRules, *,
         score += 5
     score *= {"high": 1.0, "medium": 0.85, "low": 0.7}[confidence]
     return Deal(kind, price, reference, round(drop, 4), confidence, max(0, min(100, round(score))),
-                reasons, signals)
+                signals=signals, **facts)
 
 
-def _signals(p: ProductView) -> list[str]:
-    out = []
+def _signals(p: ProductView) -> list[tuple[str, int | None]]:
+    out: list[tuple[str, int | None]] = []
     if p.stock_left is not None and p.stock_left <= 10:
-        out.append(f"only {p.stock_left} left")
+        out.append(("only_left", p.stock_left))
     if MEGA_DEAL in p.badges:
-        out.append("mega deal")
+        out.append(("mega_deal", None))
     elif LIMITED_DEAL in p.badges:
-        out.append("limited-time deal")
+        out.append(("limited_deal", None))
     if LOWEST_365D in p.badges:
-        out.append("site says: lowest price in a year")
+        out.append(("lowest_365d", None))
     elif LOWEST_30D in p.badges:
-        out.append("site says: lowest price in 30 days")
+        out.append(("lowest_30d", None))
     if SELLING_FAST in p.badges:
-        out.append("selling out fast")
+        out.append(("selling_fast", None))
     if p.recent_sales and p.recent_sales >= 50:
-        out.append(f"{p.recent_sales}+ sold recently")
+        out.append(("sold_recently", p.recent_sales))
     return out
-
-
-def _egp(minor: int | None) -> str:
-    return "-" if minor is None else f"EGP {minor / 100:,.0f}"

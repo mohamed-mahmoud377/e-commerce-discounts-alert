@@ -42,6 +42,7 @@ class Watch:
     interval_minutes: int = 60
     min_price: int | None = None  # EGP; cheaper products are neither crawled nor alerted
     min_drop: float | None = None  # overrides alerts.min_drop for this group
+    label: str | None = None  # display name in alerts (e.g. Arabic); defaults to name
 
     def roots(self) -> list[tuple[str, Slice]]:
         out = []
@@ -92,7 +93,7 @@ def load(path: Path) -> Config:
             value = w.get(site)
             if value:
                 targets[site] = [value] if isinstance(value, str) else list(value)
-        unknown = set(w) - set(SITES) - {"name", "interval_minutes", "min_price", "min_drop"}
+        unknown = set(w) - set(SITES) - {"name", "label", "interval_minutes", "min_price", "min_drop"}
         if unknown:
             raise ValueError(f"watch {w.get('name')!r}: unknown keys {sorted(unknown)}")
         watches.append(Watch(
@@ -101,6 +102,7 @@ def load(path: Path) -> Config:
             interval_minutes=w.get("interval_minutes", 60),
             min_price=w.get("min_price"),
             min_drop=w.get("min_drop"),
+            label=w.get("label"),
         ))
         watches[-1].roots()  # fail fast on malformed target keys
     names = [w.name for w in watches]

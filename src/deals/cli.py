@@ -94,6 +94,8 @@ def cmd_status(args) -> None:
     alerts = q("SELECT COUNT(*) n, SUM(sent_at IS NULL AND attempts < 10) pending FROM alerts "
                "WHERE created_at >= ? AND kind != 'system'", iso(now - timedelta(days=1)))[0]
     print(f"database   {cfg.db_path}  ({cfg.db_path.stat().st_size / 1e6:.1f} MB)")
+    subs = {r["status"]: r["n"] for r in q("SELECT status, COUNT(*) n FROM subscribers GROUP BY status")}
+    print(f"telegram   {subs.get('active', 0)} subscribed, {subs.get('pending', 0)} waiting for approval")
     print(f"products   {products['n']:,} tracked, {products['s'] or 0:,} in stock; "
           f"{changes['n']:,} price/stock changes and {alerts['n']} deal alerts in the last 24h "
           f"({alerts['pending'] or 0} waiting to send)")
@@ -180,8 +182,18 @@ def cmd_product(args) -> None:
     cfg = _config(args)
     conn = db.connect(cfg.db_path)
     p = db.find_product(conn, args.site, args.sku)
-    if p is None:
-        sys.exit(f"no product {args.site} {args.sku}")
+    if p is None:  # noon items are tracked per seller: SKU@seller
+        offers = conn.execute("SELECT sku, seller, price FROM products WHERE site = ? AND sku LIKE ? ORDER BY price",
+                              (args.site, args.sku + "@%")).fetchall()
+        if len(offers) == 1:
+            p = db.find_product(conn, args.site, offers[0]["sku"])
+        elif offers:
+            print(f"{args.sku} has several sellers; pick one:")
+            for o in offers:
+                print(f"  {o['sku']:<40} {_egp(o['price']):>12}  {o['seller']}")
+            return
+        else:
+            sys.exit(f"no product {args.site} {args.sku}")
     s = product_stats(conn, p["id"], utcnow())
     print(f"{p['title']}\n{p['url']}\n{p['site']} {p['sku']}  group {p['grp'] or '-'}  brand {p['brand'] or '-'}")
     stock = "in stock" if p["in_stock"] else "OUT OF STOCK"
@@ -250,11 +262,11 @@ def cmd_telegram(args) -> None:
     cfg = _config(args)
     if not cfg.telegram_token:
         sys.exit("set [telegram] bot_token in the config first (create a bot with @BotFather)")
-    tg = Telegram(cfg.telegram_token, cfg.telegram_chat_id)
+    tg = Telegram(cfg.telegram_token)
     if args.test:
         if not cfg.telegram_chat_id:
             sys.exit("set [telegram] chat_id first (run 'deals telegram' after messaging your bot)")
-        tg.send("✅ deals bot is connected. Deal alerts will arrive here.")
+        tg.send(cfg.telegram_chat_id, "✅ تم ربط بوت العروض بنجاح. ستصلك تنبيهات العروض الحقيقية هنا.")
         print("test message sent")
         return
     chats = {u["message"]["chat"]["id"]: u["message"]["chat"].get("first_name") or u["message"]["chat"].get("title")

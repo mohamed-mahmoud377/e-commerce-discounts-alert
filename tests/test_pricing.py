@@ -3,7 +3,7 @@ from datetime import timedelta
 from conftest import T0
 
 from deals.config import AlertRules
-from deals.models import LIMITED_DEAL, LOWEST_365D
+from deals.models import LIMITED_DEAL, LOWEST_365D, SELLING_FAST
 from deals.pricing import Point, ProductView, compute_stats, evaluate, weighted_median
 
 RULES = AlertRules()
@@ -54,7 +54,7 @@ def test_fake_discount_inflate_then_cut_is_ignored():
 def test_small_drop_is_ignored_but_all_time_low_counts():
     s = compute_stats(series((0, 1000), (50, 950), (60, 780)), now=days(60.01))
     deal = evaluate(view(780), s, RULES)  # -22% vs typical 1000, below every earlier price
-    assert deal.kind == "all_time_low"
+    assert deal.kind == "all_time_low" and deal.all_time_low and deal.previous_low == 950 * EGP
     s = compute_stats(series((0, 1000), (50, 700), (52, 1000), (60, 780)), now=days(60.01))
     assert evaluate(view(780), s, RULES) is None  # -22% but it was 700 before: not an all-time low
 
@@ -85,7 +85,7 @@ def test_new_product_needs_backing_evidence():
     scarce = view(700, list_price=1000 * EGP, list_price_kind="list", stock_left=3, badges=(LIMITED_DEAL,))
     deal = evaluate(scarce, s, RULES)
     assert deal.kind == "new_product" and deal.confidence == "low"
-    assert "only 3 left" in deal.signals and "limited-time deal" in deal.signals
+    assert ("only_left", 3) in deal.signals and ("limited_deal", None) in deal.signals
 
 
 def test_new_product_on_first_crawl_needs_two_signals():
@@ -94,6 +94,14 @@ def test_new_product_on_first_crawl_needs_two_signals():
     assert evaluate(one, s, RULES, bootstrap=True) is None
     two = view(700, list_price=1000 * EGP, list_price_kind="list", stock_left=3, badges=(LOWEST_365D,))
     assert evaluate(two, s, RULES, bootstrap=True).kind == "new_product"
+
+
+def test_marketing_nudges_are_not_evidence():
+    s = compute_stats(series((0, 700)), now=days(0.01))
+    hype = view(700, list_price=1000 * EGP, list_price_kind="list", stock_left=8, recent_sales=500,
+                badges=(SELLING_FAST,))
+    assert evaluate(hype, s, RULES) is None  # "selling fast", "500 sold", "8 left": no proof of a real discount
+    assert evaluate(view(700, list_price=1000 * EGP, list_price_kind="list", stock_left=2), s, RULES).kind == "new_product"
 
 
 def test_absurd_rrp_discount_rejected():

@@ -13,6 +13,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "httpx>=0.27"]
+tools = ["datasette>=0.65"]  # live database browser on the server (make dbweb)
 
 [project.scripts]
 deals = "deals.cli:main"

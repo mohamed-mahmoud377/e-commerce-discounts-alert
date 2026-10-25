@@ -95,9 +95,14 @@ def _parse_hit(hit: dict) -> Listing:
         badges.append(BESTSELLER)
 
     rating = hit.get("product_rating") or {}
+    # A noon product can have several sellers at wildly different prices, and
+    # which offer a listing shows depends on the query (e.g. the price filter).
+    # Tracking each seller's offer separately keeps every price history clean.
+    seller = hit.get("store_name") or None
+    seller_key = re.sub(r"[^a-z0-9]+", "-", (seller or hit.get("offer_code") or "").lower()).strip("-")
     return Listing(
         site=NoonEG.name,
-        sku=hit["sku"],
+        sku=f"{hit['sku']}@{seller_key}" if seller_key else hit["sku"],
         title=hit.get("name", ""),
         url=PRODUCT_URL.format(slug=hit.get("url", "p"), sku=hit["sku"]),
         price=sale or regular,
@@ -114,6 +119,7 @@ def _parse_hit(hit: dict) -> Listing:
         rating=rating.get("value"),
         reviews=rating.get("count"),
         badges=tuple(badges),
+        seller=seller,
     )
 
 

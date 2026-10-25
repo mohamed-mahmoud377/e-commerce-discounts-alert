@@ -139,6 +139,48 @@ MIGRATIONS = [
     CREATE INDEX alerts_product ON alerts (product_id, created_at);
     CREATE INDEX alerts_dedupe ON alerts (dedupe_key, created_at);
     """,
+    """
+    ALTER TABLE products ADD COLUMN seller TEXT;
+
+    -- noon products used to be keyed by product only, so offers from different
+    -- sellers were mixed into one history (fake ups and downs). They are now
+    -- keyed per seller offer; drop the mixed data and crawl noon afresh, as a
+    -- first crawl (so new items don't count as "new listings").
+    DELETE FROM alerts WHERE product_id IN (SELECT id FROM products WHERE site = 'noon_eg');
+    DELETE FROM price_history WHERE product_id IN (SELECT id FROM products WHERE site = 'noon_eg');
+    DELETE FROM products WHERE site = 'noon_eg';
+    UPDATE jobs SET last_done_at = NULL, next_due_at = strftime('%Y-%m-%dT%H:%M:%S+00:00', 'now')
+    WHERE site = 'noon_eg' AND kind = 'crawl';
+    """,
+    """
+    -- Telegram users who receive alerts. The admin (config chat_id) approves others.
+    CREATE TABLE subscribers (
+        chat_id     INTEGER PRIMARY KEY,
+        name        TEXT,
+        username    TEXT,
+        status      TEXT NOT NULL,  -- pending | active | rejected | stopped | blocked
+        is_admin    INTEGER NOT NULL DEFAULT 0,
+        approved_at TEXT,
+        created_at  TEXT NOT NULL,
+        updated_at  TEXT NOT NULL
+    );
+
+    -- One row per (alert, recipient): each person's delivery is retried on its own.
+    -- alerts.sent_at now means "handed out to recipients".
+    CREATE TABLE deliveries (
+        id              INTEGER PRIMARY KEY,
+        alert_id        INTEGER NOT NULL REFERENCES alerts(id),
+        chat_id         INTEGER NOT NULL,
+        sent_at         TEXT,
+        attempts        INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at TEXT NOT NULL,
+        error           TEXT,
+        UNIQUE (alert_id, chat_id)
+    );
+    CREATE INDEX deliveries_pending ON deliveries (sent_at, next_attempt_at);
+
+    CREATE TABLE kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);  -- e.g. telegram update offset
+    """,
 ]
 
 
@@ -196,14 +238,14 @@ def record(conn: sqlite3.Connection, listing: Listing, grp: str | None = None,
     ).fetchone()
     details = (listing.title, listing.url, listing.price, listing.list_price, listing.in_stock,
                listing.list_price_kind, listing.brand, listing.stock_left, listing.recent_sales,
-               listing.rating, listing.reviews, ",".join(listing.badges))
+               listing.rating, listing.reviews, ",".join(listing.badges), listing.seller)
 
     if row is None:
         product_id = conn.execute(
             """INSERT INTO products (title, url, price, list_price, in_stock, list_price_kind, brand,
-                                     stock_left, recent_sales, rating, reviews, badges,
+                                     stock_left, recent_sales, rating, reviews, badges, seller,
                                      site, sku, currency, grp, first_seen_at, last_seen_at, last_change_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (*details, listing.site, listing.sku, listing.currency, grp, now_s, now_s, now_s),
         ).lastrowid
         result = Recorded(product_id, "new", None, None)
@@ -214,7 +256,7 @@ def record(conn: sqlite3.Connection, listing: Listing, grp: str | None = None,
         conn.execute(
             f"""UPDATE products SET title = ?, url = ?, price = ?, list_price = ?, in_stock = ?,
                                     list_price_kind = ?, brand = ?, stock_left = ?, recent_sales = ?,
-                                    rating = ?, reviews = ?, badges = ?, grp = COALESCE(?, grp),
+                                    rating = ?, reviews = ?, badges = ?, seller = ?, grp = COALESCE(?, grp),
                                     last_seen_at = ?{", last_change_at = ?" if price_changed else ""}
                 WHERE id = ?""",
             (*details, grp, now_s, *([now_s] if price_changed else []), product_id),
