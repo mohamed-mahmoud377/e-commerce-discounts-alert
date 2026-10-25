@@ -62,3 +62,21 @@ def test_logs_from_devices_are_readable(client):
     assert [e["level"] for e in warnings] == ["WARNING"]
     page = client.get("/dashboard", params={"token": "token-1"}).text
     assert "w1" in page and "blocked: captcha" in page and "amazon_eg" in page
+
+
+def test_daily_log_archive(cfg, tmp_path):
+    import gzip
+    import json
+    from datetime import date
+
+    from deals import db, monitor, scheduler
+    conn = db.connect(cfg.db_path)
+    with conn:
+        scheduler.add_events(conn, "mac", [("2026-10-24T10:00:00+00:00", "INFO", "a"),
+                                           ("2026-10-25T09:00:00+00:00", "WARNING", "b"),
+                                           ("2026-10-26T08:00:00+00:00", "INFO", "today, not archived yet")])
+    written = monitor.archive_events(conn, tmp_path / "logs", date(2026, 10, 26))
+    assert sorted(p.name for p in written) == ["events-2026-10-24.jsonl.gz", "events-2026-10-25.jsonl.gz"]
+    day = [json.loads(x) for x in gzip.open(tmp_path / "logs" / "events-2026-10-25.jsonl.gz", "rt")]
+    assert [(e["source"], e["level"], e["message"]) for e in day] == [("mac", "WARNING", "b")]
+    assert monitor.archive_events(conn, tmp_path / "logs", date(2026, 10, 26)) == []  # idempotent

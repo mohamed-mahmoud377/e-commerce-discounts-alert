@@ -38,8 +38,12 @@ chmod 640 /etc/deals/config.toml /etc/deals/worker.env
 install -m 644 "$APP"/deploy/*.service /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --quiet deals-coordinator deals-worker
+# Stop the worker first so it never sees the coordinator restart (no reconnect warnings),
+# then start it once the coordinator answers again.
+systemctl stop deals-worker
 systemctl restart deals-coordinator
-systemctl restart deals-worker
+for _ in $(seq 1 30); do curl -fsS http://127.0.0.1:8787/health >/dev/null 2>&1 && break; sleep 1; done
+systemctl start deals-worker
 
 if command -v ufw >/dev/null; then
   ufw allow OpenSSH >/dev/null

@@ -23,6 +23,7 @@ owns one job.
 | `bot.py` | 191 | The Telegram conversation: /start, /stop, approvals, subscribers | alerts, db |
 | `health.py` | 200 | Health checks and the daily report | db, alerts |
 | `monitor.py` | 166 | Device states, events (logs), the dashboard page | db, scheduler |
+| `webui.py` | 243 | The web UI page (HTML + JS) and its read-only queries | health, monitor, alerts |
 | `coordinator.py` | 363 | The FastAPI app (all endpoints) and the watchdog thread | everything above |
 | `worker.py` | 271 | The crawling loop on each device, retries, log shipping | sites, planner, HTTP to the coordinator |
 | `cli.py` | 445 | The `deals` command: every subcommand | everything |
@@ -138,8 +139,8 @@ of `data/server.db`), take a backup on the server, then `make deploy`.
 ## Coordinator API reference
 
 Base address `http://207.154.206.127:8787` (port 8787 open in the firewall). Worker endpoints need
-`Authorization: Bearer <worker token>`; the token decides the device name. Read-only views also accept
-`?token=`, and need no token when called from the server itself.
+`Authorization: Bearer <worker token>`; the token decides the device name. Read-only views ("viewer") accept the UI cookie, `?token=` or a Bearer header with the
+`admin_token` or any worker token, and need no token when called from the server itself.
 
 | Method and path | Who | Body | Answer |
 | --- | --- | --- | --- |
@@ -154,6 +155,11 @@ Base address `http://207.154.206.127:8787` (port 8787 open in the firewall). Wor
 | `GET /api/devices` | viewer | | devices, per-shop states, shop totals, failing checks |
 | `GET /api/events?source=&level=&after_id=&limit=` | viewer | | `{events: [{id, at, source, level, message}]}` |
 | `GET /dashboard?source=&level=` | viewer | | HTML page |
+| `GET /ui`, `GET/POST /ui/login`, `GET /ui/logout` | anyone / viewer | `token` (form or one-click `?token=`) | The web UI; login sets the HttpOnly cookie `deals_ui` (30 days) |
+| `GET /api/overview` | viewer | | totals, health checks, devices, shops, live revision |
+| `GET /api/alerts?days=&kind=&limit=` | viewer | | recent alerts with delivery counts |
+| `GET /api/jobs?limit=` | viewer | | jobs, failing first then running |
+| `GET /api/products?q=&site=&limit=`, `GET /api/products/{id}` | viewer | | product search; one product with stats and history |
 
 A `Listing` in JSON: `site`, `sku`, `title`, `url`, `price`, `list_price`, `currency`, `in_stock`, and
 optional `list_price_kind`, `brand`, `stock_left`, `recent_sales`, `rating`, `reviews`, `badges` (list), `seller`.
@@ -185,7 +191,7 @@ and `DEALS_DATA_DIR` (or the matching flags). It keeps no database; its only loc
 | --- | --- |
 | Shop request timeout | 30 s |
 | Page retries on network errors | after 5, 20, 60 s, then the job is reported failed |
-| Coordinator calls | retried forever with backoff 2 s doubling to 60 s; stops only when shutting down |
+| Coordinator calls | retried forever with backoff 2 s doubling to 60 s; stops only when shutting down. Logged as INFO for the first 60 s of an outage, WARNING after, plus "reachable again" |
 | Pause between pages and between jobs | random within the shop's `min_delay`..`max_delay` (Amazon 2-4 s, noon 1-2 s) |
 | Nothing due | waits the `retry_after` the coordinator sends (5-60 s) |
 | Lease | 5 min, renewed by each page post |
@@ -207,6 +213,8 @@ expires after 5 minutes.
 **How it runs.** On the Mac: launchd agent `~/Library/LaunchAgents/com.deals.worker.plist` (`RunAtLoad`,
 `KeepAlive`, restart throttled to 30 s), environment from `worker.env`. On the droplet: systemd
 `deals-worker.service` (`Restart=always`, 700 MB memory cap, read-only system except `/var/lib/deals`).
+Deploys stop this worker, restart the coordinator, wait for `/health`, then start the worker, so it never
+sees the restart.
 
 ## Configuration reference
 
@@ -219,6 +227,7 @@ commented template.
 | `[server] host` | `127.0.0.1` | `0.0.0.0` on the server so remote workers can connect |
 | `[server] port` | 8787 | API port |
 | `[server] data_dir` | `data` | Database, backups (relative to the config file) |
+| `[server] admin_token` | empty | Secret for the web UI login (`deals token` makes one) |
 | `[workers] NAME = "token"` | | One line per device; the name shows in devices and logs. `deals token` makes one |
 | `[telegram] bot_token`, `chat_id` | empty | The bot and the admin chat (`make telegram TOKEN=...` fills both) |
 | `[alerts] min_drop` | 0.30 | Real price drop threshold versus typical |

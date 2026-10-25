@@ -57,6 +57,7 @@ def check_product(conn: sqlite3.Connection, cfg: Config, product_id: int, *, boo
         price=p["price"], in_stock=bool(p["in_stock"]), list_price=p["list_price"],
         list_price_kind=p["list_price_kind"], stock_left=p["stock_left"], recent_sales=p["recent_sales"],
         rating=p["rating"], reviews=p["reviews"], badges=tuple(b for b in p["badges"].split(",") if b),
+        site=p["site"],
     )
     deal = evaluate(view, stats, cfg.alerts, bootstrap=bootstrap,
                     min_price=watch.min_price if watch else None,

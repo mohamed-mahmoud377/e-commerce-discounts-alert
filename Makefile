@@ -1,13 +1,20 @@
 HOST ?= root@207.154.206.127
+HOST_IP = $(lastword $(subst @, ,$(HOST)))
 SSH_DEALS = ssh $(HOST) runuser -u deals -- /opt/deals/.venv/bin/deals
 
-.PHONY: test deploy ssh restart-server restart-mac-worker health devices dashboard events worker-log report telegram db sql dbweb status alerts movers logs mac-worker-env mac-worker install-mac-worker uninstall-mac-worker
+.PHONY: test deploy save-logs ui ui-token ssh restart-server restart-mac-worker health devices dashboard events worker-log report telegram db sql dbweb status alerts movers logs mac-worker-env mac-worker install-mac-worker uninstall-mac-worker
 
 test:                 ## run the test suite
 	.venv/bin/pytest -q
 
 deploy:               ## test, ship to the server, restart, health-check
 	scripts/deploy.sh $(HOST)
+
+ui:                   ## open the web UI in your browser, already logged in
+	@open "http://$(HOST_IP):8787/ui/login?token=$$(ssh $(HOST) "sed -n 's/^admin_token = \"\(.*\)\"/\1/p' /etc/deals/config.toml")"
+
+ui-token:             ## copy the web UI token to the clipboard (to log in from a phone or another computer)
+	@ssh $(HOST) "sed -n 's/^admin_token = \"\(.*\)\"/\1/p' /etc/deals/config.toml" | tr -d '\n' | pbcopy && echo "token copied; open http://$(HOST_IP):8787/ui and paste it"
 
 ssh:                  ## log in to the server
 	ssh $(HOST)
@@ -29,6 +36,9 @@ dashboard:            ## the same in your browser (auto-refreshes), with everyon
 
 events:               ## live log lines from all devices + the server (Ctrl+C to stop); SOURCE=mac LEVEL=warning to filter
 	@set -a && . ./worker.env && set +a && .venv/bin/deals logs --follow $(if $(SOURCE),--source $(SOURCE)) $(if $(LEVEL),--level $(LEVEL))
+
+save-logs:            ## download every log (all devices, server journal, daily archives, Mac) into ./logs/ for analysis
+	@scripts/save-logs.sh $(HOST)
 
 worker-log:           ## this Mac's worker log, live
 	tail -f ~/Library/Logs/deals-worker.log

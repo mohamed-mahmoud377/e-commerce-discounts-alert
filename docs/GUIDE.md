@@ -389,10 +389,9 @@ claim is used but must be backed by evidence:
 
 1. The crossed-out price must be at least 30% above the current price.
 2. A claim of 80% or more off a "List" (RRP) price is rejected as almost always fake.
-3. At least one real signal is required: 3 or fewer left in stock, a limited-time or mega deal badge,
+3. At least one real signal is required: 3 or fewer left in stock (noon only; amazon.eg shows it on about half its listings), a limited-time or mega deal badge,
    noon's "lowest price in 30 days / a year", or Amazon's "Was:" price.
-4. "Selling out fast", "N sold recently" and "only 8 left" do not count: they are marketing, and "only N
-   left" appears on about half of amazon.eg's listings.
+4. "Selling out fast", "N sold recently" and "only 8 left" do not count: they are marketing.
 5. During a slice's very first crawl, when every product looks new, two signals are required. This stops a
    flood of alerts on day one.
 

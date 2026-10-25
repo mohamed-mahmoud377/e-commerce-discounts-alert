@@ -23,11 +23,12 @@ Keep these in step with the code.
 
 | Task | Command |
 |---|---|
+| Web UI (everything in one page) | `make ui` (`/ui`, login with `[server] admin_token`; read-only) |
 | Is everything working? | `make health` (server, logs, deployed code, Mac worker, `deals health`) |
 | Tests | `make test` |
 | Ship a change | `make deploy`, or push to `main` (GitHub Actions `deploy` workflow: tests, then the same deploy); then `make restart-mac-worker` if worker code changed |
 | Devices and their fetch state | `make devices` (terminal), `make dashboard` (browser), `GET /api/devices` |
-| Logs from every device + server | `make events` (live, `SOURCE=mac`), `make logs` (server journal), `make worker-log` (Mac) |
+| Logs from every device + server | `make save-logs` (download all for analysis), `make events` (live, `SOURCE=mac`), `make logs` (server journal), `make worker-log` (Mac) |
 | Live numbers | `make status`, `make alerts`, `make movers`, `make logs` |
 | Database | `make sql` (live, read-only), `make dbweb` (browser), `make db` (snapshot for IntelliJ) |
 | Daily report now | `make report` |

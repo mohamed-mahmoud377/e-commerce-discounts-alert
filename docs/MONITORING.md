@@ -11,6 +11,7 @@ silent, an IP keeps getting blocked, a page layout seems to change, or the disk 
 
 | When | What | Time |
 | --- | --- | --- |
+| Any time | `make ui`: the web UI shows status, devices, logs, alerts, jobs and products in one place | 1 minute |
 | Every morning | Read the daily report (09:00 Cairo). "كل شيء يعمل بشكل طبيعي" means nothing to do | 10 seconds |
 | When a warning arrives | Follow its row in the Telegram warnings section below | 1 to 5 minutes |
 | When something looks off | `make health`, then `make devices`, then `make events LEVEL=warning` | 2 minutes |
@@ -57,6 +58,8 @@ The database line also shows its size, product count and price points: the quick
 
 ## Devices: who is fetching and how it's going
 
+The quickest view is the web UI (`make ui`, Overview or Devices tab); the commands below show the same.
+
 Every device reports its result for each shop with every page it sends, so the coordinator always knows, per
 device and per shop, whether fetching works. Three ways to see it, all showing the same data:
 
@@ -96,10 +99,12 @@ The JSON, trimmed:
 
 Every device ships its log lines to the coordinator every 10 seconds (up to 1,000 lines wait in memory if
 the server is unreachable), and the coordinator stores its own lines in the same `events` table. One command
-therefore shows everything, kept for 7 days.
+therefore shows everything. The database keeps 7 days; every night the finished days are also written to
+`/var/lib/deals/logs/events-YYYY-MM-DD.jsonl.gz` (one JSON object per line) and kept for 90 days.
 
 | Command | Shows |
 | --- | --- |
+| `make save-logs` | Downloads everything (all devices, server journal, daily archives, Mac log) into `logs/<UTC time>/` with a `summary.txt`; `logs/` is not committed |
 | `make events` | Live lines from all devices and the server, newest at the bottom; Ctrl+C stops |
 | `make events SOURCE=mac` | One device (`mac`, `droplet`, a friend's name, or `coordinator`) |
 | `make events LEVEL=warning` | Only warnings and errors |
@@ -122,7 +127,7 @@ Lines worth reacting to:
 
 | Line contains | Means | Action |
 | --- | --- | --- |
-| `coordinator unreachable ... retrying` | The server was restarting or the network dropped | None if it stops within a minute (it appears during every deploy) |
+| `coordinator unreachable ... for Ns` | The server is restarting or the network dropped. Logged as INFO for the first minute (deploys restart the server for ~3 s and the droplet worker is stopped first, so deploys produce no warnings), as WARNING after that, then `reachable again after Ns` | Only a WARNING (over a minute) needs a look |
 | `blocked: ... still challenged` | A shop refused this device; it pauses that shop for that IP | None once; runbook if it repeats for hours |
 | `page N attempt M failed ... retrying` | A network error on one page; retried after 5, 20, 60 s | None unless it keeps happening |
 | `job N failed` with a traceback | Something unexpected, often a parser error | Read the traceback; save the page as a test fixture and fix |

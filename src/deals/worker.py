@@ -81,25 +81,33 @@ class Coordinator:
         self.stop = stop
 
     def call(self, path: str, payload: dict) -> dict:
-        """POST with retries until it works, the lease is gone, or we're stopping."""
-        delay = 2.0
+        """POST with retries until it works, the lease is gone, or we're stopping.
+
+        A short outage (a deploy restarts the coordinator for a few seconds) is
+        logged as INFO; only one lasting over a minute becomes a WARNING."""
+        delay, down_since = 2.0, None
         while True:
             try:
                 r = requests.post(self.base_url + path, json=payload, headers=self.headers, timeout=30)
             except Exception as exc:  # connection refused, DNS, timeout...
                 problem = f"coordinator unreachable ({exc.__class__.__name__})"
             else:
-                if r.status_code == 409:
-                    raise LeaseLost(r.text)
-                if r.status_code == 401:
-                    raise SystemExit("coordinator rejected the worker token; check DEALS_TOKEN")
                 if r.status_code < 500:
+                    if down_since is not None:
+                        log.info("coordinator reachable again after %.0fs", time.monotonic() - down_since)
+                    if r.status_code == 409:
+                        raise LeaseLost(r.text)
+                    if r.status_code == 401:
+                        raise SystemExit("coordinator rejected the worker token; check DEALS_TOKEN")
                     r.raise_for_status()
                     return r.json()
                 problem = f"coordinator HTTP {r.status_code}"
             if self.stop.is_set():
                 raise LeaseLost("stopping")
-            log.warning("%s; retrying in %.0fs", problem, delay)
+            down_since = down_since or time.monotonic()
+            outage = time.monotonic() - down_since
+            log.log(logging.WARNING if outage > 60 else logging.INFO,
+                    "%s for %.0fs; retrying in %.0fs", problem, outage, delay)
             self.stop.wait(delay)
             delay = min(delay * 2, 60)
 
@@ -239,8 +247,8 @@ class Worker:
             # Don't retry forever on shutdown: a lost report just means the lease expires.
             requests.post(self.api.base_url + path, json={"lease_token": token, "reason": reason[:500]},
                           headers=self.api.headers, timeout=15)
-        except Exception as exc:
-            log.warning("could not report to coordinator: %s", exc)
+        except Exception as exc:  # e.g. the coordinator is restarting; the lease simply expires
+            log.info("could not report %s to coordinator (%s)", path.rsplit("/", 1)[-1], exc.__class__.__name__)
 
 
 class _Stopping(Exception):

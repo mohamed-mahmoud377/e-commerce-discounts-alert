@@ -21,6 +21,9 @@ DAY = 86400.0
 # don't count; "only N left" only counts when N <= 3 (amazon.eg shows "only N left"
 # on about half its listings).
 STRONG_SIGNALS = {"mega_deal", "limited_deal", "lowest_365d", "lowest_30d"}
+# Shops where "only N left" is shown so widely it proves nothing (amazon.eg: 45% of
+# listings show 3 or fewer left, measured 2026-10-25).
+LOW_STOCK_EVERYWHERE = {"amazon_eg"}
 
 
 @dataclass(frozen=True)
@@ -110,6 +113,7 @@ class ProductView:
     rating: float | None = None
     reviews: int | None = None
     badges: tuple[str, ...] = ()
+    site: str | None = None
 
 
 @dataclass(frozen=True)
@@ -183,7 +187,8 @@ def evaluate(product: ProductView, stats: PriceStats, rules: AlertRules, *,
             return None
         if product.list_price_kind != "was" and drop >= 0.8:
             return None  # "80% off" an inflated RRP is almost always fake
-        evidence = [code for code, n in signals if code in STRONG_SIGNALS or (code == "only_left" and n <= 3)]
+        evidence = [code for code, n in signals if code in STRONG_SIGNALS
+                    or (code == "only_left" and n <= 3 and product.site not in LOW_STOCK_EVERYWHERE)]
         if product.list_price_kind == "was":
             evidence.append("was_price")
         if len(evidence) < (2 if bootstrap else 1):

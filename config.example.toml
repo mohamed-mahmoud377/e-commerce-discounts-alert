@@ -4,6 +4,7 @@
 host = "127.0.0.1"      # "0.0.0.0" on the server so remote workers can connect
 port = 8787
 data_dir = "data"       # SQLite database, backups, cookies (relative to this file)
+admin_token = ""        # secret for the web UI at /ui (generate with: deals token)
 
 # One token per worker machine; the token is how the coordinator knows who is
 # calling. Generate with:  deals token

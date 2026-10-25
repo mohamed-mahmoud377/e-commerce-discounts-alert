@@ -108,3 +108,11 @@ def test_absurd_rrp_discount_rejected():
     s = compute_stats(series((0, 100)), now=days(0.01))
     fake = view(100, list_price=1000 * EGP, list_price_kind="list", stock_left=2, badges=(LIMITED_DEAL,))
     assert evaluate(fake, s, RULES) is None  # "90% off" an RRP
+
+
+def test_only_n_left_is_not_evidence_on_amazon():
+    s = compute_stats(series((0, 700)), now=days(0.01))
+    noon = ProductView(700 * EGP, True, list_price=1000 * EGP, list_price_kind="list", stock_left=2, site="noon_eg")
+    amazon = ProductView(700 * EGP, True, list_price=1000 * EGP, list_price_kind="list", stock_left=2, site="amazon_eg")
+    assert evaluate(noon, s, RULES).kind == "new_product"
+    assert evaluate(amazon, s, RULES) is None  # 45% of amazon.eg listings say "only N left"

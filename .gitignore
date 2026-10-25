@@ -7,3 +7,4 @@ worker.env
 .idea/
 .pytest_cache/
 REVISION
+logs/

@@ -4,6 +4,27 @@ Every useful command in one place. `make` commands run from the project folder o
 (`~/IdeaProjects/e-commerce-discounts-alert`); server commands run after `make ssh`.
 What the output means: [MONITORING.md](MONITORING.md). How it all works: [GUIDE.md](GUIDE.md).
 
+## Web UI (the easiest way)
+
+A small read-only website served by the coordinator itself: nothing to install or run.
+
+| What | How |
+| --- | --- |
+| Open it, already logged in | `make ui` |
+| Open it from a phone or another computer | `make ui-token` (copies the token), then open http://207.154.206.127:8787/ui and paste it |
+| Log out | the "log out" link (top right) |
+
+Tabs: **Overview** (status, totals, every health check, devices, shops), **Devices** (each device's state per
+shop), **Logs** (live, from every device and the server; filter by device and level), **Alerts** (what was
+sent, to how many people), **Jobs** (every slice: failing first, then running; interval, last result, error),
+**Products** (search titles; click one for its price history and typical price).
+
+How the login works: the secret is `admin_token` in `/etc/deals/config.toml` (worker tokens also work). After
+logging in it is kept in a cookie for 30 days. To change it: `make ssh`, then
+`sed -i "s/^admin_token = .*/admin_token = \"$(/opt/deals/.venv/bin/deals token)\"/" /etc/deals/config.toml`
+and `make restart-server` (everyone is logged out). The UI only reads data, so using it cannot affect
+crawling or alerts. It runs over plain HTTP: fine for a personal tool, but don't log in on untrusted Wi-Fi.
+
 ## Is everything OK?
 
 | Command | What it does |
@@ -18,6 +39,7 @@ What the output means: [MONITORING.md](MONITORING.md). How it all works: [GUIDE.
 
 | Where | Command |
 | --- | --- |
+| **Save everything for later analysis** | `make save-logs` → `logs/<UTC time>/`: `events.jsonl` (every device + server, last 7 days), `archive/` (daily files, 90 days), `journal.log` (server, 7 days), `mac-worker.log`, `summary.txt` (counts and every warning) |
 | All devices + server, live | `make events` (Ctrl+C to stop) |
 | One device | `make events SOURCE=mac` (or `droplet`, `coordinator`, a friend's name) |
 | Only problems | `make events LEVEL=warning` (or `LEVEL=error`) |
@@ -138,13 +160,18 @@ database, so run them on the server as shown above.
 
 ## API
 
-Base `http://207.154.206.127:8787`; read-only endpoints need `?token=<worker token>` (yours is in
-`worker.env`). Full reference: [INTERNALS.md](INTERNALS.md).
+Base `http://207.154.206.127:8787`; read-only endpoints need the UI cookie, `?token=<admin or worker token>`
+or a Bearer header (no token needed on the server itself). Full reference: [INTERNALS.md](INTERNALS.md).
 
 | Endpoint | Returns |
 | --- | --- |
 | `GET /health` | `{"ok": true}` (no token) |
 | `GET /api/devices` | Devices, per-shop states, shop totals, failing checks |
 | `GET /api/events?source=&level=&after_id=` | Log lines |
-| `GET /dashboard` | The dashboard page |
+| `GET /ui` | The web UI (login at `/ui/login`) |
+| `GET /api/overview` | Status, totals, every health check, devices, shops |
+| `GET /api/alerts?days=1` | Recent alerts with delivery counts |
+| `GET /api/jobs` | Every job, failing first |
+| `GET /api/products?q=samsung+55` / `GET /api/products/{id}` | Product search / one product with stats and history |
+| `GET /dashboard` | The older one-page dashboard |
 | `GET /docs` | Interactive API schema |

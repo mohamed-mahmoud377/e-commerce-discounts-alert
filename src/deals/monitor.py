@@ -4,12 +4,15 @@ Served by the coordinator as JSON (/api/devices, /api/events) and as a page
 (/dashboard); `deals devices` and `deals logs` print the same in a terminal.
 """
 
+import gzip
 import html
+import json
 import logging
 import queue
 import sqlite3
 import threading
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
+from pathlib import Path
 
 from deals import db, scheduler
 from deals.db import iso, parse_iso, utcnow
@@ -83,6 +86,31 @@ def events(conn: sqlite3.Connection, *, source: str | None = None, level: str | 
             AND level IN ({','.join('?' * len(allowed))}) ORDER BY id DESC LIMIT ?""",
         (after_id, source, source, *allowed, limit)).fetchall()
     return [dict(r) for r in reversed(rows)]
+
+
+def archive_events(conn: sqlite3.Connection, folder: Path, today: date, keep_days: int = 90) -> list[Path]:
+    """Write each finished UTC day of log lines to folder/events-YYYY-MM-DD.jsonl.gz (one JSON object
+    per line), so logs outlive the 7 days kept in the database. Returns the files written."""
+    folder.mkdir(parents=True, exist_ok=True)
+    first = conn.execute("SELECT MIN(substr(at, 1, 10)) FROM events").fetchone()[0]
+    written = []
+    if first:
+        day = date.fromisoformat(first)
+        while day < today:
+            path = folder / f"events-{day.isoformat()}.jsonl.gz"
+            if not path.exists():
+                rows = conn.execute("SELECT id, at, source, level, message FROM events WHERE at >= ? AND at < ? ORDER BY id",
+                                    (day.isoformat(), (day + timedelta(days=1)).isoformat())).fetchall()
+                with gzip.open(path, "wt", encoding="utf-8") as out:
+                    for r in rows:
+                        out.write(json.dumps(dict(r), ensure_ascii=False) + "\n")
+                written.append(path)
+            day += timedelta(days=1)
+    cutoff = (today - timedelta(days=keep_days)).isoformat()
+    for old in folder.glob("events-*.jsonl.gz"):
+        if old.name[7:17] < cutoff:
+            old.unlink()
+    return written
 
 
 def _ago(t: datetime, now: datetime) -> str:

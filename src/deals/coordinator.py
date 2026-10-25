@@ -14,15 +14,16 @@ import logging
 import shutil
 import sqlite3
 import threading
+from pathlib import Path
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from importlib.metadata import version as pkg_version
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
-from deals import alerts, bot, db, health, monitor, scheduler
+from deals import alerts, bot, db, health, monitor, scheduler, webui
 from deals.config import Config
 from deals.db import iso, utcnow
 from deals.models import Listing, Slice
@@ -125,13 +126,20 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
             raise HTTPException(401, "unknown worker token")
         return name
 
-    def viewer(request: Request) -> None:
-        """Read-only views: open from the server itself (SSH tunnel), else any worker token."""
+    view_tokens = set(tokens) | ({cfg.admin_token} if cfg.admin_token else set())
+
+    def can_view(request: Request) -> bool:
+        """Read-only views: open from the server itself (SSH tunnel); otherwise the admin
+        token or a worker token, as a cookie (web UI), ?token= or a Bearer header."""
         if client_ip(request) in ("127.0.0.1", "::1"):
-            return
-        token = request.query_params.get("token") or request.headers.get("authorization", "").removeprefix("Bearer ").strip()
-        if token not in tokens:
-            raise HTTPException(401, "add ?token=<a worker token> or open it through make dashboard")
+            return True
+        token = (request.cookies.get(webui.COOKIE) or request.query_params.get("token")
+                 or request.headers.get("authorization", "").removeprefix("Bearer ").strip())
+        return token in view_tokens
+
+    def viewer(request: Request) -> None:
+        if not can_view(request):
+            raise HTTPException(401, "log in at /ui/login, add ?token=<token>, or use make dashboard")
 
     def client_ip(request: Request) -> str:
         return request.client.host if request.client else "unknown"
@@ -289,6 +297,70 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
         logs = monitor.events(conn, source=source, level=level, limit=300)
         return monitor.render_page(overview(utcnow()), logs, source, request.query_params.get("token"))
 
+    # --- web UI (read-only) --------------------------------------------------------
+    revision_file = Path(__file__).resolve().parents[2] / "REVISION"
+
+    @app.get("/", include_in_schema=False)
+    async def root():
+        return RedirectResponse("/ui")
+
+    @app.get("/ui", response_class=HTMLResponse, include_in_schema=False)
+    async def ui(request: Request):
+        if not can_view(request):
+            return RedirectResponse("/ui/login")
+        return webui.APP
+
+    @app.get("/ui/login", response_class=HTMLResponse, include_in_schema=False)
+    async def ui_login_page(request: Request, token: str | None = None):
+        if token:  # one-click link (make ui): set the cookie, then drop the token from the address bar
+            return _login(token)
+        return webui.login_page()
+
+    @app.post("/ui/login", include_in_schema=False)
+    async def ui_login(request: Request):
+        form = await request.body()
+        from urllib.parse import parse_qs
+        token = (parse_qs(form.decode()).get("token") or [""])[0].strip()
+        return _login(token)
+
+    def _login(token: str):
+        if token not in view_tokens:
+            log.warning("web UI: failed login")
+            return HTMLResponse(webui.login_page("Wrong token."), status_code=401)
+        response = RedirectResponse("/ui", status_code=303)
+        response.set_cookie(webui.COOKIE, token, max_age=30 * 86400, httponly=True, samesite="strict")
+        return response
+
+    @app.get("/ui/logout", include_in_schema=False)
+    async def ui_logout():
+        response = RedirectResponse("/ui/login", status_code=303)
+        response.delete_cookie(webui.COOKIE)
+        return response
+
+    @app.get("/api/overview", dependencies=[Depends(viewer)])
+    async def overview_api():
+        revision = revision_file.read_text().split(" deployed")[0] if revision_file.exists() else ""
+        return webui.overview(conn, cfg, utcnow(), revision)
+
+    @app.get("/api/alerts", dependencies=[Depends(viewer)])
+    async def alerts_api(days: float = 1, kind: str | None = None, limit: int = 300):
+        return {"alerts": webui.alerts(conn, utcnow(), days, kind, min(limit, 2000))}
+
+    @app.get("/api/jobs", dependencies=[Depends(viewer)])
+    async def jobs_api(limit: int = 400):
+        return {"jobs": webui.jobs(conn, utcnow(), min(limit, 2000))}
+
+    @app.get("/api/products", dependencies=[Depends(viewer)])
+    async def products_api(q: str = "", site: str | None = None, limit: int = 100):
+        return {"products": webui.products(conn, q, site, min(limit, 500))}
+
+    @app.get("/api/products/{product_id}", dependencies=[Depends(viewer)])
+    async def product_api(product_id: int):
+        found = webui.product(conn, product_id, utcnow())
+        if found is None:
+            raise HTTPException(404, "no such product")
+        return found
+
     return app
 
 
@@ -351,6 +423,7 @@ class Watchdog(threading.Thread):
         db.backup(conn, target)
         for old in sorted(folder.glob("deals-*.db.gz"))[:-keep] + sorted(folder.glob("deals-*.db")):
             old.unlink()  # (uncompressed ones are from before backups were compressed)
+        monitor.archive_events(conn, self.cfg.data_dir / "logs", now.date())  # before pruning: kept 90 days
         conn.execute("DELETE FROM events WHERE at < ?", (iso(now - timedelta(days=7)),))
         conn.commit()
         conn.execute("PRAGMA optimize")

@@ -63,6 +63,7 @@ class Config:
     workers: dict[str, str] = field(default_factory=dict)  # name -> token
     telegram_token: str = ""
     telegram_chat_id: str = ""
+    admin_token: str = ""  # logs in to the web UI (/ui); worker tokens work too
     alerts: AlertRules = AlertRules()
     schedule: Schedule = Schedule()
     sites: dict[str, SiteSettings] = field(default_factory=dict)
@@ -119,6 +120,7 @@ def load(path: Path) -> Config:
         workers=dict(raw.get("workers", {})),
         telegram_token=telegram.get("bot_token", ""),
         telegram_chat_id=str(telegram.get("chat_id", "")),
+        admin_token=server.get("admin_token", ""),
         alerts=AlertRules(**raw.get("alerts", {})),
         schedule=Schedule(**raw.get("schedule", {})),
         sites={name: SiteSettings(**s) for name, s in raw.get("sites", {}).items()},
