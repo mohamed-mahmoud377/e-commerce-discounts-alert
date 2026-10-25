@@ -9,6 +9,7 @@ It runs as one **coordinator** (database, scheduler, alerts) and any number of
 **workers** (the crawlers) on your own machines: the server, your Mac, a friend's PC.
 Each worker only takes jobs for the sites its internet connection can reach.
 
+- **Every useful command in one place: [docs/COMMANDS.md](docs/COMMANDS.md)**
 - The complete guide (server, database, running it, every algorithm): [docs/GUIDE.md](docs/GUIDE.md)
 - Monitoring, health checks, devices, logs and the runbook: [docs/MONITORING.md](docs/MONITORING.md)
 - Code-level detail for improving it (modules, one page end to end, schema, API, config): [docs/INTERNALS.md](docs/INTERNALS.md)
@@ -69,7 +70,7 @@ Everything is driven by `make` from your Mac:
 | `make worker-log` | this Mac's worker log, live |
 | `make report` | send the daily report to your Telegram now (it also arrives every day at 09:00 Cairo time) |
 | `make test` | run the test suite |
-| `make deploy` | tests → rsync code → install/upgrade on the server → restart services → health check |
+| `make deploy` | tests → rsync code → install/upgrade on the server → restart services → health check (pushing to `main` does the same through GitHub Actions) |
 | `make telegram TOKEN=...` | connect Telegram alerts (see below) |
 | `make status` | `deals status` on the server |
 | `make alerts` / `make movers` | recent alerts / price moves, from the server |

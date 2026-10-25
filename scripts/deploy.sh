@@ -4,12 +4,16 @@ set -euo pipefail
 HOST="${1:-${DEALS_HOST:-root@207.154.206.127}}"
 cd "$(dirname "$0")/.."
 
-echo "==> running tests"
-.venv/bin/pytest -q
+if [ "${DEALS_SKIP_TESTS:-0}" = 1 ]; then
+  echo "==> tests already run (DEALS_SKIP_TESTS=1)"
+else
+  echo "==> running tests"
+  .venv/bin/pytest -q
+fi
 
 echo "==> syncing code to $HOST"
 rsync -az --delete \
-  --exclude .venv --exclude data --exclude .git --exclude .idea --exclude '*.egg-info' \
+  --exclude .venv --exclude data --exclude .git --exclude .github --exclude .idea --exclude '*.egg-info' \
   --exclude __pycache__ --exclude .pytest_cache --exclude config.toml --exclude worker.env \
   ./ "$HOST:/opt/deals/"
 

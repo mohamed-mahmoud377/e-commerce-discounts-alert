@@ -1,13 +1,22 @@
 HOST ?= root@207.154.206.127
 SSH_DEALS = ssh $(HOST) runuser -u deals -- /opt/deals/.venv/bin/deals
 
-.PHONY: test deploy health devices dashboard events worker-log report telegram db sql dbweb status alerts movers logs mac-worker-env mac-worker install-mac-worker uninstall-mac-worker
+.PHONY: test deploy ssh restart-server restart-mac-worker health devices dashboard events worker-log report telegram db sql dbweb status alerts movers logs mac-worker-env mac-worker install-mac-worker uninstall-mac-worker
 
 test:                 ## run the test suite
 	.venv/bin/pytest -q
 
 deploy:               ## test, ship to the server, restart, health-check
 	scripts/deploy.sh $(HOST)
+
+ssh:                  ## log in to the server
+	ssh $(HOST)
+
+restart-server:       ## restart both services on the server (e.g. after editing /etc/deals/config.toml)
+	ssh $(HOST) systemctl restart deals-coordinator deals-worker && ssh $(HOST) systemctl is-active deals-coordinator deals-worker
+
+restart-mac-worker:   ## restart this Mac's worker (after git pull or changing worker code)
+	launchctl kickstart -k gui/$$(id -u)/com.deals.worker && echo "mac worker restarted"
 
 health:               ## is everything working? server, logs, code, Mac worker, database, crawling, alerts
 	@scripts/health.sh $(HOST)

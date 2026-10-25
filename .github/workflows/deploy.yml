@@ -1,0 +1,65 @@
+# Deploys main to the droplet after the tests pass: the same steps as `make deploy`
+# (rsync code, scripts/remote-install.sh, restart, health check).
+#
+# One-time setup (repo Settings -> Secrets and variables -> Actions -> New secret):
+#   DEPLOY_SSH_KEY = the private key from `pbcopy < ~/.ssh/deals_deploy` (see docs/COMMANDS.md)
+#
+# Docs-only pushes don't deploy. Run it by hand from the Actions tab (Deploy -> Run workflow).
+# The Mac worker is not touched: after pulling, run `make restart-mac-worker` on the Mac.
+name: deploy
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["docs/**", "**.md"]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: pytest -q
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    env:
+      HOST: root@207.154.206.127
+    steps:
+      - uses: actions/checkout@v4
+      - name: SSH key and pinned host key
+        id: key
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          if [ -z "$DEPLOY_SSH_KEY" ]; then
+            echo "::warning::Not deployed: secret DEPLOY_SSH_KEY is not set yet (docs/COMMANDS.md, GitHub Actions setup)"
+            echo "skip=1" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          # the droplet's real host key: a different server answering on this IP is refused
+          echo "207.154.206.127 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBZBsF+UGuA5j7tBzF5hDM06q48PI+zXZ1q1KUjLmWqR" > ~/.ssh/known_hosts
+      - name: Deploy
+        if: steps.key.outputs.skip != '1'
+        run: DEALS_SKIP_TESTS=1 scripts/deploy.sh "$HOST"
+      - name: Health
+        if: steps.key.outputs.skip != '1'
+        # informational: a sleeping Mac makes "worker mac" fail, which is not a failed deploy
+        run: |
+          ssh "$HOST" runuser -u deals -- /opt/deals/.venv/bin/deals health --config /etc/deals/config.toml \
+            || echo "::warning::deals health reported problems (see the lines above)"

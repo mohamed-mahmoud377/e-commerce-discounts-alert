@@ -4,7 +4,8 @@ Personal price tracker for amazon.eg and noon.com (Egypt): crawls whole categori
 product's price history in SQLite, and sends Arabic Telegram alerts for real discounts.
 Read [README.md](README.md), [docs/GUIDE.md](docs/GUIDE.md) (design and algorithms) and
 [docs/INTERNALS.md](docs/INTERNALS.md) (code map, schema, API) before changing behaviour;
-[docs/MONITORING.md](docs/MONITORING.md) is the runbook. Keep these in step with the code.
+[docs/MONITORING.md](docs/MONITORING.md) is the runbook and [docs/COMMANDS.md](docs/COMMANDS.md) lists every command.
+Keep these in step with the code.
 
 ## Where things run
 
@@ -24,7 +25,7 @@ Read [README.md](README.md), [docs/GUIDE.md](docs/GUIDE.md) (design and algorith
 |---|---|
 | Is everything working? | `make health` (server, logs, deployed code, Mac worker, `deals health`) |
 | Tests | `make test` |
-| Ship a change | `make deploy` (tests → rsync → install → restart → health check) |
+| Ship a change | `make deploy`, or push to `main` (GitHub Actions `deploy` workflow: tests, then the same deploy); then `make restart-mac-worker` if worker code changed |
 | Devices and their fetch state | `make devices` (terminal), `make dashboard` (browser), `GET /api/devices` |
 | Logs from every device + server | `make events` (live, `SOURCE=mac`), `make logs` (server journal), `make worker-log` (Mac) |
 | Live numbers | `make status`, `make alerts`, `make movers`, `make logs` |
