@@ -6,6 +6,8 @@ when thousands of products are re-checked every few minutes. Each history row
 is a step: the price held from its observed_at until the next row.
 """
 
+import gzip
+import shutil
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -181,6 +183,12 @@ MIGRATIONS = [
 
     CREATE TABLE kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);  -- e.g. telegram update offset
     """,
+    """
+    -- "what changed recently" (status, daily report, movers) without scanning all history
+    CREATE INDEX price_history_time ON price_history (observed_at);
+    CREATE INDEX alerts_created ON alerts (created_at);
+    CREATE INDEX products_group ON products (grp, site);
+    """,
 ]
 
 
@@ -291,9 +299,26 @@ def find_product(conn: sqlite3.Connection, site: str, sku: str) -> sqlite3.Row |
 
 
 def backup(conn: sqlite3.Connection, dest: Path) -> None:
-    """Consistent online copy (safe while the coordinator is writing)."""
+    """Consistent online copy (safe while the coordinator is writing).
+
+    A '.gz' destination is compressed (the database is mostly text: ~4x smaller).
+    """
     dest.parent.mkdir(parents=True, exist_ok=True)
-    target = sqlite3.connect(dest)
+    plain = dest.with_suffix("") if dest.suffix == ".gz" else dest
+    tmp = plain.with_name(plain.name + ".tmp")
+    tmp.unlink(missing_ok=True)
+    target = sqlite3.connect(tmp)
     with target:
         conn.backup(target)
+    target.execute("PRAGMA journal_mode = DELETE")
     target.close()
+    if dest.suffix == ".gz":
+        with open(tmp, "rb") as src, gzip.open(dest, "wb", compresslevel=6) as out:
+            shutil.copyfileobj(src, out, 1 << 20)
+        tmp.unlink()
+    else:
+        tmp.replace(dest)
+
+
+def schema_version() -> int:
+    return len(MIGRATIONS)

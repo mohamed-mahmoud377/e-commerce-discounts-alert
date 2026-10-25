@@ -277,9 +277,34 @@ def cmd_telegram(args) -> None:
         print(f"chat_id = \"{chat_id}\"   ({name})")
 
 
+def cmd_health(args) -> None:
+    from deals.health import FAIL, ICON, run_checks
+
+    cfg = _config(args)
+    checks = run_checks(db.connect(cfg.db_path), cfg, utcnow())
+    for c in checks:
+        print(f"{ICON[c.level]} {c.name:<18} {c.detail}")
+    failed = sum(c.level == FAIL for c in checks)
+    warned = sum(c.level == "warn" for c in checks)
+    print(f"\n{len(checks)} checks: {failed} failing, {warned} warnings")
+    sys.exit(1 if failed else 0)
+
+
+def cmd_report(args) -> None:
+    from deals.health import daily_report
+
+    cfg = _config(args)
+    text = daily_report(db.connect(cfg.db_path), cfg, utcnow())
+    if args.send:
+        Telegram(cfg.telegram_token).send(cfg.telegram_chat_id, text)
+        print("report sent to the admin chat")
+    else:
+        print(text)
+
+
 def cmd_backup(args) -> None:
     cfg = _config(args)
-    dest = Path(args.dest or cfg.data_dir / "backups" / f"deals-{utcnow():%Y-%m-%d-%H%M}.db")
+    dest = Path(args.dest or cfg.data_dir / "backups" / f"manual-{utcnow():%Y-%m-%d-%H%M}.db.gz")
     db.backup(db.connect(cfg.db_path), dest)
     print(f"backup written to {dest}")
 
@@ -310,6 +335,9 @@ def main() -> None:
     p.add_argument("--sites", help="comma-separated, default all")
 
     add("status", cmd_status, "workers, blocks, backlog and freshness")
+    add("health", cmd_health, "pass/warn/fail checks of everything (exit code 1 on failure)")
+    p = add("report", cmd_report, "the daily report (Arabic); --send to send it to the admin now")
+    p.add_argument("--send", action="store_true")
     p = add("alerts", cmd_alerts, "recent deal alerts")
     p.add_argument("--days", type=float, default=1)
     p.add_argument("--limit", type=int, default=50)

@@ -59,6 +59,8 @@ Everything is driven by `make` from your Mac:
 
 | Command | What it does |
 |---|---|
+| `make health` | **is everything working?** server services and logs, deployed code, this Mac's worker, database, crawling per site, Telegram delivery, disk, backups (✅/⚠️/❌) |
+| `make report` | send the daily report to your Telegram now (it also arrives every day at 09:00 Cairo time) |
 | `make test` | run the test suite |
 | `make deploy` | tests → rsync code → install/upgrade on the server → restart services → health check |
 | `make telegram TOKEN=...` | connect Telegram alerts (see below) |
@@ -75,7 +77,7 @@ First deploy on a fresh Ubuntu server: `make deploy`. `scripts/remote-install.sh
 system user, a virtualenv in `/opt/deals`, Chromium in `/opt/ms-playwright`,
 `/etc/deals/config.toml` with fresh worker tokens, two systemd services
 (`deals-coordinator`, `deals-worker`), and opens port 8787 in the firewall. Data lives in
-`/var/lib/deals` (database, cookies, daily backups in `backups/`, last 7 kept).
+`/var/lib/deals` (database, cookies, daily compressed backups in `backups/`, last 7 kept).
 
 To change what is tracked or the alert rules, edit `/etc/deals/config.toml` on the server
 and restart the coordinator: `ssh root@207.154.206.127 systemctl restart deals-coordinator`.

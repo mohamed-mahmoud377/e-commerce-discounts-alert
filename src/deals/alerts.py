@@ -85,15 +85,16 @@ def _recently_alerted(conn, cfg: Config, product_id: int, price: int, now: datet
 
 
 def system_alert(conn: sqlite3.Connection, key: str, message: str, now: datetime,
-                 cooldown: timedelta = timedelta(hours=6)) -> bool:
-    """Operational alert (worker down, site blocked, parser broken), at most once per cooldown."""
+                 cooldown: timedelta = timedelta(hours=6), *, raw_html: bool = False) -> bool:
+    """Admin-only message (worker down, site blocked, daily report), at most once per cooldown."""
     recent = conn.execute("SELECT 1 FROM alerts WHERE dedupe_key = ? AND created_at >= ?",
                           (key, iso(now - cooldown))).fetchone()
     if recent:
         return False
+    text = message if raw_html else f"⚙️ {html.escape(message, quote=False)}"
     conn.execute(
         "INSERT INTO alerts (kind, dedupe_key, message, created_at, next_attempt_at) VALUES ('system', ?, ?, ?, ?)",
-        (key, f"⚙️ {html.escape(message, quote=False)}", iso(now), iso(now)),
+        (key, text, iso(now), iso(now)),
     )
     return True
 

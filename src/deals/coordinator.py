@@ -11,6 +11,7 @@ Each worker authenticates with its own token from [workers] in the config.
 """
 
 import logging
+import shutil
 import sqlite3
 import threading
 from contextlib import asynccontextmanager
@@ -20,7 +21,7 @@ from importlib.metadata import version as pkg_version
 from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel
 
-from deals import alerts, bot, db, scheduler
+from deals import alerts, bot, db, health, scheduler
 from deals.config import Config
 from deals.db import iso, utcnow
 from deals.models import Listing, Slice
@@ -246,7 +247,8 @@ def _site(name: str) -> str:
 
 
 class Watchdog(threading.Thread):
-    """Notices problems nobody reports: stalled sites, silent workers. Also takes daily backups."""
+    """Notices problems nobody reports (stalled sites, silent workers, low disk), sends the
+    admin's daily report, and does daily maintenance (compressed backup, planner stats)."""
 
     def __init__(self, cfg: Config, stop: threading.Event, interval: float = 60):
         super().__init__(name="watchdog", daemon=True)
@@ -281,17 +283,26 @@ class Watchdog(threading.Thread):
                     alerts.system_alert(conn, f"offline:{w['name']}",
                                         f"الجهاز {w['name']} لم يتواصل منذ {silent.total_seconds() / 60:.0f} دقيقة",
                                         now, timedelta(hours=12))
-        self.backup(conn, now)
+            usage = shutil.disk_usage(self.cfg.data_dir)
+            if usage.free / usage.total < 0.1:
+                alerts.system_alert(conn, "disk", f"المساحة على الخادم أوشكت على النفاد: "
+                                                  f"{usage.free / 1e9:.1f} GB متبقية", now, timedelta(hours=12))
+            if key := health.report_due(conn, now):
+                alerts.system_alert(conn, key, health.daily_report(conn, self.cfg, now), now,
+                                    timedelta(hours=20), raw_html=True)
+        self.maintain(conn, now)
 
-    def backup(self, conn: sqlite3.Connection, now: datetime, keep: int = 7) -> None:
+    def maintain(self, conn: sqlite3.Connection, now: datetime, keep: int = 7) -> None:
+        """Once a day: compressed backup (7 kept) and fresh query-planner statistics."""
         folder = self.cfg.data_dir / "backups"
-        target = folder / f"deals-{now:%Y-%m-%d}.db"
+        target = folder / f"deals-{now:%Y-%m-%d}.db.gz"
         if target.exists():
             return
         db.backup(conn, target)
-        for old in sorted(folder.glob("deals-*.db"))[:-keep]:
-            old.unlink()
-        log.info("backup written to %s", target)
+        for old in sorted(folder.glob("deals-*.db.gz"))[:-keep] + sorted(folder.glob("deals-*.db")):
+            old.unlink()  # (uncompressed ones are from before backups were compressed)
+        conn.execute("PRAGMA optimize")
+        log.info("daily maintenance done: backup %s (%.1f MB)", target.name, target.stat().st_size / 1e6)
 
 
 def serve(cfg: Config) -> None:

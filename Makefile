@@ -1,13 +1,19 @@
 HOST ?= root@207.154.206.127
 SSH_DEALS = ssh $(HOST) runuser -u deals -- /opt/deals/.venv/bin/deals
 
-.PHONY: test deploy telegram db sql dbweb status alerts movers logs mac-worker-env mac-worker install-mac-worker uninstall-mac-worker
+.PHONY: test deploy health report telegram db sql dbweb status alerts movers logs mac-worker-env mac-worker install-mac-worker uninstall-mac-worker
 
 test:                 ## run the test suite
 	.venv/bin/pytest -q
 
 deploy:               ## test, ship to the server, restart, health-check
 	scripts/deploy.sh $(HOST)
+
+health:               ## is everything working? server, logs, code, Mac worker, database, crawling, alerts
+	@scripts/health.sh $(HOST)
+
+report:               ## send the daily report to your Telegram now
+	$(SSH_DEALS) report --send --config /etc/deals/config.toml
 
 telegram:             ## connect Telegram alerts: make telegram TOKEN=<token from @BotFather>
 	scripts/telegram-setup.sh "$(TOKEN)" $(HOST)

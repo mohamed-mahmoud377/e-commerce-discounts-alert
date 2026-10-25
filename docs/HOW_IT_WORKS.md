@@ -208,7 +208,32 @@ site-history badge, × confidence (high 1.0 / medium 0.85 / low 0.7).
 | Disk / database loss | Daily consistent backup (`/var/lib/deals/backups`, 7 kept). `deals backup` makes one on demand. |
 | Server reboot | systemd starts both services. The Mac worker is a launchd agent with KeepAlive. |
 
-## 9. Data model (SQLite, `db.py`)
+## 9. Keeping track: health checks and the daily report
+
+`deals health` (and `make health`, which adds server/log/code/Mac-worker checks) answers "is
+everything working?" with ✅/⚠️/❌ lines: database integrity and schema, Telegram delivery, each worker's
+last contact, each site's last finished slice and backlog, failing or oversized slices, blocked IPs,
+data sanity (bad prices, A→B→A flip-flops), disk space and backup age.
+
+Every day at **09:00 Cairo time** the admin gets an Arabic report on Telegram: anything that needs
+attention, products tracked per site, price changes and deals in the last 24 h, subscribers, workers,
+and the 5 best deals. The watchdog also does daily maintenance: a compressed backup (7 kept) and
+`PRAGMA optimize` for the query planner.
+
+## 10. Scaling
+
+Measured on 2026-10-25 with 38,695 products: the database is 21 MB, products ≈ 400 bytes each and a
+price change ≈ 50 bytes (+ index). History only grows when prices change, so expect roughly
+0.5–1 MB/day (≈ 200–350 MB/year); backups are gzip-compressed (~4×). Every hot query uses an index
+(product lookup, history per product, due jobs, recent changes). The coordinator handles a page in a
+few milliseconds, far above what workers send (≈ 1 page / 2 s each).
+
+The real limit is **crawling politely from each IP**, not the server: capacity grows by adding
+workers on other connections (friends, a Raspberry Pi), which needs no code change. Single-file
+SQLite on this droplet is comfortable into the millions of products; moving to Postgres would only
+make sense beyond that, or with several coordinators.
+
+## 11. Data model (SQLite, `db.py`)
 
 | Table | Holds |
 |---|---|
