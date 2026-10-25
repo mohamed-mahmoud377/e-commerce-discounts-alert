@@ -16,11 +16,13 @@ remote=$(ssh -o BatchMode=yes -o ConnectTimeout=10 "$HOST" '
     echo "svc $s $(systemctl is-active $s) $(systemctl show $s -p NRestarts --value)"
   done
   echo "errors $(journalctl -u deals-coordinator -u deals-worker --since -24h --no-pager -o cat | grep -cE "ERROR|Traceback")"
+  echo "revision $(cat /opt/deals/REVISION 2>/dev/null || echo unknown)"
   cd /opt/deals && echo "code $(find src scripts deploy pyproject.toml -type f \( -name "*.py" -o -name "*.sh" -o -name "*.service" -o -name "*.toml" \) | sort | xargs sha1sum | sha1sum | cut -c1-12)"
 ' 2>&1) || { bad "cannot reach the server: $remote"; echo; exit 1; }
 while read -r kind a b c; do
   case "$kind" in
     svc) [ "$b" = active ] && ok "$a running (restarted $c times)" || bad "$a is $b" ;;
+    revision) ok "deployed: $a $b $c" ;;
     errors) [ "$a" = 0 ] && ok "no errors in server logs (24h)" || warn "$a error lines in server logs (24h): make logs" ;;
     code) local_hash=$(find src scripts deploy pyproject.toml -type f \( -name "*.py" -o -name "*.sh" -o -name "*.service" -o -name "*.toml" \) | sort | xargs shasum | shasum | cut -c1-12)
           [ "$a" = "$local_hash" ] && ok "server runs the same code as this checkout" || warn "server code differs from this checkout: make deploy" ;;

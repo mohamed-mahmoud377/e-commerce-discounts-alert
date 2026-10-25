@@ -12,6 +12,8 @@ else
 fi
 
 echo "==> syncing code to $HOST"
+# which commit is live; `make health` prints it
+echo "$(git rev-parse --short HEAD 2>/dev/null || echo unknown) $(git log -1 --format=%cI 2>/dev/null) deployed $(date -u +%FT%TZ) by ${GITHUB_ACTOR:-$USER}${GITHUB_RUN_ID:+ (GitHub Actions run $GITHUB_RUN_ID)}" > REVISION
 rsync -az --delete \
   --exclude .venv --exclude data --exclude .git --exclude .github --exclude .idea --exclude '*.egg-info' \
   --exclude __pycache__ --exclude .pytest_cache --exclude config.toml --exclude worker.env \

@@ -6,3 +6,4 @@ config.toml
 worker.env
 .idea/
 .pytest_cache/
+REVISION
