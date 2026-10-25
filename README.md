@@ -9,6 +9,7 @@ It runs as one **coordinator** (database, scheduler, alerts) and any number of
 **workers** (the crawlers) on your own machines: the server, your Mac, a friend's PC.
 Each worker only takes jobs for the sites its internet connection can reach.
 
+- **New here? Start with [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)**: get alerts, run a worker, try it on one computer, or run your own server
 - **Every useful command in one place: [docs/COMMANDS.md](docs/COMMANDS.md)**
 - The complete guide (server, database, running it, every algorithm): [docs/GUIDE.md](docs/GUIDE.md)
 - Monitoring, health checks, devices, logs and the runbook: [docs/MONITORING.md](docs/MONITORING.md)

@@ -14,7 +14,8 @@ Keep these in step with the code.
   (amazon only; datacenter IPs are often refused by Amazon and always by noon).
   Config: `/etc/deals/config.toml` (worker tokens, Telegram token, watches). Code: `/opt/deals`.
 - **The user's Mac**: launchd agent `com.deals.worker` (noon + amazon), env in `./worker.env`,
-  log `~/Library/Logs/deals-worker.log`. It runs code from this checkout; after changing worker
+  log `~/Library/Logs/deals-worker.log`. `make keep-awake` (launchd `com.deals.awake`,
+  `caffeinate -s`) stops it sleeping on power. It runs code from this checkout; after changing worker
   code, restart it: `launchctl kickstart -k gui/$(id -u)/com.deals.worker`.
 - Telegram bot @Jerrys_deals_bot; the admin is `[telegram] chat_id`. Friends subscribe with /start
   and the admin approves.

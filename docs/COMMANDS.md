@@ -105,6 +105,7 @@ server and delete the secret.
 | --- | --- |
 | Is it running? | `launchctl print gui/$(id -u)/com.deals.worker \| grep state` |
 | Restart | `make restart-mac-worker` |
+| Keep the Mac awake while plugged in (screen may turn off) | `make keep-awake`; undo with `make allow-sleep` |
 | Install (start at login, restart on crash) | `make install-mac-worker` (needs `make mac-worker-env` once) |
 | Remove | `make uninstall-mac-worker` |
 | Run in the foreground instead | `make mac-worker` (Ctrl+C stops) |

@@ -2,7 +2,7 @@ HOST ?= root@207.154.206.127
 HOST_IP = $(lastword $(subst @, ,$(HOST)))
 SSH_DEALS = ssh $(HOST) runuser -u deals -- /opt/deals/.venv/bin/deals
 
-.PHONY: test deploy save-logs ui ui-token ssh restart-server restart-mac-worker health devices dashboard events worker-log report telegram db sql dbweb status alerts movers logs mac-worker-env mac-worker install-mac-worker uninstall-mac-worker
+.PHONY: test deploy keep-awake allow-sleep save-logs ui ui-token ssh restart-server restart-mac-worker health devices dashboard events worker-log report telegram db sql dbweb status alerts movers logs mac-worker-env mac-worker install-mac-worker uninstall-mac-worker
 
 test:                 ## run the test suite
 	.venv/bin/pytest -q
@@ -21,6 +21,12 @@ ssh:                  ## log in to the server
 
 restart-server:       ## restart both services on the server (e.g. after editing /etc/deals/config.toml)
 	ssh $(HOST) systemctl restart deals-coordinator deals-worker && ssh $(HOST) systemctl is-active deals-coordinator deals-worker
+
+keep-awake:           ## stop this Mac sleeping while plugged in (screen may still turn off), so it keeps crawling
+	@scripts/keep-awake.sh
+
+allow-sleep:          ## undo keep-awake
+	@scripts/keep-awake.sh --off
 
 restart-mac-worker:   ## restart this Mac's worker (after git pull or changing worker code)
 	launchctl kickstart -k gui/$$(id -u)/com.deals.worker && echo "mac worker restarted"

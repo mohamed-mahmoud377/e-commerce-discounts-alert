@@ -158,8 +158,9 @@ problem does not flood the chat.
 1. `make devices`: is `mac` offline?
 2. `launchctl print gui/$(id -u)/com.deals.worker | grep state`. Not running: `make install-mac-worker`.
 3. Running but offline: `make worker-log` for errors; `launchctl kickstart -k gui/$(id -u)/com.deals.worker` restarts it.
-4. To keep it running while the Mac is idle: System Settings, Energy, "Prevent automatic sleeping when the
-   display is off" (while on power).
+4. To keep it running while the Mac is idle: `make keep-awake` (no sleep while plugged in; the screen still
+   turns off; on battery it sleeps normally; closing the lid still sleeps unless an external display is
+   attached). Undo with `make allow-sleep`.
 
 **A shop keeps blocking a device.**
 

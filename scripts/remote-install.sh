@@ -21,7 +21,9 @@ if [ ! -f /etc/deals/config.toml ]; then
   echo "first install: creating /etc/deals/config.toml with fresh worker tokens"
   droplet_token=$("$APP/.venv/bin/deals" token)
   mac_token=$("$APP/.venv/bin/deals" token)
+  admin_token=$("$APP/.venv/bin/deals" token)
   sed -e 's|^host = .*|host = "0.0.0.0"|' \
+      -e "s|^admin_token = \"\"|admin_token = \"$admin_token\"|" \
       -e 's|^data_dir = .*|data_dir = "/var/lib/deals"|' \
       -e "s|^local = \"change-me\"|droplet = \"$droplet_token\"\nmac = \"$mac_token\"|" \
       "$APP/config.example.toml" > /etc/deals/config.toml
