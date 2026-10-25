@@ -93,7 +93,7 @@ cp config.example.toml config.toml
 ```
 
 `config.example.toml` already tracks TVs, fridges, air conditioners, phones, laptops, desktops, monitors, PC
-components, headphones and kitchen appliances. The first minutes plan the categories, then crawling starts.
+components, headphones, kitchen machines and other kitchen appliances. The first minutes plan the categories, then crawling starts.
 In a second terminal:
 
 ```bash

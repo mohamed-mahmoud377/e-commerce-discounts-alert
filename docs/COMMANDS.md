@@ -83,6 +83,7 @@ Prices are in piastres (divide by 100 for EGP); times are UTC.
 | Restart the server services | `make restart-server` |
 | Restart this Mac's worker | `make restart-mac-worker` (needed after `git pull` or changing worker/site code) |
 | Change watched categories or alert rules | `make ssh`, edit `/etc/deals/config.toml`, then `make restart-server` |
+| Check a group more or less often | `interval_minutes` in its `[[watch]]`, then `make restart-server` ([GUIDE](GUIDE.md#how-fast-you-hear-about-a-price-change)) |
 | Log in to the server | `make ssh` |
 
 After a GitHub deploy the Mac worker still runs the code in your local checkout: `git pull`, then

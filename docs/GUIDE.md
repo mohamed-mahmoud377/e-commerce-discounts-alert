@@ -8,8 +8,9 @@ Also kept as a shared doc with the same content. Companion docs: [MONITORING.md]
 
 The system crawls whole categories on amazon.eg and noon.com (Egypt), stores every product's price
 history, and sends an Arabic Telegram alert when a price is genuinely low compared with that product's
-own history. It tracks about 43,000 products in 11 groups: TVs, refrigerators, air conditioners, phones,
-laptops, desktops, monitors, PC components, headphones, kitchen appliances, and cooking and dishwashers.
+own history. It tracks about 43,000 products in 12 groups: TVs, refrigerators, air conditioners, phones,
+laptops, desktops, monitors, PC components, headphones, kitchen machines (fryers, coffee machines,
+blenders, microwaves), other kitchen appliances, and cooking and dishwashers.
 
 It has four parts. One coordinator owns the data and decides what to do; any number of workers do the
 crawling from their own internet connections.
@@ -294,7 +295,7 @@ What the coordinator enforces when handing out jobs:
 - **Leases expire.** If a worker crashes, sleeps or loses Wi-Fi, its lease runs out after 5 minutes and the
   job goes to the next worker that asks. Late results from an expired lease are refused.
 
-**Adaptive revisits.** Each slice starts at its group's interval (30 to 120 minutes). After every crawl:
+**Adaptive revisits.** Each slice starts at its group's `interval_minutes` (20 to 180 minutes). After every crawl:
 
 - if any price changed or new products appeared, the interval halves, down to 10 minutes;
 - if nothing changed, it grows by a quarter, up to 3 times the group's interval;
@@ -304,9 +305,102 @@ Busy slices (a sale, a new launch) are therefore watched every 10 to 20 minutes 
 almost nothing.
 
 **Capacity.** The tracked groups hold about 17,000 Amazon and 27,000 noon products: roughly 700 Amazon
-pages and 540 noon pages for a full pass. With two Amazon workers (Mac and droplet) a full pass takes
-about 20 to 40 minutes per shop, so every product is rechecked roughly every 30 to 90 minutes. Kitchen
-appliances are half of all products (see the review).
+pages and 540 noon pages for a full pass. Two workers crawl Amazon (Mac and droplet) and one crawls noon
+(the Mac).
+
+## How fast you hear about a price change
+
+The time from a price changing on the shop to the Telegram message is three steps added together:
+
+1. **Waiting for the next visit** to the slice holding that product: on average half the slice's current
+   interval, at worst the whole interval.
+2. **Crawling the slice:** 1 to 3 minutes (Amazon: 24 products a page, 2 to 4 s between pages; noon: 50
+   a page, 1 to 2 s).
+3. **Sending:** the alert loop runs every 3 seconds; measured delivery time is 11 s on average, 37 s at
+   most (107 messages).
+
+Measured on the live system, 26 October 2026 (the two rows marked "since 26 Oct" are expected values
+after that day's change):
+
+| Group | `interval_minutes` | Current intervals | Typical time to alert | Worst case |
+| --- | --- | --- | --- | --- |
+| Air conditioners (top priority since 26 Oct) | 10 | 10 to 30 min | ~10 min | ~30 min |
+| Phones, Monitors | 20 | 10 min | ~7 min | ~13 min |
+| Laptops | 20 | 10 to 16 min | ~8 min | ~18 min |
+| Refrigerators, TVs | 20 | 10 to 29 min | ~12 min | ~30 min |
+| Headphones | 60 | 10 to 88 min | ~15 min | ~1.5 h |
+| PC components, Desktops | 60 | 13 to 117 min | ~35 min | ~2 h |
+| Cooking & dishwashers | 120 | 150 to 188 min | ~1.5 h | ~3 h |
+| Kitchen machines (fryers, coffee, blenders, microwaves; since 26 Oct) | 30 | 10 to 90 min | ~20 min | ~1.5 h |
+| Other kitchen appliances (kettles, irons, toasters...) | 180 | 90 to 225 min | ~1.5 h | ~4 h |
+
+Re-measure any time with `make sql`:
+
+```sql
+SELECT grp, count(*) slices, round(min(interval_s)/60.0) min_m, round(avg(interval_s)/60.0) avg_m,
+       round(max(interval_s)/60.0) max_m, sum(last_count) products
+FROM jobs WHERE kind = 'crawl' GROUP BY grp ORDER BY avg_m;
+```
+
+Things that add delay:
+
+- **History first.** A price-drop alert needs 3 days of history for that product (`min_history_days`);
+  before that only "new listing" alerts are possible.
+- **noon needs the Mac.** While the Mac sleeps or is offline, noon is not crawled at all; changes are picked
+  up when it comes back (most overdue slices first). Amazon carries on from the droplet, less reliably.
+- **Blocks.** A blocked shop-and-connection pair pauses 15 minutes to 24 hours.
+- **Backlog.** If workers can't keep up, every slice runs late. `make health` warns when the most overdue
+  slice is far behind; `make status` shows it per shop.
+
+### Priority: which slice goes next
+
+There is no separate priority setting. The coordinator always hands out plan jobs first, then the crawl
+job that has been due the longest. A group's priority is therefore its revisit interval: a 20-minute group
+comes due three times as often as a 60-minute one and gets that share of the crawling. Each shop is
+crawled separately (one job per shop per connection), so Amazon and noon never wait for each other.
+
+### Changing how often a group is checked
+
+On the server (`make ssh`), edit `/etc/deals/config.toml`:
+
+```toml
+[[watch]]
+name = "TVs"
+interval_minutes = 20   # starting revisit interval; slices adapt between the minimum and 3x this
+min_price = 3000        # EGP; cheaper items are neither crawled nor alerted
+```
+
+then `systemctl restart deals-coordinator` (or `make restart-server` from your computer). The other knobs,
+under `[schedule]`, apply to every group:
+
+| Setting | Default | Effect |
+| --- | --- | --- |
+| `min_interval_minutes` | 10 | Fastest any slice is revisited, even while its prices keep moving |
+| `max_interval_factor` | 3.0 | Quiet slices slow down to at most `interval_minutes` x this |
+
+What happens after the restart: the new limits apply at each slice's next crawl, so a slice already scheduled
+far ahead keeps that one visit, then follows the new range. To make it take effect at once, mark the group
+due now (`ssh root@207.154.206.127`, then `runuser -u deals -- sqlite3 /var/lib/deals/deals.db`):
+
+```sql
+UPDATE jobs SET next_due_at = strftime('%Y-%m-%dT%H:%M:%S+00:00','now'), interval_s = base_interval_s
+WHERE kind = 'crawl' AND grp = 'TVs';
+```
+
+Adding a new group is the same edit with a new `[[watch]]` block (find category ids with
+`deals categories amazon_eg <node>` or `deals categories noon_eg <path>`); it is planned within a minute
+of the restart.
+
+Trade-offs before making everything faster:
+
+- **Faster is not free.** Every group shares the same workers. Halving one group's interval takes crawl
+  time from the others, and more requests mean more blocks from Amazon (noon is more tolerant).
+- **Rough budget.** A worker crawls about 1,000 pages an hour on noon and 600 on Amazon. A group's load
+  per hour is about (its products / products per page) x (60 / its interval in minutes). Keep the total
+  under what your workers can do, or every slice runs late.
+- **To get faster for real,** add workers on other home connections (a friend's PC, a Raspberry Pi): each
+  new connection adds a full share for both shops.
+- **Narrowing helps too.** Raising `min_price` drops cheap items from the crawl, which frees time for the rest.
 
 ## Algorithm 4: price history and statistics
 

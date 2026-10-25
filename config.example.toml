@@ -74,7 +74,7 @@ noon_eg = "category:home-and-kitchen/home-appliances-31235/large-appliances/refr
 [[watch]]
 name = "Air conditioners"
 label = "تكييفات"
-interval_minutes = 20
+interval_minutes = 10   # top priority: stays between 10 and 30 min
 min_price = 8000
 amazon_eg = "category:21863915031"
 noon_eg = "category:home-and-kitchen/home-appliances-31235/large-appliances/heating-cooling-and-air-quality/air-conditioners"
@@ -128,12 +128,68 @@ amazon_eg = "category:21832887031"
 noon_eg = "category:electronics-and-mobiles/portable-audio-and-video/headphones-24056"
 
 [[watch]]
+name = "Kitchen machines"
+label = "قلايات وماكينات قهوة وأجهزة مطبخ"
+interval_minutes = 30
+min_price = 1500
+amazon_eg = [
+    "category:21863949031",  # fryers
+    "category:21864088031",  # coffee machines
+    "category:21863955031",  # blenders, mixers & food processors
+    "category:21863956031",  # pressure, steam & slow cookers
+    "category:21863820031",  # microwaves & countertop ovens
+]
+noon_eg = [
+    "category:home-and-kitchen/home-appliances-31235/small-appliances/fryers",
+    "category:home-and-kitchen/home-appliances-31235/small-appliances/coffee-makers",
+    "category:home-and-kitchen/home-appliances-31235/small-appliances/blenders-appliance",
+    "category:home-and-kitchen/home-appliances-31235/small-appliances/mixers-18509",
+    "category:home-and-kitchen/home-appliances-31235/small-appliances/food-processors",
+    "category:home-and-kitchen/home-appliances-31235/small-appliances/ovens-and-toasters",
+    "category:home-and-kitchen/home-appliances-31235/small-appliances/electric-cookers",
+]
+
+# The rest of the small appliances (kettles, irons, toasters, grinders...): low priority.
+[[watch]]
 name = "Kitchen appliances"
 label = "أجهزة مطبخ"
 interval_minutes = 180
 min_price = 2000
-amazon_eg = ["category:21863827031", "category:21863820031"]  # small appliances, microwaves & countertop ovens
-noon_eg = "category:home-and-kitchen/home-appliances-31235/small-appliances"
+amazon_eg = [
+    "category:21863959031",  # bread makers & baking
+    "category:21863960031",  # hot plates & electric pans
+    "category:21863962031",  # electric utensils
+    "category:21863952031",  # juicers
+    "category:21863961031",  # kettles & hot water dispensers
+    "category:21863957031",  # mills & grinders
+    "category:21863958031",  # sandwich makers
+    "category:21863950031",  # specialty appliances
+    "category:21863951031",  # toasters
+    "category:21863954031",  # vacuum sealers
+    "category:21863948031",  # waffle makers
+    "category:51375552031",  # water purifiers
+]
+noon_eg = [
+    "category:home-and-kitchen/home-appliances-31235/small-appliances/specialty-appliances",
+    "category:home-and-kitchen/home-appliances-31235/small-appliances/irons-and-steamers",
+    "category:home-and-kitchen/home-appliances-31235/small-appliances/kettles",
+    "category:home-and-kitchen/home-appliances-31235/small-appliances/choppers-small-appliances",
+    "category:home-and-kitchen/home-appliances-31235/small-appliances/small-appliance-juicers",
+    "category:home-and-kitchen/home-appliances-31235/small-appliances/coffee-grinders",
+    "category:home-and-kitchen/home-appliances-31235/small-appliances/electric-cooking-hot-plates",
+    "category:home-and-kitchen/home-appliances-31235/small-appliances/waffle-irons",
+    "category:home-and-kitchen/home-appliances-31235/small-appliances/milk-frothers",
+    "category:home-and-kitchen/home-appliances-31235/small-appliances/contact-grills",
+    "category:home-and-kitchen/home-appliances-31235/small-appliances/water-pump-dispensers",
+    "category:home-and-kitchen/home-appliances-31235/small-appliances/steam-mop-small-appliances",
+    "category:home-and-kitchen/home-appliances-31235/small-appliances/portable-washing-machines",
+    "category:home-and-kitchen/home-appliances-31235/small-appliances/electric-griddles",
+    "category:home-and-kitchen/home-appliances-31235/small-appliances/iced-tea-machines",
+    "category:home-and-kitchen/home-appliances-31235/small-appliances/water-purifier",
+    "category:home-and-kitchen/home-appliances-31235/small-appliances/compact-refrigerators-22037",
+    "category:home-and-kitchen/home-appliances-31235/small-appliances/electric-skillets",
+    "category:home-and-kitchen/home-appliances-31235/small-appliances/sewing-machines",
+]
 
 [[watch]]
 name = "Cooking & dishwashers"
