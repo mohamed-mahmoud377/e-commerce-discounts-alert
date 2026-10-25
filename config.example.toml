@@ -1,0 +1,135 @@
+# deals coordinator configuration. Copy to config.toml (local) or /etc/deals/config.toml (server).
+
+[server]
+host = "127.0.0.1"      # "0.0.0.0" on the server so remote workers can connect
+port = 8787
+data_dir = "data"       # SQLite database, backups, cookies (relative to this file)
+
+# One token per worker machine; the token is how the coordinator knows who is
+# calling. Generate with:  deals token
+[workers]
+local = "change-me"
+# droplet = "..."
+# mac = "..."
+# friend-ahmed = "..."
+
+[telegram]
+bot_token = ""          # from @BotFather
+chat_id = ""            # run 'deals telegram' after sending your bot a message
+
+[alerts]
+min_drop = 0.30               # alert when >= 30% below the product's typical (90-day) price
+atl_min_drop = 0.20           # ...or a new all-time low at least 20% below typical
+atl_min_history_days = 14     # (only once we have 2 weeks of history)
+price_error_drop = 0.60       # >= 60% below typical is flagged as a possible pricing error
+min_history_days = 3          # with less history than this a product counts as "new"
+new_product_min_drop = 0.30   # new products: site-claimed discount needed (plus a scarcity/deal signal)
+realert_after_days = 7        # don't repeat an alert for the same product within a week...
+realert_extra_drop = 0.05     # ...unless the price drops another 5%
+
+[schedule]
+min_interval_minutes = 10     # fastest a slice is ever re-crawled (when its prices keep moving)
+max_interval_factor = 3.0     # quiet slices back off to watch interval x 3
+replan_days = 7               # re-split categories weekly (new sub-categories, shifting sizes)
+lease_minutes = 5
+
+# Politeness per site, per worker (seconds between requests)
+[sites.amazon_eg]
+min_delay = 2.0
+max_delay = 4.0
+
+[sites.noon_eg]
+min_delay = 1.0
+max_delay = 2.0
+
+# ---------------------------------------------------------------------------
+# What to track. Each [[watch]] is a product group with one root per site:
+#   amazon_eg = "category:<browse node id>"
+#   noon_eg   = "category:<category path>"
+# (or "search:<keywords>"; a list of roots also works). Find ids with:
+#   deals categories amazon_eg 18018102031
+#   deals categories noon_eg electronics-and-mobiles
+# min_price (EGP) skips cheap accessories/junk both when crawling and alerting.
+# interval_minutes is the starting revisit interval; it adapts per slice.
+# ---------------------------------------------------------------------------
+
+[[watch]]
+name = "TVs"
+interval_minutes = 30
+min_price = 3000
+amazon_eg = "category:21832982031"
+noon_eg = "category:electronics-and-mobiles/television-and-video/televisions"
+
+[[watch]]
+name = "Refrigerators"
+interval_minutes = 30
+min_price = 5000
+amazon_eg = "category:21863822031"
+noon_eg = "category:home-and-kitchen/home-appliances-31235/large-appliances/refrigerators-and-freezers"
+
+[[watch]]
+name = "Air conditioners"
+interval_minutes = 30
+min_price = 8000
+amazon_eg = "category:21863915031"
+noon_eg = "category:home-and-kitchen/home-appliances-31235/large-appliances/heating-cooling-and-air-quality/air-conditioners"
+
+[[watch]]
+name = "Phones"
+interval_minutes = 30
+min_price = 2500
+amazon_eg = "category:21832883031"
+noon_eg = "category:electronics-and-mobiles/mobiles-and-accessories/mobiles-20905/smartphones"
+
+[[watch]]
+name = "Laptops"
+interval_minutes = 30
+min_price = 8000
+amazon_eg = "category:21832907031"
+noon_eg = "category:electronics-and-mobiles/computers-and-accessories/computers-new/laptops"
+
+[[watch]]
+name = "Desktops"
+interval_minutes = 60
+min_price = 8000
+amazon_eg = "category:21832914031"
+noon_eg = "category:electronics-and-mobiles/computers-and-accessories/computers-new/desktops"
+
+[[watch]]
+name = "Monitors"
+interval_minutes = 30
+min_price = 2500
+amazon_eg = "category:21832909031"
+noon_eg = "category:electronics-and-mobiles/computers-and-accessories/computer-accessories/monitor-accessories/monitors-17248"
+
+[[watch]]
+name = "PC components"
+interval_minutes = 60
+min_price = 1500
+amazon_eg = "category:21832913031"
+noon_eg = "category:electronics-and-mobiles/computers-and-accessories/computer-accessories/computer-components-15997"
+
+[[watch]]
+name = "Headphones"
+interval_minutes = 45
+min_price = 800
+amazon_eg = "category:21832887031"
+noon_eg = "category:electronics-and-mobiles/portable-audio-and-video/headphones-24056"
+
+[[watch]]
+name = "Kitchen appliances"
+interval_minutes = 60
+min_price = 700
+amazon_eg = ["category:21863827031", "category:21863820031"]  # small appliances, microwaves & countertop ovens
+noon_eg = "category:home-and-kitchen/home-appliances-31235/small-appliances"
+
+[[watch]]
+name = "Cooking & dishwashers"
+interval_minutes = 120
+min_price = 5000
+amazon_eg = ["category:21863824031", "category:21863823031"]  # ranges/ovens/cooktops, dishwashers
+noon_eg = [
+    "category:home-and-kitchen/home-appliances-31235/large-appliances/ranges",
+    "category:home-and-kitchen/home-appliances-31235/large-appliances/cooktops",
+    "category:home-and-kitchen/home-appliances-31235/large-appliances/dishwashers",
+]

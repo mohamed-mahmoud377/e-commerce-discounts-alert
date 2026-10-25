@@ -1,0 +1,21 @@
+[Unit]
+Description=deals coordinator (API, scheduler, alerts)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=deals
+Group=deals
+WorkingDirectory=/var/lib/deals
+ExecStart=/opt/deals/.venv/bin/deals serve --config /etc/deals/config.toml
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/deals
+MemoryMax=300M
+
+[Install]
+WantedBy=multi-user.target

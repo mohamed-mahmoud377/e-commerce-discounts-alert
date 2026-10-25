@@ -1,0 +1,23 @@
+[Unit]
+Description=deals worker (crawls for the coordinator)
+After=deals-coordinator.service network-online.target
+Wants=network-online.target
+
+[Service]
+User=deals
+Group=deals
+EnvironmentFile=/etc/deals/worker.env
+Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+WorkingDirectory=/var/lib/deals
+ExecStart=/opt/deals/.venv/bin/deals worker
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/deals
+MemoryMax=700M
+
+[Install]
+WantedBy=multi-user.target
