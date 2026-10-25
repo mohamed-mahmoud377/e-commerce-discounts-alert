@@ -2,8 +2,9 @@
 
 Personal price tracker for amazon.eg and noon.com (Egypt): crawls whole categories, keeps each
 product's price history in SQLite, and sends Arabic Telegram alerts for real discounts.
-Read [README.md](README.md) (running it) and [docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md) (design,
-algorithms, failure handling) before changing behaviour.
+Read [README.md](README.md), [docs/GUIDE.md](docs/GUIDE.md) (design and algorithms) and
+[docs/INTERNALS.md](docs/INTERNALS.md) (code map, schema, API) before changing behaviour;
+[docs/MONITORING.md](docs/MONITORING.md) is the runbook. Keep these in step with the code.
 
 ## Where things run
 
@@ -24,6 +25,8 @@ algorithms, failure handling) before changing behaviour.
 | Is everything working? | `make health` (server, logs, deployed code, Mac worker, `deals health`) |
 | Tests | `make test` |
 | Ship a change | `make deploy` (tests → rsync → install → restart → health check) |
+| Devices and their fetch state | `make devices` (terminal), `make dashboard` (browser), `GET /api/devices` |
+| Logs from every device + server | `make events` (live, `SOURCE=mac`), `make logs` (server journal), `make worker-log` (Mac) |
 | Live numbers | `make status`, `make alerts`, `make movers`, `make logs` |
 | Database | `make sql` (live, read-only), `make dbweb` (browser), `make db` (snapshot for IntelliJ) |
 | Daily report now | `make report` |

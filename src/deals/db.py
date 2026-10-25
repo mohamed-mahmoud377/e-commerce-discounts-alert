@@ -189,6 +189,31 @@ MIGRATIONS = [
     CREATE INDEX alerts_created ON alerts (created_at);
     CREATE INDEX products_group ON products (grp, site);
     """,
+    """
+    -- How each device is doing on each shop (for the dashboard).
+    CREATE TABLE worker_sites (
+        worker        TEXT NOT NULL,
+        site          TEXT NOT NULL,
+        last_ok_at    TEXT,
+        last_error_at TEXT,
+        last_error    TEXT,
+        pages         INTEGER NOT NULL DEFAULT 0,
+        products      INTEGER NOT NULL DEFAULT 0,
+        blocks        INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (worker, site)
+    );
+
+    -- Log lines from every device and the coordinator, kept 7 days.
+    CREATE TABLE events (
+        id      INTEGER PRIMARY KEY,
+        at      TEXT NOT NULL,
+        source  TEXT NOT NULL,  -- worker name, or 'coordinator'
+        level   TEXT NOT NULL,
+        message TEXT NOT NULL
+    );
+    CREATE INDEX events_at ON events (at);
+    CREATE INDEX events_source ON events (source, at);
+    """,
 ]
 
 

@@ -214,3 +214,28 @@ def _lease(cfg: Config) -> timedelta:
 def _jitter(seconds: float) -> timedelta:
     """+-10% so slices planned together don't stay in lockstep forever."""
     return timedelta(seconds=seconds * random.uniform(0.9, 1.1))
+
+
+def worker_site_ok(conn: sqlite3.Connection, worker: str, site: str, now: datetime, products: int) -> None:
+    conn.execute(
+        """INSERT INTO worker_sites (worker, site, last_ok_at, pages, products) VALUES (?, ?, ?, 1, ?)
+           ON CONFLICT (worker, site) DO UPDATE SET last_ok_at = excluded.last_ok_at,
+               pages = pages + 1, products = products + excluded.products""",
+        (worker, site, iso(now), products),
+    )
+
+
+def worker_site_problem(conn: sqlite3.Connection, worker: str, site: str, now: datetime, error: str,
+                        blocked: bool = False) -> None:
+    conn.execute(
+        """INSERT INTO worker_sites (worker, site, last_error_at, last_error, blocks) VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT (worker, site) DO UPDATE SET last_error_at = excluded.last_error_at,
+               last_error = excluded.last_error, blocks = blocks + excluded.blocks""",
+        (worker, site, iso(now), error[:300], int(blocked)),
+    )
+
+
+def add_events(conn: sqlite3.Connection, source: str, events: list[tuple[str, str, str]]) -> None:
+    """events: (at, level, message)."""
+    conn.executemany("INSERT INTO events (at, source, level, message) VALUES (?, ?, ?, ?)",
+                     [(at, source, level, message[:1000]) for at, level, message in events])

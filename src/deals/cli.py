@@ -77,7 +77,7 @@ def cmd_local(args) -> None:
     sites = args.sites.split(",") if args.sites else list(SITES)
     worker = Worker(f"http://127.0.0.1:{cfg.port}", next(iter(cfg.workers.values())), sites, cfg.data_dir)
     worker.install_signal_handlers()
-    worker.run()
+    worker.run(ship_logs=False)  # same process: the coordinator already records these lines
     server.should_exit = True
 
 
@@ -302,6 +302,55 @@ def cmd_report(args) -> None:
         print(text)
 
 
+def _api(args, path: str, **params) -> dict:
+    from curl_cffi import requests
+
+    url = (args.coordinator or os.environ.get("DEALS_COORDINATOR") or "http://127.0.0.1:8787").rstrip("/")
+    token = args.token or os.environ.get("DEALS_TOKEN")
+    r = requests.get(url + path, params={k: v for k, v in params.items() if v is not None},
+                     headers={"Authorization": f"Bearer {token}"} if token else {}, timeout=20)
+    if r.status_code != 200:
+        sys.exit(f"coordinator answered HTTP {r.status_code}: {r.text[:200]}")
+    return r.json()
+
+
+STATE_ICON = {"ok": "🟢", "crawling": "🔵", "idle": "⚪", "blocked": "🟠", "failing": "🔴", "offline": "🔴"}
+
+
+def cmd_devices(args) -> None:
+    data = _api(args, "/api/devices")
+    print(f"devices at {data['generated_at']} UTC\n")
+    for d in data["devices"]:
+        mark = "online" if d["online"] else "OFFLINE"
+        print(f"{d['name']}  {d['ip']}  v{d['version']}  {mark}, seen {d['last_seen_seconds']}s ago, "
+              f"{d['pages']:,} pages, {d['jobs_done']:,} jobs")
+        for s in d["sites"]:
+            print(f"   {STATE_ICON.get(s['state'], '?')} {s['site']:<10} {s['state']:<9} {s['detail']}")
+            if s["last_error"] and s["state"] != "failing":
+                print(f"      last problem {s['last_error_at'][11:16]} UTC: {s['last_error']}")
+        print()
+    for s in data["sites"]:
+        print(f"{s['site']:<10} {s['products']:,} products, {s['slices']} slices, {s['due']} due now, "
+              f"{s['running']} running, {s['failing']} failing, last finished {(s['last_done'] or '-')[11:19]} UTC")
+    if data["problems"]:
+        print("\nneeds attention:")
+        for p in data["problems"]:
+            print(f"   {p['level']}: {p['name']}: {p['detail']}")
+
+
+def cmd_logs(args) -> None:
+    after = 0
+    while True:
+        rows = _api(args, "/api/events", source=args.source, level=args.level, after_id=after,
+                    limit=args.limit if not after else 500)["events"]
+        for e in rows:
+            print(f"{e['at'][5:19].replace('T', ' ')}  {e['source']:<12} {e['level']:<7} {e['message']}")
+            after = max(after, e["id"])
+        if not args.follow:
+            return
+        time.sleep(3)
+
+
 def cmd_backup(args) -> None:
     cfg = _config(args)
     dest = Path(args.dest or cfg.data_dir / "backups" / f"manual-{utcnow():%Y-%m-%d-%H%M}.db.gz")
@@ -336,6 +385,16 @@ def main() -> None:
 
     add("status", cmd_status, "workers, blocks, backlog and freshness")
     add("health", cmd_health, "pass/warn/fail checks of everything (exit code 1 on failure)")
+    for name, func, help_text in [("devices", cmd_devices, "every connected device and its fetch state per shop"),
+                                  ("logs", cmd_logs, "log lines from all devices and the coordinator")]:
+        p = add(name, func, help_text, config=False)
+        p.add_argument("--coordinator", help="default $DEALS_COORDINATOR or http://127.0.0.1:8787")
+        p.add_argument("--token", help="a worker token (default $DEALS_TOKEN); not needed on the server itself")
+        if name == "logs":
+            p.add_argument("--source", help="only this device (e.g. mac, droplet) or 'coordinator'")
+            p.add_argument("--level", help="info (default), warning or error")
+            p.add_argument("--limit", type=int, default=50)
+            p.add_argument("-f", "--follow", action="store_true", help="keep printing new lines")
     p = add("report", cmd_report, "the daily report (Arabic); --send to send it to the admin now")
     p.add_argument("--send", action="store_true")
     p = add("alerts", cmd_alerts, "recent deal alerts")

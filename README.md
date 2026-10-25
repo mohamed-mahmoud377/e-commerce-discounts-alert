@@ -9,7 +9,10 @@ It runs as one **coordinator** (database, scheduler, alerts) and any number of
 **workers** (the crawlers) on your own machines: the server, your Mac, a friend's PC.
 Each worker only takes jobs for the sites its internet connection can reach.
 
-- How it works, step by step, and the deal-detection algorithms: [docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md)
+- The complete guide (server, database, running it, every algorithm): [docs/GUIDE.md](docs/GUIDE.md)
+- Monitoring, health checks, devices, logs and the runbook: [docs/MONITORING.md](docs/MONITORING.md)
+- Code-level detail for improving it (modules, one page end to end, schema, API, config): [docs/INTERNALS.md](docs/INTERNALS.md)
+- First review of the live system and ranked improvements: [docs/REVIEW-2026-10-25.md](docs/REVIEW-2026-10-25.md)
 - What to improve next: [docs/ROADMAP.md](docs/ROADMAP.md)
 
 ```
@@ -60,6 +63,10 @@ Everything is driven by `make` from your Mac:
 | Command | What it does |
 |---|---|
 | `make health` | **is everything working?** server services and logs, deployed code, this Mac's worker, database, crawling per site, Telegram delivery, disk, backups (✅/⚠️/❌) |
+| `make devices` | every connected device and its fetch state per shop (🟢 ok, 🔵 crawling, ⚪ idle, 🟠 blocked, 🔴 failing/offline) |
+| `make dashboard` | the same in your browser, refreshing every 15 s, with everyone's logs (filter by device) |
+| `make events` | live log lines from all devices and the server; `SOURCE=mac` or `LEVEL=warning` to filter |
+| `make worker-log` | this Mac's worker log, live |
 | `make report` | send the daily report to your Telegram now (it also arrives every day at 09:00 Cairo time) |
 | `make test` | run the test suite |
 | `make deploy` | tests → rsync code → install/upgrade on the server → restart services → health check |
@@ -101,6 +108,18 @@ Send friends the bot link (t.me/Jerrys_deals_bot). When they press **Start**, yo
 yours). They can send `/stop` to pause and `/start` to come back without a new approval. Send
 `/subscribers` to the bot to see who is subscribed. People who block the bot are dropped
 automatically.
+
+### Devices, fetch status and logs (API)
+
+Every worker reports how each shop is going and ships its log lines to the coordinator, so one
+place shows everything. Read-only endpoints (open from the server itself; from elsewhere add
+`?token=<any worker token>` or an `Authorization: Bearer` header):
+
+| Endpoint | Returns |
+|---|---|
+| `GET /dashboard` | the page `make dashboard` opens |
+| `GET /api/devices` | JSON: each device (online, IP, version, pages) with per-shop `state` (`ok`, `crawling`, `idle`, `blocked`, `failing`, `offline`) and detail, per-shop totals, and any failing health checks |
+| `GET /api/events?source=mac&level=warning&after_id=0` | JSON: log lines (kept 7 days) |
 
 ### Looking at the database
 

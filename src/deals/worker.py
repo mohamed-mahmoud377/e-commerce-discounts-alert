@@ -16,6 +16,8 @@ import random
 import signal
 import threading
 import time
+from collections import deque
+from datetime import UTC, datetime
 from dataclasses import asdict
 from importlib.metadata import version as pkg_version
 from pathlib import Path
@@ -33,6 +35,43 @@ PAGE_RETRIES = (5, 20, 60)  # seconds to wait before each retry of a failing pag
 
 class LeaseLost(Exception):
     pass
+
+
+class LogShipper(logging.Handler):
+    """Sends this worker's log lines to the coordinator every few seconds, so every
+    device's logs can be read in one place (dashboard, `deals logs`). Lines wait in
+    a bounded buffer while the coordinator is unreachable."""
+
+    def __init__(self, api: "Coordinator", stop: threading.Event, every: float = 10):
+        super().__init__(level=logging.INFO)
+        self.api, self.stop_event, self.every = api, stop, every
+        self.buffer: deque = deque(maxlen=1000)
+        threading.Thread(target=self._loop, name="log-shipper", daemon=True).start()
+
+    def emit(self, record: logging.LogRecord) -> None:
+        at = datetime.fromtimestamp(record.created, UTC).isoformat(timespec="seconds")
+        thread = f"[{record.threadName}] " if record.threadName in SITES else ""
+        self.buffer.append({"at": at, "level": record.levelname, "message": f"{thread}{record.getMessage()}"})
+
+    def _loop(self) -> None:
+        while True:
+            stopping = self.stop_event.wait(self.every)
+            self.flush_now()
+            if stopping:
+                return
+
+    def flush_now(self) -> None:
+        batch = list(self.buffer)[:500]
+        if not batch:
+            return
+        try:
+            r = requests.post(self.api.base_url + "/api/logs", json={"events": batch},
+                              headers=self.api.headers, timeout=15)
+            if r.status_code == 200:
+                for _ in batch:
+                    self.buffer.popleft()
+        except Exception:
+            pass  # keep them for the next try
 
 
 class Coordinator:
@@ -87,8 +126,10 @@ class Worker:
         for sig in (signal.SIGINT, signal.SIGTERM):
             signal.signal(sig, lambda *_: self.stop.set())
 
-    def run(self) -> None:
+    def run(self, ship_logs: bool = True) -> None:
         """One loop per site, in parallel: a slow Amazon crawl never holds up noon."""
+        if ship_logs:
+            logging.getLogger("deals").addHandler(LogShipper(self.api, self.stop))
         log.info("worker %s started for %s", VERSION, ", ".join(self.sites))
         loops = [threading.Thread(target=self._loop, args=([site],), name=site, daemon=True)
                  for site in self.sites]
@@ -136,14 +177,18 @@ class Worker:
 
     def _crawl(self, job: dict, path: str) -> None:
         site, target = self.site(job["site"]), Slice.from_key(job["target"])
-        page = 1
+        page, products, changes, started = 1, 0, 0, time.monotonic()
         while True:
             result = self._fetch(site, target, page, job)
-            self.api.call(path + "/page", {
+            reply = self.api.call(path + "/page", {
                 "lease_token": job["lease_token"], "page": page,
                 "listings": [_listing_json(x) for x in result.listings], "done": not result.has_next,
             })
+            products += len(result.listings)
+            changes += reply.get("changes", 0)
             if not result.has_next:
+                log.info("done %s %s: %d products, %d pages, %d changes, %.0fs", job["site"], job["target"],
+                         products, page, changes, time.monotonic() - started)
                 return
             page += 1
             self._pause(job)

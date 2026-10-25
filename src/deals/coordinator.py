@@ -19,9 +19,10 @@ from datetime import datetime, timedelta
 from importlib.metadata import version as pkg_version
 
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-from deals import alerts, bot, db, health, scheduler
+from deals import alerts, bot, db, health, monitor, scheduler
 from deals.config import Config
 from deals.db import iso, utcnow
 from deals.models import Listing, Slice
@@ -82,6 +83,16 @@ class ProblemIn(BaseModel):
     reason: str
 
 
+class LogLine(BaseModel):
+    at: str
+    level: str
+    message: str
+
+
+class LogsIn(BaseModel):
+    events: list[LogLine]
+
+
 def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
     # One connection, used only from the event loop (all endpoints are async),
     # so requests are applied one at a time. Background threads open their own.
@@ -93,6 +104,9 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         threads = [alerts.AlertSender(cfg, stop), Watchdog(cfg, stop)] if background else []
+        if background:  # the coordinator's own log lines show up on the dashboard too
+            handler = monitor.EventLogHandler(cfg.db_path)
+            logging.getLogger("deals").addHandler(handler)
         if background and cfg.telegram_token and cfg.telegram_chat_id:
             threads.append(bot.BotListener(cfg, stop))
         for t in threads:
@@ -111,6 +125,14 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
             raise HTTPException(401, "unknown worker token")
         return name
 
+    def viewer(request: Request) -> None:
+        """Read-only views: open from the server itself (SSH tunnel), else any worker token."""
+        if client_ip(request) in ("127.0.0.1", "::1"):
+            return
+        token = request.query_params.get("token") or request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+        if token not in tokens:
+            raise HTTPException(401, "add ?token=<a worker token> or open it through make dashboard")
+
     def client_ip(request: Request) -> str:
         return request.client.host if request.client else "unknown"
 
@@ -121,7 +143,7 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
         return job
 
     @app.get("/health")
-    async def health():
+    async def health_endpoint():
         conn.execute("SELECT 1").fetchone()
         return {"ok": True, "version": VERSION}
 
@@ -167,6 +189,7 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
                     deals += deal is not None
             scheduler.extend(conn, cfg, job_id, len(body.listings), changes, now)
             scheduler.unblock(conn, job["site"], ip)
+            scheduler.worker_site_ok(conn, worker, job["site"], now, len(body.listings))
             scheduler.worker_seen(conn, worker, ip, now, pages=1, jobs_done=int(body.done))
             if body.done and job["kind"] == "crawl":
                 _finish_crawl(job_id, now)
@@ -209,6 +232,7 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
         job = owned_job(job_id, body.lease_token)
         with conn:
             until = scheduler.block(conn, job["site"], ip, body.reason, now)
+            scheduler.worker_site_problem(conn, worker, job["site"], now, f"blocked: {body.reason}", blocked=True)
             scheduler.release(conn, job_id)
             strikes = conn.execute("SELECT strikes FROM blocks WHERE site = ? AND ip = ?",
                                    (job["site"], ip)).fetchone()["strikes"]
@@ -225,6 +249,7 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
         job = owned_job(job_id, body.lease_token)
         with conn:
             failures = scheduler.fail(conn, job, f"{worker}: {body.reason}", now)
+            scheduler.worker_site_problem(conn, worker, job["site"], now, body.reason)
             if failures >= 3:
                 alerts.system_alert(conn, f"failing:{job['id']}",
                                     f"مهمة {job['kind']} على {_site(job['site'])} ({job['target']}) فشلت {failures} "
@@ -238,6 +263,31 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
             with conn:
                 scheduler.release(conn, job_id)
         return {"ok": True}
+
+    @app.post("/api/logs")
+    async def logs_in(body: LogsIn, worker: str = Depends(worker_name)):
+        with conn:
+            scheduler.add_events(conn, worker, [(e.at, e.level.upper(), e.message) for e in body.events[:500]])
+        return {"ok": True}
+
+    def overview(now: datetime) -> dict:
+        problems = [{"name": c.name, "level": c.level, "detail": c.detail}
+                    for c in health.run_checks(conn, cfg, now) if c.level != "ok"]
+        return {"generated_at": iso(now)[:19], "devices": monitor.devices(conn, now),
+                "sites": monitor.sites(conn, now), "problems": problems}
+
+    @app.get("/api/devices", dependencies=[Depends(viewer)])
+    async def devices_api():
+        return overview(utcnow())
+
+    @app.get("/api/events", dependencies=[Depends(viewer)])
+    async def events_api(source: str | None = None, level: str | None = None, after_id: int = 0, limit: int = 200):
+        return {"events": monitor.events(conn, source=source, level=level, after_id=after_id, limit=min(limit, 2000))}
+
+    @app.get("/dashboard", response_class=HTMLResponse, dependencies=[Depends(viewer)])
+    async def dashboard(request: Request, source: str | None = None, level: str | None = None):
+        logs = monitor.events(conn, source=source, level=level, limit=300)
+        return monitor.render_page(overview(utcnow()), logs, source, request.query_params.get("token"))
 
     return app
 
@@ -301,6 +351,8 @@ class Watchdog(threading.Thread):
         db.backup(conn, target)
         for old in sorted(folder.glob("deals-*.db.gz"))[:-keep] + sorted(folder.glob("deals-*.db")):
             old.unlink()  # (uncompressed ones are from before backups were compressed)
+        conn.execute("DELETE FROM events WHERE at < ?", (iso(now - timedelta(days=7)),))
+        conn.commit()
         conn.execute("PRAGMA optimize")
         log.info("daily maintenance done: backup %s (%.1f MB)", target.name, target.stat().st_size / 1e6)
 

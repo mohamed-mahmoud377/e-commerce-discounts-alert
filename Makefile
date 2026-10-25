@@ -1,7 +1,7 @@
 HOST ?= root@207.154.206.127
 SSH_DEALS = ssh $(HOST) runuser -u deals -- /opt/deals/.venv/bin/deals
 
-.PHONY: test deploy health report telegram db sql dbweb status alerts movers logs mac-worker-env mac-worker install-mac-worker uninstall-mac-worker
+.PHONY: test deploy health devices dashboard events worker-log report telegram db sql dbweb status alerts movers logs mac-worker-env mac-worker install-mac-worker uninstall-mac-worker
 
 test:                 ## run the test suite
 	.venv/bin/pytest -q
@@ -11,6 +11,18 @@ deploy:               ## test, ship to the server, restart, health-check
 
 health:               ## is everything working? server, logs, code, Mac worker, database, crawling, alerts
 	@scripts/health.sh $(HOST)
+
+devices:              ## every connected device and how its fetching is going, per shop
+	@set -a && . ./worker.env && set +a && .venv/bin/deals devices
+
+dashboard:            ## the same in your browser (auto-refreshes), with everyone's logs
+	@set -a && . ./worker.env && set +a && open "$$DEALS_COORDINATOR/dashboard?token=$$DEALS_TOKEN"
+
+events:               ## live log lines from all devices + the server (Ctrl+C to stop); SOURCE=mac LEVEL=warning to filter
+	@set -a && . ./worker.env && set +a && .venv/bin/deals logs --follow $(if $(SOURCE),--source $(SOURCE)) $(if $(LEVEL),--level $(LEVEL))
+
+worker-log:           ## this Mac's worker log, live
+	tail -f ~/Library/Logs/deals-worker.log
 
 report:               ## send the daily report to your Telegram now
 	$(SSH_DEALS) report --send --config /etc/deals/config.toml
