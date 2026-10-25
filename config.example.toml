@@ -58,7 +58,7 @@ max_delay = 2.0
 [[watch]]
 name = "TVs"
 label = "تلفزيونات"
-interval_minutes = 30
+interval_minutes = 20
 min_price = 3000
 amazon_eg = "category:21832982031"
 noon_eg = "category:electronics-and-mobiles/television-and-video/televisions"
@@ -66,7 +66,7 @@ noon_eg = "category:electronics-and-mobiles/television-and-video/televisions"
 [[watch]]
 name = "Refrigerators"
 label = "ثلاجات"
-interval_minutes = 30
+interval_minutes = 20
 min_price = 5000
 amazon_eg = "category:21863822031"
 noon_eg = "category:home-and-kitchen/home-appliances-31235/large-appliances/refrigerators-and-freezers"
@@ -74,7 +74,7 @@ noon_eg = "category:home-and-kitchen/home-appliances-31235/large-appliances/refr
 [[watch]]
 name = "Air conditioners"
 label = "تكييفات"
-interval_minutes = 30
+interval_minutes = 20
 min_price = 8000
 amazon_eg = "category:21863915031"
 noon_eg = "category:home-and-kitchen/home-appliances-31235/large-appliances/heating-cooling-and-air-quality/air-conditioners"
@@ -82,7 +82,7 @@ noon_eg = "category:home-and-kitchen/home-appliances-31235/large-appliances/heat
 [[watch]]
 name = "Phones"
 label = "موبايلات"
-interval_minutes = 30
+interval_minutes = 20
 min_price = 2500
 amazon_eg = "category:21832883031"
 noon_eg = "category:electronics-and-mobiles/mobiles-and-accessories/mobiles-20905/smartphones"
@@ -90,7 +90,7 @@ noon_eg = "category:electronics-and-mobiles/mobiles-and-accessories/mobiles-2090
 [[watch]]
 name = "Laptops"
 label = "لابتوبات"
-interval_minutes = 30
+interval_minutes = 20
 min_price = 8000
 amazon_eg = "category:21832907031"
 noon_eg = "category:electronics-and-mobiles/computers-and-accessories/computers-new/laptops"
@@ -106,7 +106,7 @@ noon_eg = "category:electronics-and-mobiles/computers-and-accessories/computers-
 [[watch]]
 name = "Monitors"
 label = "شاشات كمبيوتر"
-interval_minutes = 30
+interval_minutes = 20
 min_price = 2500
 amazon_eg = "category:21832909031"
 noon_eg = "category:electronics-and-mobiles/computers-and-accessories/computer-accessories/monitor-accessories/monitors-17248"
@@ -122,7 +122,7 @@ noon_eg = "category:electronics-and-mobiles/computers-and-accessories/computer-a
 [[watch]]
 name = "Headphones"
 label = "سماعات"
-interval_minutes = 45
+interval_minutes = 60
 min_price = 800
 amazon_eg = "category:21832887031"
 noon_eg = "category:electronics-and-mobiles/portable-audio-and-video/headphones-24056"
@@ -130,8 +130,8 @@ noon_eg = "category:electronics-and-mobiles/portable-audio-and-video/headphones-
 [[watch]]
 name = "Kitchen appliances"
 label = "أجهزة مطبخ"
-interval_minutes = 60
-min_price = 700
+interval_minutes = 180
+min_price = 2000
 amazon_eg = ["category:21863827031", "category:21863820031"]  # small appliances, microwaves & countertop ovens
 noon_eg = "category:home-and-kitchen/home-appliances-31235/small-appliances"
 
