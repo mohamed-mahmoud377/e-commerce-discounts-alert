@@ -546,6 +546,16 @@ badge, or the shop's own "lowest price" badge, then multiplied by 1.0 (high conf
 
 ## Alerts and the Telegram bot
 
+**What a deal message contains**, top to bottom: the kind and the discount; the product link, brand and
+rating; the numbers (price now, typical price, how much you save, the price just before, the range we
+recorded and for how long, the shop's crossed-out price with the discount it claims or a note to ignore
+it); a "why is this real?" section that explains the decision in plain words (typical price versus crossed-out
+price, lowest ever, how rarely it was this cheap, price-error warning, inflated crossed-out price, what the
+confidence level means; for new listings, the evidence the shop gives); a "before you buy" section (stock
+left, third-party seller and the cheapest other seller on noon, low rating or few reviews, the shop's
+marketing badges we ignore, earlier alerts for the same product, and for low confidence a reminder to
+check the page); and a footer with group, shop, confidence and score.
+
 An alert is written to the `alerts` table first and sent afterwards, so a Telegram outage or a server
 restart never loses one. A background loop in the coordinator runs every 3 seconds:
 

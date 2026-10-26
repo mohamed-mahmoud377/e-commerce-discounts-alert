@@ -72,12 +72,14 @@ def check_product(conn: sqlite3.Connection, cfg: Config, product_id: int, *, boo
     group = (watch.label or watch.name) if watch else (p["grp"] or "")
     confirm = (iso(now + timedelta(minutes=cfg.alerts.confirm_minutes))
                if deal.confidence == "low" and cfg.alerts.confirm_low_confidence else None)
+    past = conn.execute("SELECT COUNT(*) FROM alerts WHERE product_id = ? AND (error IS NULL OR error NOT LIKE 'cancelled%')",
+                        (product_id,)).fetchone()[0]
     conn.execute(
         """INSERT INTO alerts (product_id, kind, price, reference_price, drop_pct, score, message,
                                created_at, next_attempt_at, confirm_until)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (product_id, deal.kind, deal.price, deal.reference, deal.drop, deal.score,
-         format_deal(p, stats, deal, group), iso(now), iso(now), confirm),
+         format_deal(p, stats, deal, group, other_offer=other, past_alerts=past), iso(now), iso(now), confirm),
     )
     return deal
 
@@ -108,52 +110,95 @@ def system_alert(conn: sqlite3.Connection, key: str, message: str, now: datetime
     return True
 
 
-def format_deal(p: sqlite3.Row, stats: PriceStats, deal: Deal, group: str = "") -> str:
+def format_deal(p: sqlite3.Row, stats: PriceStats, deal: Deal, group: str = "", *,
+                other_offer: int | None = None, past_alerts: int = 0) -> str:
+    """The Telegram message: the numbers, then *why* it is a deal, then what to check before buying."""
     def e(text: str) -> str:
         return html.escape(text, quote=False)  # quotes only matter inside attributes
 
     lines = [
         f"<b>{KIND_TITLE[deal.kind]} · خصم {deal.drop:.0%}</b>",
         f"<a href=\"{html.escape(p['url'])}\">{e(p['title'][:150])}</a>",
-        "",
     ]
+    meta = [m for m in (p["brand"] and f"الماركة: {e(p['brand'])}",
+                        p["rating"] and p["reviews"] and f"★ {p['rating']:.1f} ({p['reviews']:,} تقييم)",
+                        p["rating"] and not p["reviews"] and f"★ {p['rating']:.1f}") if m]
+    if meta:
+        lines.append("ℹ️ " + " · ".join(meta))
+    lines.append("")
+
+    # --- the numbers
     if deal.kind == "new_product":
         label = "سعره الأخير على الموقع" if deal.list_price_kind == "was" else "السعر المشطوب على الموقع"
         lines.append(f"💰 السعر الآن: <b>{_egp(deal.price)}</b> ({label} {_egp(deal.reference)})")
     else:
-        lines.append(f"💰 السعر الآن: <b>{_egp(deal.price)}</b> (سعره المعتاد {_egp(deal.reference)})")
+        lines.append(f"💰 السعر الآن: <b>{_egp(deal.price)}</b> · سعره المعتاد {_egp(deal.reference)} · توفّر {_egp(deal.reference - deal.price)}")
+        if deal.previous:
+            lines.append(f"↩️ كان {_egp(deal.previous)} قبل التغيير مباشرة")
     if stats.low is not None:
-        lines.append(f"📊 الأسعار التي رصدناها: من {stats.low / 100:,.0f} إلى {_egp(stats.high)} · "
-                     f"عدد التغييرات خلال 90 يومًا: {stats.changes_90d} · نتابعه منذ {_days(stats.tracked_days)}")
+        seen = (f"ثبت على {_egp(stats.low)}" if stats.low == stats.high
+                else f"من {stats.low / 100:,.0f} إلى {_egp(stats.high)}")
+        lines.append(f"📊 الأسعار التي رصدناها: {seen} · {stats.changes_90d} تغيير خلال 90 يومًا · نتابعه منذ {_days(stats.tracked_days)}")
+    if p["list_price"] and deal.kind != "new_product":
+        note = (" (تجاهله، التفاصيل تحت)" if deal.inflated_list_price
+                else f" (خصم معلن {1 - deal.price / p['list_price']:.0%})" if p["list_price"] > deal.price else "")
+        lines.append(f"🏷 السعر المشطوب على الموقع: {_egp(p['list_price'])}{note}")
 
+    # --- why we think it's real
+    lines += ["", "🧠 <b>ليه ده عرض حقيقي؟</b>"]
     if deal.kind == "new_product":
-        lines.append("• منتج جديد علينا: الخصم معلن من الموقع ولم نتحقق منه بعد من سجل أسعارنا")
-    elif deal.kind == "early_drop":
-        lines.append(f"• نتابعه منذ {_days(deal.reference_days)} فقط: انخفض {deal.drop:.0%} تحت كل ما رصدناه، "
-                     "لكن السجل قصير فتأكد قبل الشراء")
+        lines.append(f"• المنتج جديد علينا (نتابعه منذ {_days(stats.tracked_days)}): الخصم معلن من الموقع ولم نتحقق منه من سجل أسعارنا")
+        proof = [SIGNAL_TEXT[c].format(n=f"{n:,}" if n is not None else "") for c, n in deal.signals
+                 if c in ("mega_deal", "limited_deal", "lowest_365d") or (c == "only_left" and n is not None and n <= 3)]
+        if deal.list_price_kind == "was":
+            proof.append("أمازون يعرض سعرًا سابقًا حقيقيًا (Was) لا سعرًا مقترحًا")
+        if proof:
+            lines.append("• الدليل الداعم: " + e(" · ".join(proof)))
     else:
-        lines.append(f"• أقل من سعره المعتاد بنسبة {deal.drop:.0%} (حسب آخر {_days(deal.reference_days)})")
+        lines.append(f"• أقل من سعره المعتاد بنسبة {deal.drop:.0%} (السعر المعتاد = السعر الذي ثبت عليه أغلب الوقت خلال آخر {_days(deal.reference_days)}، "
+                     "وليس السعر المشطوب)")
+        if deal.kind == "early_drop":
+            lines.append(f"• سجلنا قصير ({_days(stats.history_days)} فقط): انخفض تحت كل ما رصدناه، لكن تأكد قبل الشراء")
+        if deal.all_time_low:
+            lines.append(f"• أقل سعر رأيناه على الإطلاق (أقل سعر سابق {_egp(deal.previous_low)})")
         if deal.share_at_or_below:
-            lines.append(f"• كان بهذا السعر أو أقل {deal.share_at_or_below:.0%} من الوقت فقط")
-    if deal.all_time_low:
-        lines.append(f"• أقل سعر رأيناه على الإطلاق (أقل سعر سابق {_egp(deal.previous_low)})")
-    if deal.previous:
-        lines.append(f"• كان {_egp(deal.previous)} قبل التغيير مباشرة")
-    if deal.inflated_list_price:
-        lines.append(f"• تجاهل السعر المشطوب على الموقع ({_egp(deal.inflated_list_price)}): "
-                     f"أعلى من أي سعر رأيناه ({_egp(stats.high)})")
+            lines.append(f"• كان بهذا السعر أو أقل {deal.share_at_or_below:.0%} من الوقت فقط: ليس سعره العادي")
+        elif deal.kind != "early_drop":
+            lines.append("• لم يكن بهذا السعر أو أقل في أي وقت تابعناه فيه")
+        if deal.kind == "price_error":
+            lines.append("• الانخفاض أكبر من 60%: غالبًا خطأ في التسعير، قد يُلغى الطلب أو يُصحّح السعر خلال ساعات")
+        if deal.inflated_list_price:
+            lines.append(f"• السعر المشطوب ({_egp(deal.inflated_list_price)}) أعلى من أي سعر رأيناه ({_egp(stats.high)}): خصم وهمي من الموقع، حسابنا لا يعتمد عليه")
+    lines.append(f"• الثقة {CONFIDENCE[deal.confidence]}: " + {
+        "high": "سجل أسعار طويل (14 يومًا فأكثر) وسعر نادر فعلًا",
+        "medium": "سجل أسعار كافٍ (3 أيام فأكثر) لكنه ليس طويلًا بعد، أو السعر تكرر قليلًا",
+        "low": "نعتمد على كلام الموقع أو على سجل قصير",
+    }[deal.confidence])
 
-    extras = [SIGNAL_TEXT[code].format(n=f"{n:,}" if n is not None else "") for code, n in deal.signals]
-    if p["rating"] and p["reviews"]:
-        extras.append(f"★ {p['rating']:.1f} ({p['reviews']:,} تقييم)")
-    if extras:
-        lines.append("⚡ " + e(" · ".join(extras)))
-
-    where = [e(group), SITE_NAME.get(p["site"], p["site"])]
+    # --- what to check before buying
+    checks = []
+    if p["stock_left"] is not None and p["stock_left"] <= 5:
+        checks.append(f"متبقٍ {p['stock_left']} فقط" + ("" if p["site"] != "amazon_eg" else " (أمازون يكتبها على نصف المنتجات، لا تستعجل بسببها)"))
     if p["seller"]:
-        where.append(f"البائع: {e(p['seller'])}")
-    where += [f"الثقة: {CONFIDENCE[deal.confidence]}", f"النقاط: {deal.score}/100"]
-    lines.append("🏷️ " + " · ".join(w for w in where if w))
+        checks.append(f"البائع: {e(p['seller'])}" + (" (ليس الموقع نفسه: راجع تقييم البائع وسياسة الإرجاع)" if p["site"] == "noon_eg" and "noon" not in p["seller"].lower() else ""))
+    if other_offer is not None:
+        checks.append(f"أرخص بائع آخر لنفس المنتج: {_egp(other_offer)}" + (" (نفس السعر تقريبًا)" if other_offer <= deal.price * 1.02 else ""))
+    if p["rating"] and p["rating"] < 3.8:
+        checks.append(f"التقييم منخفض ({p['rating']:.1f})")
+    elif p["reviews"] is not None and p["reviews"] < 5 and deal.kind == "new_product":
+        checks.append("تقييمات قليلة جدًا")
+    badges = [SIGNAL_TEXT[c].format(n=f"{n:,}" if n is not None else "") for c, n in deal.signals if c in ("selling_fast", "sold_recently", "lowest_30d")]
+    if badges:
+        checks.append("شارات الموقع (دعاية، لا نعتمد عليها): " + e(" · ".join(badges)))
+    if past_alerts:
+        checks.append(f"نبّهنا على هذا المنتج {past_alerts} مرة من قبل")
+    if deal.confidence == "low":
+        checks.append("افتح صفحة المنتج وتأكد من السعر والحالة (جديد/مستعمل) قبل الدفع")
+    if checks:
+        lines += ["", "⚠️ <b>قبل ما تشتري</b>"] + [f"• {c}" for c in checks]
+
+    where = [e(group), SITE_NAME.get(p["site"], p["site"]), f"الثقة: {CONFIDENCE[deal.confidence]}", f"النقاط: {deal.score}/100"]
+    lines += ["", "🔖 " + " · ".join(w for w in where if w)]
     return "\n".join(lines)
 
 
