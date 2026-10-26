@@ -48,8 +48,10 @@ Ordered by value for effort. "Why" says what problem each one solves.
     the internet) or Caddy + a domain for automatic HTTPS.
 12. **Web dashboard**: product page with a price chart, search, freshness per group, alert history.
     The data is all in SQLite already; FastAPI can serve it next to the API.
-13. **More shops**: Jumia Egypt, B.TECH, 2B, Raya. Each needs one `sites/<shop>.py` (`fetch_page` +
-    parser) and a saved-page test; everything else (planner, scheduling, alerts) is shared.
+13. **More shops**: B.TECH, 2B, Raya. Each needs one `sites/<shop>.py` (`fetch_page` +
+    parser) and a saved-page test; everything else (planner, scheduling, alerts) is shared. Jumia Egypt was
+    added on 26 October 2026 ([JUMIA.md](JUMIA.md)); its open ideas: crawl `/flash-sales/` to mark flash
+    deals, use the Official Store badge and the other-sellers price (`mpg`) in alerts.
 14. **CI**: when the repo is on GitHub, run `pytest` on every push and deploy `main` automatically (the
     same `scripts/deploy.sh`).
 15. **Parser health checks**: daily fill-rate report (share of listings with price, rating, stock),

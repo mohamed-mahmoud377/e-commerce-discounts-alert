@@ -39,5 +39,10 @@ $env_xml  </dict>
 </dict>
 </plist>
 PLIST
-launchctl bootstrap "gui/$(id -u)" "$PLIST"
+# Right after a bootout, bootstrap can fail with "5: Input/output error"; it works a moment later.
+for attempt in 1 2 3 4 5; do
+  launchctl bootstrap "gui/$(id -u)" "$PLIST" 2>/dev/null && break
+  [ "$attempt" = 5 ] && { launchctl bootstrap "gui/$(id -u)" "$PLIST"; exit 1; }
+  sleep 2
+done
 echo "worker installed; logs: tail -f $LOG"

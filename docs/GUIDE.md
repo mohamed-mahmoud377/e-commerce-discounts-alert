@@ -2,13 +2,14 @@
 
 Also kept as a shared doc with the same content. Companion docs: [MONITORING.md](MONITORING.md)
 (health, devices, logs, runbook), [INTERNALS.md](INTERNALS.md) (code-level detail),
-[REVIEW-2026-10-25.md](REVIEW-2026-10-25.md) (first review of the live system), [ROADMAP.md](ROADMAP.md).
+[REVIEW-2026-10-25.md](REVIEW-2026-10-25.md) (first review of the live system), [ROADMAP.md](ROADMAP.md),
+[JUMIA.md](JUMIA.md) (the Jumia analysis).
 
 ## Overview
 
-The system crawls whole categories on amazon.eg and noon.com (Egypt), stores every product's price
+The system crawls whole categories on amazon.eg, noon.com (Egypt) and jumia.com.eg, stores every product's price
 history, and sends an Arabic Telegram alert when a price is genuinely low compared with that product's
-own history. It tracks about 50,000 products in 14 groups: TVs, refrigerators, air conditioners, gaming consoles,
+own history. It tracks about 50,000 products on Amazon and noon plus about 14,000 on Jumia, in 14 groups: TVs, refrigerators, air conditioners, gaming consoles,
 phones, tablets, laptops, desktops, monitors, PC components, headphones, kitchen machines (fryers, coffee
 machines, blenders, microwaves), other kitchen appliances, and cooking and dishwashers.
 
@@ -19,17 +20,17 @@ crawling from their own internet connections.
 | --- | --- | --- |
 | Coordinator (`deals serve`) | Droplet 207.154.206.127 | Owns the SQLite database, hands out crawl jobs, stores results, detects deals, runs the Telegram bot, watches for problems, takes daily backups |
 | Worker (`deals worker`) | Your Mac, the droplet, any friend's PC | Asks for a job, downloads the shop pages, sends the products back. Holds no database |
-| Site adapters (`sites/amazon_eg.py`, `sites/noon_eg.py`) | Inside each worker | Know how to fetch and read one listing page of each shop |
+| Site adapters (`sites/amazon_eg.py`, `sites/noon_eg.py`, `sites/jumia_eg.py`) | Inside each worker | Know how to fetch and read one listing page of each shop |
 | Telegram bot (@Jerrys_deals_bot) | Inside the coordinator | Sends deal alerts to approved subscribers and system warnings to you |
 
 Workers only make outgoing requests to the coordinator, so nothing needs to be opened on your Mac or on a
-friend's router. Your Mac does the real crawling because both shops refuse most datacenter traffic; the
-droplet's worker is a fallback for Amazon.
+friend's router. Your Mac does the real crawling because the shops refuse most datacenter traffic (noon and
+Jumia always); the droplet's worker is a fallback for Amazon.
 
 ```mermaid
 flowchart TB
-    shops["amazon.eg and noon.com<br/>category listing pages"]
-    shops --> mac["Your Mac (launchd)<br/>noon + amazon<br/>does most of the crawling"]
+    shops["amazon.eg, noon.com and jumia.com.eg<br/>category listing pages"]
+    shops --> mac["Your Mac (launchd)<br/>noon + amazon + jumia<br/>does most of the crawling"]
     shops --> dw["Droplet worker<br/>amazon only<br/>fallback: often refused"]
     shops --> fr["Friend's PC (optional)<br/>any shop it can reach"]
     mac -- "lease a job, post each page" --> api
@@ -174,7 +175,7 @@ Adding a friend's computer as a worker (more crawling capacity from another conn
 1. On the server, create a token with `deals token`, add it under `[workers]` as `ahmed = "..."`, restart
    the coordinator.
 2. On their computer: clone the repo, do setup steps 1 and 2, then run
-   `DEALS_COORDINATOR=http://207.154.206.127:8787 DEALS_TOKEN=... DEALS_SITES=noon_eg,amazon_eg .venv/bin/deals worker`.
+   `DEALS_COORDINATOR=http://207.154.206.127:8787 DEALS_TOKEN=... DEALS_SITES=noon_eg,amazon_eg,jumia_eg .venv/bin/deals worker`.
 
 Running everything on one machine without the server (for experiments): `cp config.example.toml config.toml`,
 then `.venv/bin/deals local` starts a coordinator and a worker in one process with a local database.
@@ -205,25 +206,34 @@ bare category page uses a "landing" layout with no product grid.
 50 structured products each time. An unknown category path silently returns a different category, so the
 adapter checks the breadcrumb and fails loudly on a typo.
 
+**jumia.com.eg.** Jumia sits behind a Cloudflare challenge that refuses Chrome's and Firefox's network
+fingerprints but lets Safari's through from a home connection, so the adapter sends plain requests that copy
+Safari (no browser needed). Category pages (`/<slug>/?price=<min>-<max>&page=N`) embed their 40 products
+as JSON, with an exact "N products found" count. Two traps shape the adapter: an empty price range (or a page
+past the end) silently redirects to the *parent* category, so every page's served URL is compared with the
+one asked for; and a category holds products that are in none of its children, so Jumia is split by price
+only. Details, numbers and the category map: [JUMIA.md](JUMIA.md).
+
 **Which machine can reach which shop** (tested 25 October 2026):
 
 | Shop | Home IP (your Mac) | Droplet (DigitalOcean Frankfurt) |
 | --- | --- | --- |
 | amazon.eg | Works | Varies: category pages were refused about 5 times in 6 in one test, fine in others |
 | noon.com | Works | Always refused (Akamai 403) |
+| jumia.com.eg | Works with Safari's fingerprint (tested 26 October) | Always refused (Cloudflare 403, every fingerprint) |
 
 **What is read from each product card** (no extra requests):
 
-| Signal | amazon.eg | noon |
-| --- | --- | --- |
-| Price | The featured offer's price | The offer's sale price, else its price |
-| Crossed-out price | "Was:" (Amazon's own recent price, trusted) or "List:" (brand RRP, often inflated) | Seller-set, treated like an RRP |
-| Stock left | "Only 3 left in stock" | "Only 3 left" |
-| Deal badge | "Limited time deal" | "Deal", "Mega Deal" |
-| Shop's own price history | none | "Lowest price in 30 days", "in a year" |
-| Demand | "300+ bought in past month" | "200+ sold recently", "Selling out fast", bestseller |
-| Rating | Stars and review count | Stars and review count |
-| Seller | not shown | Store name |
+| Signal | amazon.eg | noon | Jumia |
+| --- | --- | --- | --- |
+| Price | The featured offer's price | The offer's sale price, else its price | The product's price |
+| Crossed-out price | "Was:" (Amazon's own recent price, trusted) or "List:" (brand RRP, often inflated) | Seller-set, treated like an RRP | Seller-set (on 88% of cards), treated like an RRP |
+| Stock left | "Only 3 left in stock" | "Only 3 left" | "1 item left" (45% of cards say 3 or fewer, so not evidence) |
+| Deal badge | "Limited time deal" | "Deal", "Mega Deal" | none on category pages (flash sales are only marked on `/flash-sales/`) |
+| Shop's own price history | none | "Lowest price in 30 days", "in a year" | none |
+| Demand | "300+ bought in past month" | "200+ sold recently", "Selling out fast", bestseller | none |
+| Rating | Stars and review count | Stars and review count | Stars and review count |
+| Seller | not shown | Store name | not shown (one seller per SKU) |
 
 **noon sellers.** One noon product can be sold by several sellers at very different prices. The same
 earbuds were seen at 7,550, 1,000 and 495 EGP, and which offer a listing shows depends on the price filter.
@@ -241,6 +251,7 @@ small enough to read completely. A slice is a category, optionally narrowed to a
 | --- | --- | --- |
 | amazon.eg | 24 | 1,000 per slice (Amazon shows an exact count only up to 1,000, "over 1,000" above) |
 | noon | 50 | 2,500 per slice (50 pages of 50) |
+| Jumia | 40 | 2,000 per slice (50 pages of 40); split by price only, see below |
 
 It works through a queue, starting with the group's root category and its minimum price (TVs start at
 3,000 EGP). For each slice it fetches page 1 and reads the product count:
@@ -257,6 +268,10 @@ flowchart TB
     d3 -- no --> over["Mark oversized and warn"]
 ```
 
+On Jumia the "sub-categories left?" step is skipped: its categories hold products that sit in none of their
+children (11% of air conditioners, 4% of TVs), so a split into children would lose them. Jumia slices are
+split by price only (`split_by_subcategory = False` on the adapter).
+
 Price splits start with fixed bands (0, 50, 100, 200, 500, 1k, 2k, 5k, 10k, 20k, 50k, 100k EGP and above,
 from the group's minimum price); any range still too big is halved, down to 1 EGP wide. Empty slices are
 dropped.
@@ -271,7 +286,7 @@ Two checks show nothing is missed. On real data, noon Wearables (24,787 products
 requests covering 26,179 products, slightly more than the total because of shared edges. An automated test
 builds a fake shop with a known catalogue and confirms the slices cover every product.
 
-Today's 26 roots produce 133 slices: 59 on Amazon and 74 on noon.
+On 26 October the roots produced 50 slices on Amazon, 55 on noon and 57 on Jumia (52 roots).
 
 ## Algorithm 3: scheduling, leases and politeness
 

@@ -92,3 +92,56 @@ def test_amazon_site_treats_decoy_as_block(tmp_path, monkeypatch):
 def test_amazon_no_results_page_is_empty_not_a_failure():
     result = parse_search_page(fixture_text("amazon_no_results.html.gz"), "21833039031")
     assert result.listings == [] and result.total == 0 and not result.has_next and not result.decoy
+
+
+def test_jumia_category_page():
+    from deals.sites.jumia_eg import parse_catalog_page
+    result = parse_catalog_page(fixture_text("jumia_category.html.gz"), "/televisions/", 1, "televisions")
+    assert len(result.listings) == 40 and result.total == 454 and result.has_next
+    assert len({x.sku for x in result.listings}) == 40
+    lg = next(x for x in result.listings if x.sku == "LG178EA3AHODVNAFAMZ")
+    assert (lg.price, lg.list_price, lg.list_price_kind, lg.in_stock) == (1529900, 1999900, "list", True)
+    assert (lg.brand, lg.rating, lg.reviews) == ("LG", 3.8, 10)
+    assert lg.url.startswith("https://www.jumia.com.eg/lg-led-smart-tv-43-inch") and lg.title.startswith("LG LED Smart TV")
+    hoho = next(x for x in result.listings if x.sku == "HO179EL1K701HNAFAMZ")
+    assert hoho.stock_left == 1 and hoho.list_price is None  # "1 item left" lives on the variant
+    # the sidebar lists ancestors, the current category and its children; only children count
+    assert [c.id for c in result.subcategories] == ["led-lcd-tvs", "oled-tvs", "category-url-en-smart-tvs",
+                                                    "large-screen-tv"]
+
+
+def test_jumia_redirect_to_parent_is_an_empty_slice_or_an_unknown_category():
+    from deals.models import UnknownTarget
+    from deals.sites.jumia_eg import parse_catalog_page
+    page = fixture_text("jumia_category.html.gz")
+    # An empty price range of a child (here OLED TVs) is answered with its parent: empty, not 454 TVs.
+    empty = parse_catalog_page(page, "/oled-tvs/", 1, "oled-tvs")
+    assert empty.listings == [] and empty.total == 0 and not empty.has_next
+    # A page past the last one redirects the same way (the slice shrank during the crawl).
+    past_end = parse_catalog_page(page, "/led-lcd-tvs/", 5, "led-lcd-tvs")
+    assert past_end.listings == [] and not past_end.has_next
+    # Landing anywhere unrelated means the slug is wrong or renamed: fail loudly.
+    with pytest.raises(UnknownTarget, match="redirected"):
+        parse_catalog_page(page, "/some-renamed-category/", 1, "some-renamed-category")
+
+
+def test_jumia_challenge_is_a_block(monkeypatch):
+    from deals.models import Blocked
+    from deals.sites import jumia_eg
+
+    class Challenge:
+        status_code, text = 403, "<html><title>Just a moment...</title><script>window._cf_chl_opt={}</script>"
+
+    sessions = []
+
+    class Session:
+        def __init__(self, impersonate):
+            sessions.append(impersonate)
+
+        def get(self, url, timeout):
+            return Challenge()
+
+    monkeypatch.setattr(jumia_eg.requests, "Session", Session)
+    with pytest.raises(Blocked, match="Cloudflare"):
+        jumia_eg.JumiaEG().fetch_page(Slice("category", "televisions", 3000, None), 1)
+    assert sessions == ["safari", "safari"]  # one fresh session was tried before giving up

@@ -232,7 +232,10 @@ def cmd_categories(args) -> None:
         for name, cid in {"amazon_eg": [("Electronics", "18018102031"), ("Home", "18021933031"),
                                         ("Appliances", "21863792031"), ("Video Games", "18022560031")],
                           "noon_eg": [("Electronics & Mobiles", "electronics-and-mobiles"),
-                                      ("Home & Kitchen", "home-and-kitchen")]}[args.site]:
+                                      ("Home & Kitchen", "home-and-kitchen")],
+                          "jumia_eg": [("Electronics", "electronics"), ("Phones & Tablets", "phones-tablets"),
+                                       ("Computing", "computing"), ("Home & Office", "home-office"),
+                                       ("Gaming", "video-games")]}[args.site]:
             print(f"  {name:<25} {cid}")
 
 

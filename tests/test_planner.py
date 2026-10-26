@@ -32,3 +32,16 @@ def test_every_probe_page_is_reported():
     site = FakeSite(make_catalog(200))
     plan(site, Slice("category", "root"), on_listings=batches.append, delay=(0, 0), report=lambda _: None)
     assert len(batches) == site.requests and all(batches)
+
+
+def test_price_only_sites_keep_products_that_sit_on_a_parent_category():
+    # Jumia lists some products on a category itself and in none of its children, so a
+    # sub-category split would lose them; such sites are split by price only.
+    catalog = make_catalog() + [(f"PARENT{i}", "root", 500 + i) for i in range(30)]
+    site = FakeSite(catalog)
+    site.split_by_subcategory = False
+    planned = plan(site, Slice("category", "root"), delay=(0, 0), report=lambda _: None)
+
+    assert all(p.slice.value == "root" for p in planned)
+    covered = set().union(*({sku for sku, _, _ in site.matches(p.slice)} for p in planned))
+    assert covered == {sku for sku, _, _ in catalog}

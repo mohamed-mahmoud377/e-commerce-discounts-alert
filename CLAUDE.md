@@ -1,23 +1,24 @@
 # deals: notes for working on this project
 
-Personal price tracker for amazon.eg and noon.com (Egypt): crawls whole categories, keeps each
+Personal price tracker for amazon.eg, noon.com (Egypt) and jumia.com.eg: crawls whole categories, keeps each
 product's price history in SQLite, and sends Arabic Telegram alerts for real discounts.
 Read [README.md](README.md), [docs/GUIDE.md](docs/GUIDE.md) (design and algorithms) and
 [docs/INTERNALS.md](docs/INTERNALS.md) (code map, schema, API) before changing behaviour;
 [docs/MONITORING.md](docs/MONITORING.md) is the runbook and [docs/COMMANDS.md](docs/COMMANDS.md) lists every command.
-[docs/CATEGORIES.md](docs/CATEGORIES.md) holds category ids and shop quirks. Keep these in step with the code, and
+[docs/CATEGORIES.md](docs/CATEGORIES.md) holds category ids and shop quirks; [docs/JUMIA.md](docs/JUMIA.md) is the Jumia analysis. Keep these in step with the code, and
 write down anything new you learn about the shops or the operations there (the user wants findings kept).
 
 ## Where things run
 
 - **Droplet** `root@207.154.206.127` (458 MB RAM + 1 GB swap): systemd `deals-coordinator`
   (FastAPI :8787 + SQLite `/var/lib/deals/deals.db` + Telegram bot + watchdog) and `deals-worker`
-  (amazon only; datacenter IPs are often refused by Amazon and always by noon).
+  (amazon only; datacenter IPs are often refused by Amazon and always by noon and Jumia).
   Config: `/etc/deals/config.toml` (worker tokens, Telegram token, watches). Code: `/opt/deals`.
-- **The user's Mac**: launchd agent `com.deals.worker` (noon + amazon), env in `./worker.env`,
+- **The user's Mac**: launchd agent `com.deals.worker` (noon + amazon + jumia), env in `./worker.env`,
   log `~/Library/Logs/deals-worker.log`. `make keep-awake` (launchd `com.deals.awake`,
   `caffeinate -s`) stops it sleeping on power. It runs code from this checkout; after changing worker
-  code, restart it: `launchctl kickstart -k gui/$(id -u)/com.deals.worker`.
+  code, restart it: `launchctl kickstart -k gui/$(id -u)/com.deals.worker`. After changing `worker.env`
+  (e.g. `DEALS_SITES`) run `make install-mac-worker` instead: the agent copies the env at install time.
 - Telegram bot @Jerrys_deals_bot; the admin is `[telegram] chat_id`. Friends subscribe with /start
   and the admin approves.
 
@@ -44,6 +45,8 @@ write down anything new you learn about the shops or the operations there (the u
   (`deals backup --config /etc/deals/config.toml`).
 - Prices are integers in piastres. Times are UTC ISO strings. The daily report uses Cairo time.
 - noon products are keyed `SKU@seller` (one product has several sellers at very different prices).
+- Jumia is split by price only (`split_by_subcategory = False`): its categories hold products that are in
+  none of their children. Empty filtered Jumia pages redirect to the parent category (see docs/JUMIA.md).
 - Alert and bot texts are Arabic (`alerts.py`, `bot.py`, `health.py`); CLI output is English.
 - Parser tests use saved real pages in `tests/fixtures/*.gz`. When a site changes its layout,
   save a new page there and fix the parser against it.

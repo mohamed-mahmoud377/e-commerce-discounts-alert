@@ -1,6 +1,6 @@
 # Category catalogue and findings
 
-What we learned about the two shops' category trees while building the watch list, so nobody has to
+What we learned about the shops' category trees while building the watch list, so nobody has to
 rediscover it. Ids come from `deals categories <site> <id>`; sizes are from October 2026 and drift.
 
 ## amazon.eg browse nodes
@@ -82,12 +82,43 @@ Facts that shaped the crawler:
   RRP), so claims of 60%+ are rejected for new listings.
 - Cloud IPs get HTTP 403 from Akamai; only home/office connections can crawl noon.
 
+## jumia.com.eg category slugs
+
+Full analysis (access, traps, signals, sizes): [JUMIA.md](JUMIA.md). Ids are the URL slugs; roots for the
+`categories` command: `electronics`, `phones-tablets`, `computing`, `home-office`, `video-games`.
+
+| Group | Slugs |
+| --- | --- |
+| TVs | televisions |
+| Refrigerators | appliances-fridges-freezers, freezers (under Tools & Home Improvement › Appliances `home-improvement-appliances`, not under "Appliances") |
+| Air conditioners | air-conditioning |
+| Gaming consoles | playstation-5-consoles, playstation4-consoles, nintendo-switch-consoles + searches "playstation 5", "xbox series", "nintendo switch" (no Xbox Series node) |
+| Phones / Tablets | smartphones / tablets |
+| Laptops / Desktops / Monitors / PC components | laptops / desktop-computers / monitors / computer-components |
+| Headphones | electronics-headphone, mobile-phone-bluetooth-headsets (earbuds such as AirPods are filed there) |
+| Kitchen machines | air-fryers, deep-fryers, coffee-makers, espresso-machines, espresso-machine-coffeemaker-combos, blenders, mixers, food-processors, electric-pressure-cookers, slow-cooker, rice-cooker, small-appliances-microwave, ovens-toasters |
+| Kitchen appliances | the other children of kitchen-dinning-small-appliances, coffee-tea-espresso-appliances (kettles), coffee-machine-grinder-accessories, small-appliances-ironing-laundry, water-coolers-filters |
+| Cooking & dishwashers | cooking-appliances, ranges, wall-ovens, dishwashers |
+
+Facts that shaped the crawler:
+
+- Cloudflare refuses Chrome/Firefox TLS fingerprints and every datacenter IP; Safari's fingerprint passes
+  from home. Home workers only.
+- 40 products per page, at most 50 pages: 2,000 per query.
+- An empty price range or a page past the end redirects to the parent category (HTTP 200 with other
+  products); the adapter detects it from the served URL.
+- Categories hold products that are in none of their children (air conditioners: 135 of 1,274), so Jumia
+  is split by price only.
+- 88% of cards show a seller-set crossed-out price and 45% say "3 or fewer left": neither is evidence.
+
 ## Operational findings worth remembering
 
 - A push to `main` deploys through GitHub Actions about a minute later; running `make deploy` by hand at
   the same time makes the two overlap and the older commit can land last. Use one or the other.
 - A deploy restart used to hang up to 90 s when a browser tab held a connection (uvicorn waits for
   connections to close, then systemd kills it); graceful shutdown is now capped at 10 s.
+- Changing `worker.env` on the Mac (e.g. adding a shop to `DEALS_SITES`) needs `make install-mac-worker`:
+  the launchd agent copies the environment at install time, so a plain restart keeps the old sites.
 - Reboots are fine: workers log "coordinator unreachable" at INFO, reconnect by themselves, and leases
   expire so no job is lost (measured: 2 minutes of downtime, all three devices back within 10 s).
 - The 1 GB droplet runs the coordinator at about 65 MB and its worker at 50 MB; the UI's heaviest call is

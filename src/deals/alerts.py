@@ -17,7 +17,7 @@ from curl_cffi import requests
 from deals import db
 from deals.config import Config
 from deals.db import iso, parse_iso, utcnow
-from deals.pricing import Deal, Point, PriceStats, ProductView, compute_stats, evaluate
+from deals.pricing import LOW_STOCK_EVERYWHERE, Deal, Point, PriceStats, ProductView, compute_stats, evaluate
 
 log = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ KIND_TITLE = {
     "early_drop": "⏳ انخفاض مبكر في السعر",
     "new_product": "🆕 منتج جديد بخصم كبير",
 }
-SITE_NAME = {"amazon_eg": "أمازون مصر", "noon_eg": "نون مصر"}
+SITE_NAME = {"amazon_eg": "أمازون مصر", "noon_eg": "نون مصر", "jumia_eg": "جوميا مصر"}
 CONFIDENCE = {"high": "عالية", "medium": "متوسطة", "low": "منخفضة"}
 SIGNAL_TEXT = {
     "only_left": "متبقٍ {n} فقط",
@@ -180,7 +180,8 @@ def format_deal(p: sqlite3.Row, stats: PriceStats, deal: Deal, group: str = "", 
     # --- what to check before buying
     checks = []
     if p["stock_left"] is not None and p["stock_left"] <= 5:
-        checks.append(f"متبقٍ {p['stock_left']} فقط" + ("" if p["site"] != "amazon_eg" else " (أمازون يكتبها على نصف المنتجات، لا تستعجل بسببها)"))
+        checks.append(f"متبقٍ {p['stock_left']} فقط" + ("" if p["site"] not in LOW_STOCK_EVERYWHERE else
+                                                        f" ({SITE_NAME[p['site']]} يكتبها على نصف المنتجات تقريبًا، لا تستعجل بسببها)"))
     if p["seller"]:
         checks.append(f"البائع: {e(p['seller'])}" + (" (ليس الموقع نفسه: راجع تقييم البائع وسياسة الإرجاع)" if p["site"] == "noon_eg" and "noon" not in p["seller"].lower() else ""))
     if other_offer is not None:

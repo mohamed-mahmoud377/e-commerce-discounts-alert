@@ -14,8 +14,9 @@ owns one job.
 | `config.py` | 126 | Reading `config.toml` into `Config`, `AlertRules`, `Schedule`, `SiteSettings`, `Watch` | models |
 | `sites/amazon_eg.py` | 198 | Fetching and parsing amazon.eg listing pages; cookies from headless Chromium | models, base |
 | `sites/noon_eg.py` | 139 | Fetching and parsing noon's catalog JSON; per-seller keys | models |
+| `sites/jumia_eg.py` | 195 | Fetching Jumia category pages with Safari's TLS fingerprint (Cloudflare), reading the embedded `__STORE__` JSON, detecting redirects to the parent category | models, base |
 | `sites/base.py` | 35 | The `Site` interface every shop implements; money and count parsing | models |
-| `planner.py` | 93 | Splitting a root into slices under the shop's limit | models |
+| `planner.py` | 95 | Splitting a root into slices under the shop's limit (by price only for shops with `split_by_subcategory = False`) | models |
 | `db.py` | 349 | Schema and migrations; `record()` (upsert a product, append history on change); backups | models |
 | `scheduler.py` | 241 | The job queue: leases, intervals, blocks, failures, worker bookkeeping, events | db, planner |
 | `pricing.py` | 222 | Price statistics and the deal rules; pure functions, no database | config, models |
@@ -186,7 +187,7 @@ and `DEALS_DATA_DIR` (or the matching flags). It keeps no database; its only loc
 | Thread | Does |
 | --- | --- |
 | main | Starts the others, waits, handles Ctrl+C / SIGTERM by setting the stop event |
-| one per shop (`amazon_eg`, `noon_eg`) | `_loop`: lease, crawl or plan, pause, repeat. Each holds its own shop adapter and HTTP session |
+| one per shop (`amazon_eg`, `noon_eg`, `jumia_eg`) | `_loop`: lease, crawl or plan, pause, repeat. Each holds its own shop adapter and HTTP session |
 | `log-shipper` | Every 10 s posts up to 500 buffered log lines to `/api/logs`; keeps up to 1,000 while the server is unreachable |
 
 **Timeouts and retries.**
@@ -196,7 +197,7 @@ and `DEALS_DATA_DIR` (or the matching flags). It keeps no database; its only loc
 | Shop request timeout | 30 s |
 | Page retries on network errors | after 5, 20, 60 s, then the job is reported failed |
 | Coordinator calls | retried forever with backoff 2 s doubling to 60 s; stops only when shutting down. Logged as INFO for the first 60 s of an outage, WARNING after, plus "reachable again" |
-| Pause between pages and between jobs | random within the shop's `min_delay`..`max_delay` (Amazon 2-4 s, noon 1-2 s) |
+| Pause between pages and between jobs | random within the shop's `min_delay`..`max_delay` (Amazon 2-4 s, noon 1-2 s, Jumia 1.5-3 s) |
 | Nothing due | waits the `retry_after` the coordinator sends (5-60 s) |
 | Lease | 5 min, renewed by each page post |
 
@@ -252,7 +253,7 @@ commented template.
 | `[schedule] max_interval_factor` | 3.0 | Quiet slices slow down to group interval times this |
 | `[schedule] replan_days` | 7 | How often categories are re-split |
 | `[schedule] lease_minutes` | 5 | Lease length, renewed per page |
-| `[sites.SHOP] min_delay`, `max_delay` | 2.0, 4.0 | Seconds between requests per worker (config sets noon to 1-2) |
+| `[sites.SHOP] min_delay`, `max_delay` | 2.0, 4.0 | Seconds between requests per worker (config sets noon to 1-2, Jumia to 1.5-3) |
 | `[[watch]] name` | required | Group name used in the database (keep it stable) |
 | `[[watch]] label` | name | Display name in Arabic messages |
 | `[[watch]] interval_minutes` | 60 | Starting revisit interval for its slices |
@@ -260,7 +261,7 @@ commented template.
 | `[[watch]] require_words`, `exclude_words` | none | Title filters for new products (case-insensitive substrings): the title must contain one of `require_words` and none of `exclude_words`; a title containing "console" is not excluded (bundles) unless it also contains " for " (an accessory for a console). For noisy sources such as searches |
 | `[[watch]] min_price` | none | EGP floor for crawling and alerting |
 | `[[watch]] min_drop` | none | This group's own price-drop threshold |
-| `[[watch]] amazon_eg`, `noon_eg` | | One root or a list: `category:<id>` or `search:<words>`, optionally `\|price:<min>-<max>` |
+| `[[watch]] amazon_eg`, `noon_eg`, `jumia_eg` | | One root or a list: `category:<id>` or `search:<words>`, optionally `\|price:<min>-<max>` (Jumia ids are URL slugs, e.g. `televisions`) |
 
 Changing a watch's `min_price` or roots creates new plan jobs and deletes the old ones with their slices;
 product history is kept.
@@ -271,16 +272,22 @@ Every change follows the same loop: write a test that shows what you want, chang
 `make deploy`, restart the Mac worker if worker or site code changed, `make health`, then check the real
 data with `make sql` or `make devices`.
 
-**Add a shop** (for example Jumia):
+**Add a shop** (Jumia was added exactly this way on 26 October 2026; [JUMIA.md](JUMIA.md) shows the analysis
+to do first: access, URL scheme, page caps, empty-result behaviour, category tree, signals):
 
-1. Create `src/deals/sites/jumia_eg.py` with a class having `name`, `max_slice_total` (the most products the
+1. Create `src/deals/sites/<shop>.py` with a class having `name`, `max_slice_total` (the most products the
    shop lets you page through) and `fetch_page(slice, page) -> PageResult`. Return `total` when the shop
-   shows an exact count, `subcategories` for category slices, and raise `Blocked` on a captcha.
-2. Register it in `sites/__init__.py` (`SITES`).
-3. Save one real listing page as `tests/fixtures/jumia_category.html.gz` and add a parser test next to the
+   shows an exact count, `subcategories` for category slices, and raise `Blocked` on a captcha. Set
+   `split_by_subcategory = False` if a category's children don't add up to the category (check a few
+   counts), so the planner splits by price only. Make sure an empty slice comes back as an empty page and
+   not as some other listing the shop redirects to.
+2. Register it in `sites/__init__.py` (`SITES`); add its Arabic name to `alerts.SITE_NAME`, its roots to
+   `cli.cmd_categories`, and an option to the two shop selects in `webui.py`.
+3. Save one real listing page as `tests/fixtures/<shop>_category.html.gz` and add a parser test next to the
    others in `tests/test_parsers.py`.
-4. Add its roots to the `[[watch]]` groups and `[sites.jumia_eg]` delays in the config; add it to a worker's `DEALS_SITES`.
-5. `deals categories jumia_eg <id>` and `deals plan ...` help find and check category ids.
+4. Add its roots to the `[[watch]]` groups and `[sites.<shop>]` delays in the config (deploy the code
+   first: the old code rejects unknown keys); add it to a worker's `DEALS_SITES`.
+5. `deals categories <shop> <id>` and `deals plan ...` help find and check category ids.
 
 **Change or add a deal rule:** all rules live in `pricing.evaluate()`; statistics in `compute_stats()`. Add
 a field to `Deal` for any new fact, render it in `alerts.format_deal()`, and add a test in

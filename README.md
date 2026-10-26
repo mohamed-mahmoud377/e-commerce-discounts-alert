@@ -1,6 +1,6 @@
 # deals: e-commerce price tracker and real-discount alerts
 
-`deals` crawls whole categories on **amazon.eg** and **noon.com (Egypt)**, keeps the
+`deals` crawls whole categories on **amazon.eg**, **noon.com (Egypt)** and **jumia.com.eg**, keeps the
 price history of every product, and sends you a **Telegram** message when a price
 is genuinely low, judged against the product's own history rather than the
 "was" price a shop shows.
@@ -11,7 +11,7 @@ Each worker only takes jobs for the sites its internet connection can reach.
 
 - **New here? Start with [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)**: get alerts, run a worker, try it on one computer, or run your own server
 - **Running a worker on your computer for someone's server: [docs/RUN_A_WORKER.md](docs/RUN_A_WORKER.md)** (exact steps, expected outputs, what to do when something fails)
-- Category ids for both shops and what we learned about them: [docs/CATEGORIES.md](docs/CATEGORIES.md)
+- Category ids for every shop and what we learned about them: [docs/CATEGORIES.md](docs/CATEGORIES.md); Jumia in depth: [docs/JUMIA.md](docs/JUMIA.md)
 - **Every useful command in one place: [docs/COMMANDS.md](docs/COMMANDS.md)**
 - The complete guide (server, database, running it, every algorithm): [docs/GUIDE.md](docs/GUIDE.md)
 - Monitoring, health checks, devices, logs and the runbook: [docs/MONITORING.md](docs/MONITORING.md)
@@ -30,7 +30,8 @@ Each worker only takes jobs for the sites its internet connection can reach.
       ┌────────────┼─────────────────────┐
   your Mac (launchd)            friend's PC (optional)
   deals worker                  deals worker
-  noon_eg + amazon_eg           noon_eg, amazon_eg
+  noon_eg + amazon_eg           noon_eg, amazon_eg,
+  + jumia_eg                    jumia_eg
 ```
 
 ## What it tracks
@@ -38,7 +39,7 @@ Each worker only takes jobs for the sites its internet connection can reach.
 The groups live in `config.toml` (see [config.example.toml](config.example.toml)):
 TVs, refrigerators, air conditioners, gaming consoles, phones, tablets, laptops, desktops, monitors, PC components,
 headphones, kitchen machines (fryers, coffee machines, blenders, microwaves), other kitchen
-appliances, and cooking & dishwashers, each on both sites, with a
+appliances, and cooking & dishwashers, each on all three sites, with a
 minimum price so cables and cases don't flood the crawl.
 
 ## Quick start (everything on your Mac)
@@ -145,7 +146,7 @@ Prices are stored in piastres (divide by 100 for EGP); times are UTC.
    and restart the coordinator.
 2. On the other machine: clone the repo, create the venv as in Quick start, then:
    ```bash
-   DEALS_COORDINATOR=http://207.154.206.127:8787 DEALS_TOKEN=... DEALS_SITES=noon_eg,amazon_eg \
+   DEALS_COORDINATOR=http://207.154.206.127:8787 DEALS_TOKEN=... DEALS_SITES=noon_eg,amazon_eg,jumia_eg \
      .venv/bin/deals worker
    ```
 That's all. The coordinator never gives two workers on the same internet connection the
@@ -158,6 +159,7 @@ home don't.
 .venv/bin/deals categories amazon_eg                    # known roots
 .venv/bin/deals categories amazon_eg 18018102031        # children of Electronics
 .venv/bin/deals categories noon_eg electronics-and-mobiles
+.venv/bin/deals categories jumia_eg electronic-television-video
 .venv/bin/deals plan noon_eg "category:electronics-and-mobiles/television-and-video/televisions|price:3000-"
 .venv/bin/deals crawl amazon_eg "category:21832982031|price:3000-" --pages 2   # check the parser
 ```
@@ -166,7 +168,7 @@ home don't.
 
 ```
 src/deals/
-  sites/amazon_eg.py, noon_eg.py   fetch + parse one listing page per site
+  sites/amazon_eg.py, noon_eg.py, jumia_eg.py   fetch + parse one listing page per site
   planner.py      split a category into slices each site lets us page through completely
   scheduler.py    job queue: leases, adaptive revisit intervals, per-IP block cooldowns
   coordinator.py  HTTP API for workers + watchdog (stalls, offline workers, backups)

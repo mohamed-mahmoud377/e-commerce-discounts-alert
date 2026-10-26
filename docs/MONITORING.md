@@ -36,7 +36,7 @@ your Mac, which checks the outside of the system, then `deals health` on the ser
 | no errors in server logs (24h) | No ERROR or Traceback line in 24 hours | Warning only; read them with `make logs` or `make events LEVEL=error` |
 | server runs the same code as this checkout | File hashes match | Warning: run `make deploy` (or you have local edits not yet shipped) |
 | git: everything committed | No uncommitted changes | Warning only |
-| worker running (launchd) | The Mac's agent is running | `make install-mac-worker`; without it noon has no worker |
+| worker running (launchd) | The Mac's agent is running | `make install-mac-worker`; without it noon and Jumia have no worker |
 | no errors in its recent log | Last 2,000 lines clean | `make worker-log` |
 
 **Inside checks (on the server):**
@@ -132,6 +132,8 @@ Lines worth reacting to:
 | `page N attempt M failed ... retrying` | A network error on one page; retried after 5, 20, 60 s | None unless it keeps happening |
 | `job N failed` with a traceback | Something unexpected, often a parser error | Read the traceback; save the page as a test fixture and fix |
 | `unknown category` | A typo in a noon category path in the config | Fix the path in `/etc/deals/config.toml` |
+| `jumia_eg: no such page ... (HTTP 404)` / `... redirected to ...` | A wrong, aliased or renamed Jumia slug | Put the canonical slug (from the category sidebar, `deals categories jumia_eg <parent>`) in `/etc/deals/config.toml` |
+| `blocked: jumia_eg: Cloudflare challenge` | Cloudflare refused this connection (always from cloud IPs) | Pauses by itself; if a home worker is blocked every time, see [JUMIA.md](JUMIA.md) troubleshooting |
 | `lease lost` | The device was too slow (over 5 min between pages) and the job went to another device | Fine occasionally |
 
 ## Telegram warnings

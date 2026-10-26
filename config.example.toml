@@ -49,13 +49,19 @@ max_delay = 4.0
 min_delay = 1.0
 max_delay = 2.0
 
+[sites.jumia_eg]  # Cloudflare in front; home connections only
+min_delay = 1.5
+max_delay = 3.0
+
 # ---------------------------------------------------------------------------
 # What to track. Each [[watch]] is a product group with one root per site:
 #   amazon_eg = "category:<browse node id>"
 #   noon_eg   = "category:<category path>"
+#   jumia_eg  = "category:<slug>"  (the URL path, e.g. televisions; see docs/JUMIA.md)
 # (or "search:<keywords>"; a list of roots also works). Find ids with:
 #   deals categories amazon_eg 18018102031
 #   deals categories noon_eg electronics-and-mobiles
+#   deals categories jumia_eg electronics
 # label is the name shown in alerts (optional, defaults to name).
 # min_price (EGP) skips cheap accessories/junk both when crawling and alerting.
 # interval_minutes is the starting revisit interval; it adapts per slice.
@@ -69,6 +75,7 @@ interval_minutes = 20
 min_price = 3000
 amazon_eg = "category:21832982031"
 noon_eg = "category:electronics-and-mobiles/television-and-video/televisions"
+jumia_eg = "category:televisions"
 
 [[watch]]
 name = "Refrigerators"
@@ -77,6 +84,10 @@ interval_minutes = 20
 min_price = 5000
 amazon_eg = "category:21863822031"
 noon_eg = "category:home-and-kitchen/home-appliances-31235/large-appliances/refrigerators-and-freezers"
+jumia_eg = [
+    "category:appliances-fridges-freezers",
+    "category:freezers",
+]
 
 [[watch]]
 name = "Air conditioners"
@@ -85,6 +96,7 @@ interval_minutes = 10   # top priority: stays between 10 and 30 min
 min_price = 8000
 amazon_eg = "category:21863915031"
 noon_eg = "category:home-and-kitchen/home-appliances-31235/large-appliances/heating-cooling-and-air-quality/air-conditioners"
+jumia_eg = "category:air-conditioning"
 
 [[watch]]
 name = "Gaming consoles"
@@ -103,6 +115,15 @@ amazon_eg = [
     "search:xbox series s console",
 ]
 noon_eg = "category:electronics-and-mobiles/video-games-10181/gaming-console"
+# Jumia: console-only categories plus searches (consoles are also filed under accessories)
+jumia_eg = [
+    "category:playstation-5-consoles",
+    "category:playstation4-consoles",
+    "category:nintendo-switch-consoles",
+    "search:playstation 5",
+    "search:xbox series",
+    "search:nintendo switch",
+]
 # Searches and the console nodes still return pricey accessories (racing wheels, headsets, Pro
 # controllers), so only titles that look like a console are recorded; "console" in the title always wins.
 require_words = ["console", "playstation 5", "ps5", "playstation 4", "ps4", "xbox series", "xbox one",
@@ -115,7 +136,7 @@ exclude_words = ["controller", "gamepad", "joystick", "headset", "wheel", "pedal
                  "amplifier", "dac", "fight stick", "fightstick", "remote control", "for ps5", "for ps4",
                  "for xbox", "for nintendo", "for switch", "for steam deck", "for playstation", "pour ps",
                  "dualsense", "joy-con", "joy con", "pro controller", "portable ssd", "storage expansion",
-                 "expansion card", "earbuds", "earphones", "speaker"]
+                 "expansion card", "earbuds", "earphones", "speaker", "disc drive"]
 
 [[watch]]
 name = "Phones"
@@ -124,6 +145,7 @@ interval_minutes = 10   # top priority (iPhone, Samsung...)
 min_price = 2500
 amazon_eg = "category:21832883031"
 noon_eg = "category:electronics-and-mobiles/mobiles-and-accessories/mobiles-20905/smartphones"
+jumia_eg = "category:smartphones"
 
 [[watch]]
 name = "Tablets"
@@ -132,6 +154,7 @@ interval_minutes = 10   # top priority
 min_price = 5000
 amazon_eg = "category:21832915031"
 noon_eg = "category:electronics-and-mobiles/tablets-and-accessories/tablets"
+jumia_eg = "category:tablets"
 
 [[watch]]
 name = "Laptops"
@@ -140,6 +163,7 @@ interval_minutes = 20
 min_price = 8000
 amazon_eg = "category:21832907031"
 noon_eg = "category:electronics-and-mobiles/computers-and-accessories/computers-new/laptops"
+jumia_eg = "category:laptops"
 
 [[watch]]
 name = "Desktops"
@@ -148,6 +172,7 @@ interval_minutes = 60
 min_price = 8000
 amazon_eg = "category:21832914031"
 noon_eg = "category:electronics-and-mobiles/computers-and-accessories/computers-new/desktops"
+jumia_eg = "category:desktop-computers"
 
 [[watch]]
 name = "Monitors"
@@ -156,6 +181,7 @@ interval_minutes = 20
 min_price = 2500
 amazon_eg = "category:21832909031"
 noon_eg = "category:electronics-and-mobiles/computers-and-accessories/computer-accessories/monitor-accessories/monitors-17248"
+jumia_eg = "category:monitors"
 
 [[watch]]
 name = "PC components"
@@ -164,6 +190,7 @@ interval_minutes = 60
 min_price = 1500
 amazon_eg = "category:21832913031"
 noon_eg = "category:electronics-and-mobiles/computers-and-accessories/computer-accessories/computer-components-15997"
+jumia_eg = "category:computer-components"
 
 [[watch]]
 name = "Headphones"
@@ -172,6 +199,11 @@ interval_minutes = 60
 min_price = 800
 amazon_eg = "category:21832887031"
 noon_eg = "category:electronics-and-mobiles/portable-audio-and-video/headphones-24056"
+# Jumia files AirPods-style earbuds under phone accessories (Bluetooth & corded headsets)
+jumia_eg = [
+    "category:electronics-headphone",
+    "category:mobile-phone-bluetooth-headsets",
+]
 
 [[watch]]
 name = "Kitchen machines"
@@ -193,6 +225,21 @@ noon_eg = [
     "category:home-and-kitchen/home-appliances-31235/small-appliances/food-processors",
     "category:home-and-kitchen/home-appliances-31235/small-appliances/ovens-and-toasters",
     "category:home-and-kitchen/home-appliances-31235/small-appliances/electric-cookers",
+]
+jumia_eg = [
+    "category:air-fryers",
+    "category:deep-fryers",
+    "category:coffee-makers",
+    "category:espresso-machines",
+    "category:espresso-machine-coffeemaker-combos",
+    "category:blenders",
+    "category:mixers",
+    "category:food-processors",
+    "category:electric-pressure-cookers",
+    "category:slow-cooker",
+    "category:rice-cooker",
+    "category:small-appliances-microwave",
+    "category:ovens-toasters",
 ]
 
 # The rest of the small appliances (kettles, irons, toasters, grinders...): low priority.
@@ -236,6 +283,25 @@ noon_eg = [
     "category:home-and-kitchen/home-appliances-31235/small-appliances/electric-skillets",
     "category:home-and-kitchen/home-appliances-31235/small-appliances/sewing-machines",
 ]
+jumia_eg = [
+    "category:beverage-refrigerators",
+    "category:bread-machines",
+    "category:contact-grills",
+    "category:countertip-burners",
+    "category:electric-griddles",
+    "category:electric-skillets",
+    "category:electric-woks",
+    "category:icecream-machines",
+    "category:juicers",
+    "category:small-appliance-sets",
+    "category:specialty-appliances",
+    "category:cooking-steamer",
+    "category:waffle-irons",
+    "category:coffee-tea-espresso-appliances",
+    "category:coffee-machine-grinder-accessories",
+    "category:small-appliances-ironing-laundry",
+    "category:water-coolers-filters",
+]
 
 [[watch]]
 name = "Cooking & dishwashers"
@@ -247,4 +313,10 @@ noon_eg = [
     "category:home-and-kitchen/home-appliances-31235/large-appliances/ranges",
     "category:home-and-kitchen/home-appliances-31235/large-appliances/cooktops",
     "category:home-and-kitchen/home-appliances-31235/large-appliances/dishwashers",
+]
+jumia_eg = [
+    "category:cooking-appliances",
+    "category:ranges",
+    "category:wall-ovens",
+    "category:dishwashers",
 ]
