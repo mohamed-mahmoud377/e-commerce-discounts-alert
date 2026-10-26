@@ -149,9 +149,13 @@ th.sortable{cursor:pointer;user-select:none} th.sortable:hover{text-decoration:u
 .kv{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px;margin:10px 0}
 .kv div{border:1px solid var(--line);border-radius:8px;padding:8px 10px} .kv .v{font-size:18px;font-weight:600}
 .up{color:var(--bad)} .down{color:var(--ok)} .crumb{margin-bottom:10px}
+#bar{position:fixed;top:0;left:0;height:3px;width:0;background:var(--info);transition:width .3s,opacity .4s;opacity:0;z-index:9}
+body.loading #bar{opacity:1;width:70%} body.loading main{opacity:.55;transition:opacity .2s} body.loading main{pointer-events:none}
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--info);border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
 </style></head><body>
 <header><b>deals</b><nav id='tabs'></nav><span class='grow'></span><span id='stamp' class='muted'></span><a href='/ui/logout'>log out</a></header>
-<main id='view'>loading…</main>
+<div id='bar'></div><main id='view'><span class='spinner'></span>loading…</main>
 <script>
 const tabs = ['Overview', 'Devices', 'Logs', 'Alerts', 'Jobs', 'Products', 'Queries'];
 let tab = (location.hash.slice(1).split(':')[0]) || 'Overview', timer = null, lastLog = 0;
@@ -161,11 +165,20 @@ const egp = p => p == null ? '-' : (p / 100).toLocaleString('en', {maximumFracti
 const ago = t => { if (!t) return 'never'; const s = (Date.now() - Date.parse(t)) / 1000;
   return s < 120 ? Math.round(s) + 's ago' : s < 7200 ? Math.round(s / 60) + ' min ago' : (s / 3600).toFixed(1) + ' h ago'; };
 const badge = s => `<span class='b ${esc(s)}'>${esc(s)}</span>`;
+let inflight = 0;
+function busy(on) {
+  inflight += on ? 1 : -1;
+  document.body.classList.toggle('loading', inflight > 0);
+  if (inflight === 0) { const b = $('#bar'); b.style.width = '100%'; setTimeout(() => { if (!inflight) b.style.width = '0'; }, 400); }
+}
 async function api(path) {
-  const r = await fetch(path, {credentials: 'same-origin'});
-  if (r.status === 401) { location.href = '/ui/login'; throw new Error('logged out'); }
-  if (!r.ok) throw new Error(path + ': HTTP ' + r.status);
-  return r.json();
+  busy(true);
+  try {
+    const r = await fetch(path, {credentials: 'same-origin'});
+    if (r.status === 401) { location.href = '/ui/login'; throw new Error('logged out'); }
+    if (!r.ok) throw new Error(path + ': HTTP ' + r.status);
+    return await r.json();
+  } finally { busy(false); }
 }
 function nav() {
   $('#tabs').innerHTML = tabs.map(t => `<button class='${t === tab ? 'on' : ''}' onclick="go('${t}')">${t}</button>`).join('');
@@ -288,7 +301,7 @@ async function pollLogs() {
   lastLog = d.events.reduce((m, e) => Math.max(m, e.id), lastLog);
   $('#logrows').insertAdjacentHTML('afterbegin', d.events.slice().reverse().map(logRow).join(''));
 }
-function openProduct(id) { tab = 'Products'; location.hash = 'Products:' + id; clearInterval(timer); nav(); render(); }
+function openProduct(id) { tab = 'Products'; location.hash = 'Products:' + id; clearInterval(timer); nav(); $('#view').innerHTML = "<span class='spinner'></span>loading product…"; render(); }
 async function productPage(id) {
   const d = await api('/api/products/' + id), p = d.product, s = d.stats;
   const drop = s.drop_vs_typical, dropTxt = drop == null ? '' : `<span class='${drop > 0 ? 'down' : 'up'}'>${drop > 0 ? '−' : '+'}${Math.abs(Math.round(drop * 100))}% vs typical</span>`;
@@ -368,9 +381,12 @@ document.addEventListener('click', ev => {
     const c = nx != null && ny != null && /\d/.test(x) && /\d/.test(y) ? nx - ny : x.localeCompare(y); return dir === 'asc' ? c : -c; });
   const parent = rows[0].parentElement; rows.forEach(r => parent.appendChild(r));
 });
+let renderSeq = 0;
 async function render() {
-  try { $('#view').innerHTML = await views[tab](); if (['Overview', 'Devices'].includes(tab)) every(15000, render); }
-  catch (e) { $('#view').innerHTML = `<p style='color:var(--bad)'>${esc(e.message)}</p>`; }
+  const seq = ++renderSeq;  // a slower, older render must not overwrite a newer one
+  try { const html = await views[tab](); if (seq !== renderSeq) return;
+    $('#view').innerHTML = html; if (['Overview', 'Devices'].includes(tab)) every(15000, render); }
+  catch (e) { if (seq === renderSeq) $('#view').innerHTML = `<p style='color:var(--bad)'>${esc(e.message)}</p>`; }
 }
 nav(); render();
 </script></body></html>""".replace("__CSS__", CSS)
