@@ -15,7 +15,7 @@ import shutil
 import sqlite3
 import threading
 from pathlib import Path
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, closing
 from datetime import datetime, timedelta
 from importlib.metadata import version as pkg_version
 
@@ -98,6 +98,17 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
     # One connection, used only from the event loop (all endpoints are async),
     # so requests are applied one at a time. Background threads open their own.
     conn = db.connect(cfg.db_path)
+
+    def read_conn() -> sqlite3.Connection:
+        """A private read-only connection for a viewer request.
+
+        Viewer endpoints are plain `def`, so FastAPI runs them in a worker thread; with
+        their own connection they never block the event loop (and the workers' page
+        uploads) however slow a report is. WAL readers don't block the writer either.
+        """
+        c = sqlite3.connect(f"file:{cfg.db_path}?mode=ro", uri=True, timeout=30)
+        c.row_factory = sqlite3.Row
+        return c
     scheduler.sync_watches(conn, cfg, utcnow())
     bot.ensure_admin(conn, cfg, utcnow())
     stop = threading.Event()
@@ -278,24 +289,27 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
             scheduler.add_events(conn, worker, [(e.at, e.level.upper(), e.message) for e in body.events[:500]])
         return {"ok": True}
 
-    def overview(now: datetime) -> dict:
+    def overview(rc: sqlite3.Connection, now: datetime) -> dict:
         problems = [{"name": c.name, "level": c.level, "detail": c.detail}
-                    for c in health.run_checks(conn, cfg, now) if c.level != "ok"]
-        return {"generated_at": iso(now)[:19], "devices": monitor.devices(conn, now),
-                "sites": monitor.sites(conn, now), "problems": problems}
+                    for c in health.run_checks(rc, cfg, now) if c.level != "ok"]
+        return {"generated_at": iso(now)[:19], "devices": monitor.devices(rc, now),
+                "sites": monitor.sites(rc, now), "problems": problems}
 
     @app.get("/api/devices", dependencies=[Depends(viewer)])
-    async def devices_api():
-        return overview(utcnow())
+    def devices_api():
+        with closing(read_conn()) as rc:
+            return overview(rc, utcnow())
 
     @app.get("/api/events", dependencies=[Depends(viewer)])
-    async def events_api(source: str | None = None, level: str | None = None, after_id: int = 0, limit: int = 200):
-        return {"events": monitor.events(conn, source=source, level=level, after_id=after_id, limit=min(limit, 2000))}
+    def events_api(source: str | None = None, level: str | None = None, after_id: int = 0, limit: int = 200):
+        with closing(read_conn()) as rc:
+            return {"events": monitor.events(rc, source=source, level=level, after_id=after_id, limit=min(limit, 2000))}
 
     @app.get("/dashboard", response_class=HTMLResponse, dependencies=[Depends(viewer)])
-    async def dashboard(request: Request, source: str | None = None, level: str | None = None):
-        logs = monitor.events(conn, source=source, level=level, limit=300)
-        return monitor.render_page(overview(utcnow()), logs, source, request.query_params.get("token"))
+    def dashboard(request: Request, source: str | None = None, level: str | None = None):
+        with closing(read_conn()) as rc:
+            logs = monitor.events(rc, source=source, level=level, limit=300)
+            return monitor.render_page(overview(rc, utcnow()), logs, source, request.query_params.get("token"))
 
     # --- web UI (read-only) --------------------------------------------------------
     revision_file = Path(__file__).resolve().parents[2] / "REVISION"
@@ -338,37 +352,43 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
         return response
 
     @app.get("/api/overview", dependencies=[Depends(viewer)])
-    async def overview_api():
+    def overview_api():
         revision = revision_file.read_text().split(" deployed")[0] if revision_file.exists() else ""
-        return webui.overview(conn, cfg, utcnow(), revision)
+        with closing(read_conn()) as rc:
+            return webui.overview(rc, cfg, utcnow(), revision)
 
     @app.get("/api/alerts", dependencies=[Depends(viewer)])
-    async def alerts_api(days: float = 1, kind: str | None = None, limit: int = 300):
-        return {"alerts": webui.alerts(conn, utcnow(), days, kind, min(limit, 2000))}
+    def alerts_api(days: float = 1, kind: str | None = None, limit: int = 300):
+        with closing(read_conn()) as rc:
+            return {"alerts": webui.alerts(rc, utcnow(), days, kind, min(limit, 2000))}
 
     @app.get("/api/jobs", dependencies=[Depends(viewer)])
-    async def jobs_api(limit: int = 400):
-        return {"jobs": webui.jobs(conn, utcnow(), min(limit, 2000))}
+    def jobs_api(limit: int = 400):
+        with closing(read_conn()) as rc:
+            return {"jobs": webui.jobs(rc, utcnow(), min(limit, 2000))}
 
     @app.get("/api/products", dependencies=[Depends(viewer)])
-    async def products_api(q: str = "", site: str | None = None, limit: int = 100, grp: str | None = None,
-                           sort: str = "recent", in_stock: int = 0):
-        return {"products": webui.products(conn, q, site or None, min(limit, 500), grp or None, sort, bool(in_stock)),
-                "groups": webui.groups(conn)}
+    def products_api(q: str = "", site: str | None = None, limit: int = 100, grp: str | None = None,
+                     sort: str = "recent", in_stock: int = 0):
+        with closing(read_conn()) as rc:
+            return {"products": webui.products(rc, q, site or None, min(limit, 500), grp or None, sort, bool(in_stock)),
+                    "groups": webui.groups(rc)}
 
     @app.get("/api/queries", dependencies=[Depends(viewer)])
-    async def queries_api():
+    def queries_api():
         return {"queries": webui.query_list()}
 
     @app.get("/api/queries/{name}", dependencies=[Depends(viewer)])
-    async def query_api(name: str, hours: float = 24):
+    def query_api(name: str, hours: float = 24):
         if name not in webui.QUERIES:
             raise HTTPException(404, "no such query")
-        return webui.run_query(conn, name, utcnow(), max(1.0, min(hours, 24 * 90)))
+        with closing(read_conn()) as rc:
+            return webui.run_query(rc, name, utcnow(), max(1.0, min(hours, 24 * 90)))
 
     @app.get("/api/products/{product_id}", dependencies=[Depends(viewer)])
-    async def product_api(product_id: int):
-        found = webui.product(conn, product_id, utcnow())
+    def product_api(product_id: int):
+        with closing(read_conn()) as rc:
+            found = webui.product(rc, product_id, utcnow())
         if found is None:
             raise HTTPException(404, "no such product")
         return found

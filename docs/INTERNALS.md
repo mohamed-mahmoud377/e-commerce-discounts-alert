@@ -100,8 +100,11 @@ every function on the way. Reading the code in this order is the fastest way to 
 ## The database in detail
 
 One SQLite file in WAL mode (readers never block the writer), `synchronous=NORMAL`, foreign keys on, a
-30-second busy timeout. Only the coordinator writes; its request handlers share one connection on the event
-loop, and each background thread (alert sender, watchdog, bot, event writer) opens its own.
+30-second busy timeout. Only the coordinator writes; the worker-facing handlers (lease, page, plan...) share one
+connection on the event loop, and each background thread (alert sender, watchdog, bot, event writer) opens its
+own. The read-only viewer endpoints (web UI, `/api/devices`, `/api/events`, saved queries) are plain `def`
+handlers: FastAPI runs them in a thread pool and each opens a private `mode=ro` connection, so a slow report
+never delays the workers' uploads (WAL readers don't block the writer).
 
 **Migrations.** `db.MIGRATIONS` is an append-only list of SQL scripts; `PRAGMA user_version` stores how
 many have run, and `db.connect()` runs the missing ones in a transaction on start.
