@@ -128,3 +128,23 @@ def test_every_product_sort_holds_across_pages(client):
     titles = [p["title"] for p in client.get("/api/products?limit=500&sort=title_desc").json()["products"]]
     assert titles == sorted(titles, key=str.lower, reverse=True)
     assert client.get("/api/products?limit=5&sort=nonsense").status_code == 200
+
+
+def test_saved_queries_page_and_sort_on_the_server(client):
+    client.post("/ui/login", data={"token": "admin-secret"}, follow_redirects=False)
+    conn = client.app.state.conn
+    with conn:
+        for i in range(230):
+            db.record(conn, Listing("noon_eg", f"Q{i}@s", f"Gadget {i:03d}", f"https://x/Q{i}", 100_000 + i * 1000, None, "EGP", True),
+                      grp="TVs", now=utcnow())
+    first = client.get("/api/queries/new_products?hours=24&limit=100&offset=0").json()
+    assert first["total"] == 231 and len(first["rows"]) == 100 and first["sort"] is None
+    pages = [client.get(f"/api/queries/new_products?hours=24&limit=100&offset={o}&sort=now&desc=0").json() for o in (0, 100, 200)]
+    prices = [r[pages[0]["columns"].index("now")] for p in pages for r in p["rows"]]
+    assert len(prices) == 231 and prices == sorted(prices, key=lambda v: (v is None, v))  # ascending across pages
+    titles = [r[pages[0]["columns"].index("title")] for p in pages for r in p["rows"]]
+    assert len(set(titles)) == 231  # no gaps, no repeats
+    d = client.get("/api/queries/new_products?hours=24&limit=5&sort=title&desc=1").json()
+    assert d["sort"] == "title" and d["desc"] is True and d["rows"][0][d["columns"].index("title")] == "Samsung 55 inch TV"
+    assert client.get("/api/queries/new_products?hours=24&sort=drop%20table").json()["sort"] is None  # unknown column ignored
+    assert client.get("/api/queries/new_products?hours=24&limit=50&offset=5000").json()["rows"] == []

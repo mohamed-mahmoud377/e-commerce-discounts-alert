@@ -202,7 +202,7 @@ async function api(path) {
 function nav() {
   $('#tabs').innerHTML = tabs.map(t => `<button class='${t === tab ? 'on' : ''}' onclick="go('${t}')">${t}</button>`).join('');
 }
-function go(t) { tab = t; location.hash = t; lastLog = 0; clearInterval(timer); nav(); render(); }
+function go(t) { tab = t; location.hash = t; lastLog = 0; feed = null; clearInterval(timer); nav(); render(); }
 // (the Queries tab keeps its chosen query in the hash as Queries:<name>)
 function every(ms, fn) { clearInterval(timer); timer = setInterval(fn, ms); }
 
@@ -268,7 +268,8 @@ const views = {
     const q = f('q'), site = f('site'), grp = f('grp'), sort = f('sort') || 'recent', stock = $('#stock')?.checked ? 1 : 0;
     const query = `q=${encodeURIComponent(q)}&site=${site}&grp=${encodeURIComponent(grp)}&sort=${sort}&in_stock=${stock}`;
     const d = await api(`/api/products?limit=${PAGE}&offset=0&` + query);
-    productFeed = {query, next: d.products.length, total: d.total, busy: false};
+    feed = {url: o => `/api/products?limit=${PAGE}&offset=${o}&` + query, row: productRow, rows: '#prows', count: '#pcount', more: '#more',
+            next: d.products.length, total: d.total, busy: false};
     setTimeout(watchScroll, 0);
     return `<div class='row'><input id='q' placeholder='search titles, e.g. samsung 55' value='${esc(q)}' onkeydown="if(event.key==='Enter')render()" size='30'>
       <select id='site' onchange='render()'><option value=''>both shops</option><option ${site === 'amazon_eg' ? 'selected' : ''}>amazon_eg</option><option ${site === 'noon_eg' ? 'selected' : ''}>noon_eg</option></select>
@@ -284,26 +285,33 @@ const views = {
     const list = (await api('/api/queries')).queries;
     const name = $('#qname')?.value ?? (location.hash.split(':')[1] || list[0].name), hours = $('#hours')?.value ?? '24';
     const grp = $('#qgrp')?.value ?? '', site = $('#qsite')?.value ?? '';
+    if (qsort.name !== name) qsort = {name, col: null, desc: false};  // a new report starts in its own order
     location.hash = 'Queries:' + name;
-    const [d, groups] = await Promise.all([api(`/api/queries/${name}?hours=${hours}&grp=${encodeURIComponent(grp)}&site=${site}`), api('/api/products?limit=0').then(r => r.groups)]);
+    const query = `hours=${hours}&grp=${encodeURIComponent(grp)}&site=${site}` + (qsort.col ? `&sort=${encodeURIComponent(qsort.col)}&desc=${qsort.desc ? 1 : 0}` : '');
+    const [d, groups] = await Promise.all([api(`/api/queries/${name}?limit=${PAGE}&offset=0&` + query), api('/api/products?limit=0').then(r => r.groups)]);
     const money = c => /^(was|now|price|cheapest|dearest|lowest|highest|crossed_out|previous_low|highest_seen|alert_price|price_now|a|b)$/.test(c);
     const hide = new Set(['url', 'seller', 'product_id']);
     const cols = d.columns.filter(c => !hide.has(c)), iu = d.columns.indexOf('url'), ip = d.columns.indexOf('product_id'), is = d.columns.indexOf('seller');
     const cell = (v, c, row) => c === 'title' && (iu >= 0 || ip >= 0) ? (ip >= 0 && row[ip] ? `<a href='#Products:${row[ip]}' onclick='openProduct(${row[ip]});return false'>${esc(v)}</a>` : `<a href='${esc(row[iu])}' target='_blank'>${esc(v)}</a>`)
         + (iu >= 0 && row[iu] && ip >= 0 ? ` <a href='${esc(row[iu])}' target='_blank' class='muted'>↗</a>` : '') + (is >= 0 && row[is] ? ` <span class='muted'>· ${esc(row[is])}</span>` : '')
       : money(c) ? egp(v) : typeof v === 'string' && /^\\d{4}-\\d\\d-\\d\\dT/.test(v) ? esc(v.slice(5, 16).replace('T', ' ')) : esc(v);
+    const qrow = r => `<tr>${d.columns.map((c, i) => hide.has(c) ? '' : `<td>${cell(r[i], c, r)}</td>`).join('')}</tr>`;
+    feed = {url: o => `/api/queries/${name}?limit=${PAGE}&offset=${o}&` + query, row: qrow, rows: '#qrows', count: '#qcount', more: '#qmore',
+            next: d.rows.length, total: d.total, busy: false};
+    setTimeout(watchScroll, 0);
     return `<div class='row'><select id='qname' onchange='render()'>${list.map(q => `<option value='${q.name}' ${q.name === name ? 'selected' : ''}>${esc(q.title)}</option>`).join('')}</select>
       ${d.uses_window ? `last <select id='hours' onchange='render()'>${[['6', '6 h'], ['24', '24 h'], ['72', '3 days'], ['168', '7 days'], ['720', '30 days']].map(([v, l]) => `<option value='${v}' ${v === hours ? 'selected' : ''}>${l}</option>`).join('')}</select>` : ''}
       <select id='qgrp' onchange='render()' ${d.filters.grp ? '' : 'disabled'}><option value=''>all groups</option>${groups.map(g => `<option ${g === grp ? 'selected' : ''}>${esc(g)}</option>`).join('')}</select>
       <select id='qsite' onchange='render()' ${d.filters.site ? '' : 'disabled'}><option value=''>both shops</option><option ${site === 'amazon_eg' ? 'selected' : ''}>amazon_eg</option><option ${site === 'noon_eg' ? 'selected' : ''}>noon_eg</option></select>
-      <span class='muted'>${d.rows.length} rows${d.filters.grp || d.filters.site ? '' : ' · this report has no group/shop columns'}</span></div>
+      <span class='muted'><span id='qcount'>${d.rows.length.toLocaleString()} of ${d.total.toLocaleString()}</span>${d.filters.grp || d.filters.site ? '' : ' · this report has no group/shop columns'}${qsort.col ? '' : ' · in its own order; click a column to sort all rows'}</span></div>
       <p class='muted'>${esc(d.about)}</p>
-      <table><tr>${cols.map(c => `<th>${esc(c.replace(/_/g, ' '))}</th>`).join('')}</tr>
-      ${d.rows.map(r => `<tr>${d.columns.map((c, i) => hide.has(c) ? '' : `<td>${cell(r[i], c, r)}</td>`).join('')}</tr>`).join('')}</table>`;
+      <table><thead><tr>${cols.map(c => `<th class='sortable' data-qcol='${esc(c)}' title='sort all rows by ${esc(c.replace(/_/g, ' '))}'>${esc(c.replace(/_/g, ' '))}${qsort.col === c ? (qsort.desc ? " <span class='dir'>▼</span>" : " <span class='dir'>▲</span>") : ''}</th>`).join('')}</tr></thead>
+      <tbody id='qrows'>${d.rows.map(qrow).join('')}</tbody></table>
+      <div id='qmore' class='muted' style='padding:10px 0 30px'>${d.rows.length < d.total ? "<span class='spinner'></span>loading more as you scroll…" : d.total ? 'end of list' : 'nothing matches'}</div>`;
   },
 };
 const PAGE = 100;
-let productFeed = null;
+let feed = null, qsort = {name: null, col: null, desc: false};
 const PRODUCT_COLS = [['Product', 'title', 'title_desc'], ['Shop', 'site', 'site_desc'], ['Group', 'grp', 'grp_desc'], ['Price', 'cheap', 'dear'],
   ['Crossed-out', 'crossed', 'crossed_desc'], ['Stock', 'stock', 'stock_desc'], ['Rating', 'rating_low', 'rating'], ['Last change', 'oldest', 'recent']];
 const PRODUCT_SORT_NAMES = [['recent', 'latest change'], ['oldest', 'oldest change'], ['cheap', 'cheapest'], ['dear', 'dearest'], ['rating', 'best rated'],
@@ -312,21 +320,22 @@ const PRODUCT_SORT_NAMES = [['recent', 'latest change'], ['oldest', 'oldest chan
 const productRow = p => `<tr class='clickable' onclick='openProduct(${p.id})'><td>${esc(p.title)}</td><td>${esc(p.site)}${p.seller ? ' · ' + esc(p.seller) : ''}</td>
   <td>${esc(p.grp)}</td><td>${egp(p.price)}</td><td>${egp(p.list_price)}</td><td>${p.in_stock ? (p.stock_left ? 'only ' + p.stock_left : 'yes') : 'no'}</td>
   <td>${p.rating ? p.rating.toFixed(1) + ' (' + (p.reviews || 0).toLocaleString() + ')' : ''}</td><td>${ago(p.last_change_at)}</td></tr>`;
-// Endless scrolling for the product list: when the marker under the table comes into view,
-// fetch the next page for the same filters and append it. Stops at the total.
+// Endless scrolling for paged lists (products, saved queries): when the marker under the
+// table comes into view, fetch the next page for the same filters and sort, append it, and
+// stop at the total. `feed` is replaced on every render, so a stale page is dropped.
 function watchScroll() {
-  const more = $('#more'); if (!more || !productFeed) return;
+  const f = feed, more = f && $(f.more); if (!more) return;
   const io = new IntersectionObserver(async entries => {
-    if (!entries.some(e => e.isIntersecting) || !productFeed || productFeed.busy || productFeed.next >= productFeed.total) return;
-    const feed = productFeed; feed.busy = true;
+    if (!entries.some(e => e.isIntersecting) || f !== feed || f.busy || f.next >= f.total) return;
+    f.busy = true;
     try {
-      const d = await api(`/api/products?limit=${PAGE}&offset=${feed.next}&` + feed.query);
-      if (feed !== productFeed || tab !== 'Products') return;  // filters changed meanwhile
-      $('#prows').insertAdjacentHTML('beforeend', d.products.map(productRow).join(''));
-      feed.next += d.products.length; feed.total = d.total;
-      $('#pcount').textContent = `${feed.next.toLocaleString()} of ${feed.total.toLocaleString()} · click a row for the price history`;
-      if (feed.next >= feed.total || !d.products.length) { more.textContent = 'end of list'; io.disconnect(); }
-    } finally { feed.busy = false; }
+      const d = await api(f.url(f.next)), items = d.products || d.rows;
+      if (f !== feed) return;  // filters or tab changed meanwhile
+      $(f.rows).insertAdjacentHTML('beforeend', items.map(f.row).join(''));
+      f.next += items.length; f.total = d.total;
+      $(f.count).textContent = `${f.next.toLocaleString()} of ${f.total.toLocaleString()}` + (f.rows === '#prows' ? ' · click a row for the price history' : '');
+      if (f.next >= f.total || !items.length) { more.textContent = 'end of list'; io.disconnect(); }
+    } finally { f.busy = false; }
   }, {rootMargin: '400px'});
   io.observe(more);
 }
@@ -419,6 +428,9 @@ function chartHover(ev, pts, t0, t1, L, R, W) {
 // Click any table header to sort by that column (numbers, money and dates compare as numbers).
 document.addEventListener('click', ev => {
   const th = ev.target.closest('th'); if (!th || !th.closest('#view')) return;
+  if (th.dataset.qcol) {  // saved query: sort on the server so it holds across every page
+    qsort = {name: qsort.name, col: th.dataset.qcol, desc: qsort.col === th.dataset.qcol ? !qsort.desc : false}; render(); return;
+  }
   if (th.dataset.asc) {  // product list: sort on the server so it holds across every page
     const sel = $('#sort'); if (!sel) return;
     const next = sel.value === th.dataset.desc ? th.dataset.asc : sel.value === th.dataset.asc ? th.dataset.desc : th.dataset.desc;
@@ -651,11 +663,14 @@ _LIMIT = re.compile(r"\s+LIMIT\s+(\d+)\s*$", re.I)
 
 
 def run_query(conn: sqlite3.Connection, name: str, now: datetime, hours: float,
-              grp: str | None = None, site: str | None = None) -> dict:
-    """Rows of one saved query; `hours` is the look-back window where the query has one.
+              grp: str | None = None, site: str | None = None, *, sort: str | None = None,
+              desc: bool = False, limit: int = 100, offset: int = 0) -> dict:
+    """One page of a saved query plus the total row count; `hours` is the look-back window
+    where the query has one.
 
-    `grp` / `site` filter the result on its `grp` / `site` columns when it has them (the
-    query's own LIMIT is applied after filtering, so a filtered report is still full).
+    `grp` / `site` filter the result on its `grp` / `site` columns when it has them. `sort`
+    names a result column (anything else is ignored); without it the report keeps its own
+    order. Filtering and sorting happen in the database, so they hold across every page.
     """
     q = QUERIES[name]
     if "cutoff_days" in q:
@@ -666,16 +681,23 @@ def run_query(conn: sqlite3.Connection, name: str, now: datetime, hours: float,
         cutoff = iso(now - timedelta(hours=hours))
     params: list = [cutoff, iso(now)] if q.get("now_twice") else [cutoff]
     m = _LIMIT.search(q["sql"])
-    inner, limit = (q["sql"][:m.start()], int(m.group(1))) if m else (q["sql"], 1000)
+    inner = q["sql"][:m.start()] if m else q["sql"]  # the report's own LIMIT is replaced by paging
     columns = [c[0] for c in conn.execute(f"SELECT * FROM ({inner}) LIMIT 0", params).description]
     where = []
     if grp and "grp" in columns:
         where.append("grp = ?"); params.append(grp)
     if site and "site" in columns:
         where.append("site = ?"); params.append(site)
-    sql = f"SELECT * FROM ({inner}) {'WHERE ' + ' AND '.join(where) if where else ''} LIMIT {limit}"
-    rows = [list(r) for r in conn.execute(sql, params).fetchall()]
+    filtered = f"SELECT * FROM ({inner}) {'WHERE ' + ' AND '.join(where) if where else ''}"
+    total = conn.execute(f"SELECT COUNT(*) FROM ({filtered})", params).fetchone()[0]
+    order = ""
+    if sort in columns:
+        # the other columns break ties so paging is stable
+        rest = ", ".join(f'"{c}"' for c in columns if c != sort)
+        order = f' ORDER BY "{sort}" IS NULL, "{sort}" {"DESC" if desc else "ASC"}{", " + rest if rest else ""}'
+    rows = [list(r) for r in conn.execute(f"{filtered}{order} LIMIT ? OFFSET ?", (*params, limit, offset)).fetchall()]
     return {"name": name, "title": q["title"], "about": q["about"], "columns": columns, "rows": rows,
+            "total": total, "offset": offset, "sort": sort if sort in columns else None, "desc": desc,
             "uses_window": not ("cutoff_days" in q or "cutoff_hours_fixed" in q),
             "filters": {"grp": "grp" in columns, "site": "site" in columns}}
 
