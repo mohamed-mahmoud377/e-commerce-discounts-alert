@@ -67,6 +67,13 @@ def test_saved_queries_run_and_need_login(client):
     assert client.get("/api/queries/drop_table").status_code == 404
     rows = client.get("/api/queries/coverage").json()["rows"]
     assert rows and rows[0][0] == "TVs" and rows[0][2] == 1  # the one recorded product
+    d = client.get("/api/queries/coverage?grp=TVs&site=amazon_eg").json()
+    assert d["filters"] == {"grp": True, "site": True} and len(d["rows"]) == 1
+    assert client.get("/api/queries/coverage?grp=Phones").json()["rows"] == []
+    assert client.get("/api/queries/new_products?site=noon_eg&hours=48").json()["rows"] == []
+    assert client.get("/api/queries/new_products?site=amazon_eg&hours=48").json()["rows"][0][2] == "Samsung 55 inch TV"
+    d = client.get("/api/queries/tables?grp=TVs").json()  # no such columns: filter ignored, not an error
+    assert d["filters"] == {"grp": False, "site": False} and len(d["rows"]) == 8
 
 
 def test_product_page_data_and_filters(client):

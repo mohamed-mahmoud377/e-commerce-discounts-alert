@@ -5,6 +5,7 @@ or affect crawling. Login is a secret token kept in an HttpOnly cookie.
 """
 
 import html
+import re
 import sqlite3
 from datetime import datetime, timedelta
 
@@ -249,8 +250,9 @@ const views = {
   async Queries() {
     const list = (await api('/api/queries')).queries;
     const name = $('#qname')?.value ?? (location.hash.split(':')[1] || list[0].name), hours = $('#hours')?.value ?? '24';
+    const grp = $('#qgrp')?.value ?? '', site = $('#qsite')?.value ?? '';
     location.hash = 'Queries:' + name;
-    const d = await api(`/api/queries/${name}?hours=${hours}`);
+    const [d, groups] = await Promise.all([api(`/api/queries/${name}?hours=${hours}&grp=${encodeURIComponent(grp)}&site=${site}`), api('/api/products?limit=0').then(r => r.groups)]);
     const money = c => /^(was|now|price|cheapest|dearest|lowest|highest|crossed_out|previous_low|highest_seen|alert_price|price_now|a|b)$/.test(c);
     const hide = new Set(['url', 'seller', 'product_id']);
     const cols = d.columns.filter(c => !hide.has(c)), iu = d.columns.indexOf('url'), ip = d.columns.indexOf('product_id'), is = d.columns.indexOf('seller');
@@ -259,7 +261,9 @@ const views = {
       : money(c) ? egp(v) : typeof v === 'string' && /^\d{4}-\d\d-\d\dT/.test(v) ? esc(v.slice(5, 16).replace('T', ' ')) : esc(v);
     return `<div class='row'><select id='qname' onchange='render()'>${list.map(q => `<option value='${q.name}' ${q.name === name ? 'selected' : ''}>${esc(q.title)}</option>`).join('')}</select>
       ${d.uses_window ? `last <select id='hours' onchange='render()'>${[['6', '6 h'], ['24', '24 h'], ['72', '3 days'], ['168', '7 days'], ['720', '30 days']].map(([v, l]) => `<option value='${v}' ${v === hours ? 'selected' : ''}>${l}</option>`).join('')}</select>` : ''}
-      <span class='muted'>${d.rows.length} rows</span></div>
+      <select id='qgrp' onchange='render()' ${d.filters.grp ? '' : 'disabled'}><option value=''>all groups</option>${groups.map(g => `<option ${g === grp ? 'selected' : ''}>${esc(g)}</option>`).join('')}</select>
+      <select id='qsite' onchange='render()' ${d.filters.site ? '' : 'disabled'}><option value=''>both shops</option><option ${site === 'amazon_eg' ? 'selected' : ''}>amazon_eg</option><option ${site === 'noon_eg' ? 'selected' : ''}>noon_eg</option></select>
+      <span class='muted'>${d.rows.length} rows${d.filters.grp || d.filters.site ? '' : ' · this report has no group/shop columns'}</span></div>
       <p class='muted'>${esc(d.about)}</p>
       <table><tr>${cols.map(c => `<th>${esc(c.replace(/_/g, ' '))}</th>`).join('')}</tr>
       ${d.rows.map(r => `<tr>${d.columns.map((c, i) => hide.has(c) ? '' : `<td>${cell(r[i], c, r)}</td>`).join('')}</tr>`).join('')}</table>`;
@@ -573,8 +577,16 @@ QUERIES: dict[str, dict] = {
 }
 
 
-def run_query(conn: sqlite3.Connection, name: str, now: datetime, hours: float) -> dict:
-    """Rows of one saved query; `hours` is the look-back window where the query has one."""
+_LIMIT = re.compile(r"\s+LIMIT\s+(\d+)\s*$", re.I)
+
+
+def run_query(conn: sqlite3.Connection, name: str, now: datetime, hours: float,
+              grp: str | None = None, site: str | None = None) -> dict:
+    """Rows of one saved query; `hours` is the look-back window where the query has one.
+
+    `grp` / `site` filter the result on its `grp` / `site` columns when it has them (the
+    query's own LIMIT is applied after filtering, so a filtered report is still full).
+    """
     q = QUERIES[name]
     if "cutoff_days" in q:
         cutoff = iso(now - timedelta(days=q["cutoff_days"]))
@@ -582,12 +594,20 @@ def run_query(conn: sqlite3.Connection, name: str, now: datetime, hours: float) 
         cutoff = iso(now - timedelta(hours=q["cutoff_hours_fixed"]))
     else:
         cutoff = iso(now - timedelta(hours=hours))
-    params = (cutoff, iso(now)) if q.get("now_twice") else (cutoff,)
-    cur = conn.execute(q["sql"], params)
-    columns = [c[0] for c in cur.description]
-    rows = [list(r) for r in cur.fetchall()]
+    params: list = [cutoff, iso(now)] if q.get("now_twice") else [cutoff]
+    m = _LIMIT.search(q["sql"])
+    inner, limit = (q["sql"][:m.start()], int(m.group(1))) if m else (q["sql"], 1000)
+    columns = [c[0] for c in conn.execute(f"SELECT * FROM ({inner}) LIMIT 0", params).description]
+    where = []
+    if grp and "grp" in columns:
+        where.append("grp = ?"); params.append(grp)
+    if site and "site" in columns:
+        where.append("site = ?"); params.append(site)
+    sql = f"SELECT * FROM ({inner}) {'WHERE ' + ' AND '.join(where) if where else ''} LIMIT {limit}"
+    rows = [list(r) for r in conn.execute(sql, params).fetchall()]
     return {"name": name, "title": q["title"], "about": q["about"], "columns": columns, "rows": rows,
-            "uses_window": not ("cutoff_days" in q or "cutoff_hours_fixed" in q)}
+            "uses_window": not ("cutoff_days" in q or "cutoff_hours_fixed" in q),
+            "filters": {"grp": "grp" in columns, "site": "site" in columns}}
 
 
 def query_list() -> list[dict]:

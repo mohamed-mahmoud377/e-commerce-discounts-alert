@@ -379,11 +379,11 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
         return {"queries": webui.query_list()}
 
     @app.get("/api/queries/{name}", dependencies=[Depends(viewer)])
-    def query_api(name: str, hours: float = 24):
+    def query_api(name: str, hours: float = 24, grp: str | None = None, site: str | None = None):
         if name not in webui.QUERIES:
             raise HTTPException(404, "no such query")
         with closing(read_conn()) as rc:
-            return webui.run_query(rc, name, utcnow(), max(1.0, min(hours, 24 * 90)))
+            return webui.run_query(rc, name, utcnow(), max(1.0, min(hours, 24 * 90)), grp or None, site or None)
 
     @app.get("/api/products/{product_id}", dependencies=[Depends(viewer)])
     def product_api(product_id: int):
