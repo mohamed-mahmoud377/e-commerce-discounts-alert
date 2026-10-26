@@ -14,7 +14,12 @@ class AlertRules:
     atl_min_history_days: float = 14
     price_error_drop: float = 0.60  # flagged as a possible pricing mistake
     min_history_days: float = 3  # less in-stock history than this = "new product" rules
+    early_min_history_days: float = 1  # from this much history, a drop below everything seen alerts early
+    max_share_at_or_below: float = 0.15  # no alert if it was this cheap more than 15% of the time
     new_product_min_drop: float = 0.30  # site-claimed discount needed for new products
+    list_max_claimed_drop: float = 0.60  # a bigger claim against an RRP ("list") price is rejected
+    confirm_low_confidence: bool = True  # hold low-confidence alerts until the price is seen again
+    confirm_minutes: int = 90  # ...but send anyway after this long (worker asleep, slice slow)
     realert_after_days: float = 7
     realert_extra_drop: float = 0.05  # re-alert sooner if the price falls this much further
 

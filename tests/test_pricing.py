@@ -67,7 +67,62 @@ def test_price_error_flagged():
 def test_out_of_stock_time_does_not_count():
     s = compute_stats(series((0, 1000), (2, None), (80, 600)), now=days(80.01))
     assert round(s.history_days) == 2  # 78 days out of stock don't count as history
-    assert evaluate(view(600), s, RULES) is None  # only 2 days of history: < min_history_days
+    deal = evaluate(view(600), s, RULES)  # 2 days: not enough for a full verdict, enough for an early one
+    assert deal.kind == "early_drop" and deal.confidence == "low"
+    s = compute_stats(series((0, 1000), (0.5, None), (80, 600)), now=days(80.01))
+    assert evaluate(view(600), s, RULES) is None  # half a day of history: nothing to compare with
+
+
+def test_early_drop_needs_a_day_and_a_new_low():
+    s = compute_stats(series((0, 1000), (1.5, 650)), now=days(1.51))
+    deal = evaluate(view(650), s, RULES)
+    assert deal.kind == "early_drop" and deal.drop == 0.35 and deal.all_time_low
+    # 20 hours of history: too early
+    s = compute_stats(series((0, 1000), (0.8, 650)), now=days(0.81))
+    assert evaluate(view(650), s, RULES) is None
+    # it was 600 yesterday, so 650 is not below everything seen: no early alert
+    s = compute_stats(series((0, 1000), (1, 600), (1.2, 1000), (2, 650)), now=days(2.01))
+    assert evaluate(view(650), s, RULES) is None
+
+
+def test_recurring_promo_price_is_not_a_deal():
+    # alternates: 5 days at 5000, 2 days at 3400, repeatedly (3400 is 32% below the median 5000)
+    steps = []
+    for week in range(6):
+        steps += [(week * 7, 5000), (week * 7 + 5, 3400)]
+    steps.append((42, 5000))
+    s = compute_stats(series(*steps, (50, 3400)), now=days(50.01))
+    assert s.typical_90d == 5000 * EGP and 0.2 < s.share_at_or_below < 0.3  # 12 of 50 days
+    assert evaluate(view(3400), s, RULES) is None  # this is its regular promo price
+    # a price it has never been near is a deal
+    s = compute_stats(series(*steps, (50, 2900)), now=days(50.01))
+    deal = evaluate(view(2900), s, RULES)
+    assert deal.kind == "price_drop" and deal.all_time_low and deal.share_at_or_below == 0
+    # ...and so is a price it touched only briefly (one day in fifty)
+    s = compute_stats(series((0, 5000), (20, 3300), (21, 5000), (50, 3400)), now=days(50.01))
+    assert evaluate(view(3400), s, RULES).kind == "price_drop"
+
+
+def test_confidence_needs_rarity_as_well_as_history():
+    s = compute_stats(series((0, 10000), (60, 6500)), now=days(60.01))
+    assert evaluate(view(6500), s, RULES).confidence == "high"
+    s = compute_stats(series((0, 10000), (50, 6500), (55, 10000), (60, 6500)), now=days(60.01))
+    assert evaluate(view(6500), s, RULES).confidence == "medium"  # 8% of the time at this price
+
+
+def test_lowest_30d_badge_is_not_evidence():
+    from deals.models import LOWEST_30D
+    s = compute_stats(series((0, 700)), now=days(0.01))
+    assert evaluate(view(700, list_price=1000 * EGP, list_price_kind="list", badges=(LOWEST_30D,)), s, RULES) is None
+    assert evaluate(view(700, list_price=1000 * EGP, list_price_kind="list", badges=(LOWEST_365D,)), s, RULES).kind == "new_product"
+
+
+def test_claimed_discount_against_rrp_is_capped():
+    s = compute_stats(series((0, 350)), now=days(0.01))
+    big = view(350, list_price=1000 * EGP, list_price_kind="list", badges=(LIMITED_DEAL,))
+    assert evaluate(big, s, RULES) is None  # "65% off" an RRP
+    was = view(350, list_price=1000 * EGP, list_price_kind="was", badges=(LIMITED_DEAL,))
+    assert evaluate(was, s, RULES).kind == "new_product"  # a real "was" price can fall that far
 
 
 def test_min_price_and_group_threshold():

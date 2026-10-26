@@ -116,7 +116,8 @@ def run_checks(conn: sqlite3.Connection, cfg: Config, now: datetime) -> list[Che
     flips = one("""WITH h AS (SELECT product_id, price, LAG(price) OVER w prev, LAG(price, 2) OVER w prev2
                               FROM price_history WHERE observed_at >= ?
                               WINDOW w AS (PARTITION BY product_id ORDER BY observed_at, id))
-                   SELECT COUNT(DISTINCT product_id) FROM h WHERE prev2 = price AND prev != price""",
+                   SELECT COUNT(DISTINCT product_id) FROM h
+                   WHERE prev2 = price AND ABS(prev - price) >= price * 0.05""",  # amazon's featured offer wobbles 2-5%
                 iso(now - timedelta(days=1)))[0]
     if bad:
         add(Check("data", FAIL, f"{bad} products with zero/negative prices (parser bug?)", "أسعار غير صحيحة في البيانات"))
@@ -161,7 +162,8 @@ def daily_report(conn: sqlite3.Connection, cfg: Config, now: datetime) -> str:
     sites = " · ".join(f"{SITE_NAME.get(s, s)} {n:,}" for s, n in per_site.items())
     changes = one("SELECT COUNT(*) FROM price_history WHERE observed_at >= ?", since)[0]
     by_kind = {r["kind"]: r["n"] for r in conn.execute(
-        "SELECT kind, COUNT(*) n FROM alerts WHERE created_at >= ? AND kind != 'system' GROUP BY kind", (since,))}
+        "SELECT kind, COUNT(*) n FROM alerts WHERE created_at >= ? AND kind != 'system' "
+        "AND (error IS NULL OR error NOT LIKE 'cancelled%') GROUP BY kind", (since,))}
     subs = one("SELECT COUNT(*) FROM subscribers WHERE status = 'active'")[0]
     lines += [
         "",
@@ -179,7 +181,8 @@ def daily_report(conn: sqlite3.Connection, cfg: Config, now: datetime) -> str:
 
     top = conn.execute(
         """SELECT a.drop_pct, a.price, p.title, p.url FROM alerts a JOIN products p ON p.id = a.product_id
-           WHERE a.created_at >= ? AND a.kind != 'system' ORDER BY a.score DESC, a.drop_pct DESC LIMIT 5""",
+           WHERE a.created_at >= ? AND a.kind != 'system' AND (a.error IS NULL OR a.error NOT LIKE 'cancelled%')
+           ORDER BY a.score DESC, a.drop_pct DESC LIMIT 5""",
         (since,)).fetchall()
     if top:
         lines += ["", "🔥 <b>أفضل عروض آخر 24 ساعة</b>"]

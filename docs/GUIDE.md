@@ -344,7 +344,8 @@ FROM jobs WHERE kind = 'crawl' GROUP BY grp ORDER BY avg_m;
 
 Things that add delay:
 
-- **History first.** A price-drop alert needs 3 days of history for that product (`min_history_days`);
+- **History first.** A full price-drop alert needs 3 days of history for that product (`min_history_days`);
+  an early-drop alert needs 1 day (`early_min_history_days`);
   before that only "new listing" alerts are possible.
 - **noon needs the Mac.** While the Mac sleeps or is offline, noon is not crawled at all; changes are picked
   up when it comes back (most overdue slices first). Amazon carries on from the droplet, less reliably.
@@ -415,6 +416,7 @@ When a product is new or its price moves, the coordinator turns its history into
 | --- | --- |
 | typical (90 days) | Time-weighted median of the in-stock prices before the current one, over the last 90 days. The main reference for "is this cheap?" |
 | typical (30 days) | The same over 30 days |
+| share at or below | Fraction of the in-stock time (90 days, before the current price) the product spent at or below the current price. 0 = never this cheap before; 0.4 = this cheap 40% of the time |
 | low / high | Lowest and highest earlier in-stock price ever seen |
 | previous | The price just before the current one |
 | history days | How many in-stock days of data the 90-day window holds |
@@ -455,12 +457,18 @@ depending on how much history we have.
 
 ```mermaid
 flowchart TB
-    t["A product is new or got cheaper<br/>(in stock, at or above the group minimum)"] --> h{"3+ days of history?"}
-    h -- "yes: Path A, our own history" --> a["Compare with its own typical price<br/>60%+ below: possible price error<br/>30%+ below: real price drop<br/>new low, 20%+ below: all-time low<br/>none of these: no alert"]
-    h -- "no: Path B, new listing" --> b["Check the shop's claimed discount<br/>crossed-out price 30%+ higher<br/>not 80%+ off an RRP<br/>1 real signal (2 on a first crawl)<br/>any check fails: no alert"]
-    a --> r["No repeat within 7 days<br/>unless 5% cheaper than the last alert"]
-    b --> r
-    r --> s["Arabic alert to every subscriber<br/>with confidence and score"]
+    t["A product is new or got cheaper<br/>(in stock, at or above the group minimum)"] --> h{"How much history?"}
+    h -- "3+ days: Path A, our own history" --> a["Compare with its own typical price<br/>60%+ below: possible price error<br/>30%+ below: real price drop<br/>new low, 20%+ below: all-time low<br/>was this cheap over 15% of the time: no alert"]
+    h -- "1 to 3 days: early drop" --> e["30%+ below typical AND below<br/>every price seen: early alert, low confidence"]
+    h -- "under 1 day: Path B, new listing" --> b["Check the shop's claimed discount<br/>crossed-out price 30%+ higher<br/>not 60%+ off an RRP<br/>1 real signal (2 on a first crawl)<br/>any check fails: no alert"]
+    a --> n["noon: no alert if another seller<br/>of the same item is already cheaper"]
+    e --> n
+    b --> n
+    n --> r["No repeat within 7 days<br/>unless 5% cheaper than the last alert"]
+    r --> c{"Confidence low?"}
+    c -- "yes" --> w["Held until the next crawl sees<br/>the same price (cancelled if it reverted;<br/>sent anyway after 90 min)"]
+    c -- "no" --> s["Arabic alert to every subscriber<br/>with confidence and score"]
+    w --> s
 ```
 
 The shop's own discount claim only matters for listings we have not tracked long enough; after 3 days, our
@@ -475,25 +483,51 @@ product is compared with its own typical price.
 | Real price drop | 30% or more below typical (a group can set its own threshold) | انخفاض حقيقي في السعر |
 | All-time low | Below every earlier price, at least 20% below typical, with at least 14 days of history | أقل سعر على الإطلاق |
 
-Confidence is "high" with 14 or more days of history, "medium" with 3 to 14. The alert also says if the
-shop's crossed-out price is more than 15% above anything we ever saw, so you know to ignore it.
+**Rarity.** Being below the median is not enough: a product that is at 3,400 forty percent of the time and
+5,000 the rest (noon's alternate-week promos, an Amazon seller that keeps winning the listing back) is simply
+sometimes 3,400. So Path A also requires that the product spent no more than 15% of its in-stock time
+(`max_share_at_or_below`) at or below today's price. A price it has never been near passes with 0%; one it
+touched for a day in fifty passes too. The alert prints this share ("was at this price or less 4% of the
+time").
 
-**Path B: less than 3 days of history (a new listing).** We have no reference of our own, so the shop's
+Confidence is "high" with 14 or more days of history and a share of 5% or less, "medium" otherwise. The alert
+also says if the shop's crossed-out price is more than 15% above anything we ever saw, so you know to
+ignore it.
+
+**Early drop: 1 to 3 days of history.** Not enough for a full verdict, but a price that is 30% below the
+typical price *and* below every price seen is alerted as an early drop (⏳, confidence low) with a note that
+the history is short. Without this, a product that drops on day 1 and stays there would never alert at
+all, because history only counts the time before the current price.
+
+**Cheapest offer (noon).** noon lists each item once per seller. A seller's drop to 3,200 is not a deal when
+another seller has had it at 3,000 all along, so no alert goes out while a cheaper in-stock offer of the
+same item exists.
+
+**Confirmation.** Low-confidence alerts (early drops, new listings) are held until the next crawl sees the
+product again: if it is still at that price (or cheaper) the alert goes out, if the price went back up it is
+cancelled (it was a glitch, a seller switch or a one-crawl mistake). If nobody rechecks the product within
+90 minutes (`confirm_minutes`, e.g. the Mac is asleep) it goes out anyway: nothing disproved it. For top
+groups this adds 10 to 30 minutes. `confirm_low_confidence = false` turns it off.
+
+**Path B: less than a day of history (a new listing).** We have no reference of our own, so the shop's
 claim is used but must be backed by evidence:
 
 1. The crossed-out price must be at least 30% above the current price.
-2. A claim of 80% or more off a "List" (RRP) price is rejected as almost always fake.
+2. A claim of 60% or more off a "List" (RRP) price is rejected as almost always fake (a real Amazon
+   "Was:" price may fall that far).
 3. At least one real signal is required: 3 or fewer left in stock (noon only; amazon.eg shows it on about half its listings), a limited-time or mega deal badge,
-   noon's "lowest price in 30 days / a year", or Amazon's "Was:" price.
+   noon's "lowest price in a year", or Amazon's "Was:" price. noon's "lowest price in 30 days" sits on
+   19% of its catalogue, so it does not count.
 4. "Selling out fast", "N sold recently" and "only 8 left" do not count: they are marketing.
 5. During a slice's very first crawl, when every product looks new, two signals are required. This stops a
    flood of alerts on day one.
 
 These alerts are marked confidence "low" and say "not yet verified by our history".
 
-**Score (0 to 100), for ranking:** the drop in percent, plus 10 for an all-time low, plus 5 each for 5 or
-fewer left, a deal badge, or the shop's own "lowest price" badge, then multiplied by 1.0 (high confidence),
-0.85 (medium) or 0.7 (low).
+**Score (0 to 100), for ranking:** the drop in percent, plus 10 for an all-time low, minus half the
+rarity share in percent (a price seen 10% of the time loses 5), plus 5 each for 5 or fewer left, a deal
+badge, or the shop's own "lowest price" badge, then multiplied by 1.0 (high confidence), 0.85 (medium) or
+0.7 (low).
 
 **No repeats.** The same product is not alerted again within 7 days unless its price falls another 5%.
 
@@ -505,6 +539,10 @@ fewer left, a deal badge, or the shop's own "lowest price" badge, then multiplie
 | Kettle seen for the first time at 1,999, crossed-out 2,999, "selling out fast" only | 33% claimed but no real signal: no alert |
 | Earbuds seen for the first time at 999, crossed-out 1,699, 1 left, "lowest price in a year" | 41% claimed with two signals: new listing alert, low confidence |
 | Fridge at 10,000 for 60 days, now 7,500 but it was 7,000 last month | 25% below typical and not an all-time low: no alert |
+| Blender that alternates 5 days at 5,000 and 2 days at 3,400, now 3,400 again | 32% below typical, but at this price 29% of the time: its regular promo, no alert |
+| Same blender now 2,900 | Never this cheap: real price drop |
+| noon seller A drops a TV from 5,000 to 3,200 while seller B sells it at 3,000 | Not the cheapest offer: no alert |
+| Air fryer tracked for 2 days at 5,220, now 3,977 | Early drop (⏳), low confidence, sent after the next crawl confirms the price |
 
 ## Alerts and the Telegram bot
 

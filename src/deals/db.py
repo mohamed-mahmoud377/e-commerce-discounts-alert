@@ -214,7 +214,15 @@ MIGRATIONS = [
     CREATE INDEX events_at ON events (at);
     CREATE INDEX events_source ON events (source, at);
     """,
+    """
+    -- Low-confidence alerts wait here until the price is seen again (or this time passes).
+    ALTER TABLE alerts ADD COLUMN confirm_until TEXT;
+    """,
 ]
+
+# Price moves smaller than this are noise (amazon.eg prices creep by a piastre per
+# crawl on FX-linked listings) and neither make history nor count as changes.
+PRICE_NOISE = 0.01
 
 
 def connect(path: Path) -> sqlite3.Connection:
@@ -263,7 +271,12 @@ class Recorded:
 
 def record(conn: sqlite3.Connection, listing: Listing, grp: str | None = None,
            now: datetime | None = None) -> Recorded:
-    """Upsert a listing; append a history row if price, list price or stock changed."""
+    """Upsert a listing; append a history row if price, list price or stock changed.
+
+    `price` and `list_price` in `products` are the last *recorded* values: a move of less
+    than PRICE_NOISE is ignored (and keeps comparing against the recorded price, so a
+    slow creep still gets recorded once it adds up).
+    """
     now_s = iso(now or utcnow())
     row = conn.execute(
         "SELECT id, price, list_price, in_stock, grp FROM products WHERE site = ? AND sku = ?",
@@ -284,15 +297,17 @@ def record(conn: sqlite3.Connection, listing: Listing, grp: str | None = None,
         result = Recorded(product_id, "new", None, None)
     else:
         product_id = row["id"]
-        price_changed = (row["price"], bool(row["in_stock"])) != (listing.price, listing.in_stock)
-        changed = price_changed or row["list_price"] != listing.list_price
+        price_changed = bool(row["in_stock"]) != listing.in_stock or moved(row["price"], listing.price)
+        changed = price_changed or moved(row["list_price"], listing.list_price)
+        price, list_price = (listing.price, listing.list_price) if changed else (row["price"], row["list_price"])
         conn.execute(
             f"""UPDATE products SET title = ?, url = ?, price = ?, list_price = ?, in_stock = ?,
                                     list_price_kind = ?, brand = ?, stock_left = ?, recent_sales = ?,
                                     rating = ?, reviews = ?, badges = ?, seller = ?, grp = COALESCE(?, grp),
                                     last_seen_at = ?{", last_change_at = ?" if price_changed else ""}
                 WHERE id = ?""",
-            (*details, grp, now_s, *([now_s] if price_changed else []), product_id),
+            (listing.title, listing.url, price, list_price, *details[4:], grp, now_s,
+             *([now_s] if price_changed else []), product_id),
         )
         if not changed:
             return Recorded(product_id, "same", row["price"], bool(row["in_stock"]))
@@ -305,6 +320,26 @@ def record(conn: sqlite3.Connection, listing: Listing, grp: str | None = None,
         (product_id, listing.price, listing.list_price, listing.in_stock, now_s),
     )
     return result
+
+
+def moved(old: int | None, new: int | None) -> bool:
+    """Did a price change by more than noise?"""
+    if old is None or new is None:
+        return old != new
+    return abs(new - old) >= old * PRICE_NOISE
+
+
+def best_other_offer(conn: sqlite3.Connection, site: str, sku: str) -> int | None:
+    """Lowest in-stock price from other sellers of the same item (noon keys listings SKU@seller)."""
+    base, sep, _ = sku.partition("@")
+    if not sep:
+        return None
+    row = conn.execute(
+        """SELECT MIN(price) FROM products WHERE site = ? AND sku >= ? AND sku < ? AND sku != ?
+           AND in_stock = 1 AND price IS NOT NULL""",
+        (site, base + "@", base + "A", sku),
+    ).fetchone()
+    return row[0]
 
 
 def history(conn: sqlite3.Connection, product_id: int) -> list[sqlite3.Row]:

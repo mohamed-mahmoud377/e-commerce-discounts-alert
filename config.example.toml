@@ -24,7 +24,12 @@ atl_min_drop = 0.20           # ...or a new all-time low at least 20% below typi
 atl_min_history_days = 14     # (only once we have 2 weeks of history)
 price_error_drop = 0.60       # >= 60% below typical is flagged as a possible pricing error
 min_history_days = 3          # with less history than this a product counts as "new"
+early_min_history_days = 1    # from 1 day: a 30% drop below everything seen alerts early (low confidence)
+max_share_at_or_below = 0.15  # no alert if the product was this cheap more than 15% of the time (recurring promos)
 new_product_min_drop = 0.30   # new products: site-claimed discount needed (plus a scarcity/deal signal)
+list_max_claimed_drop = 0.60  # a claim of 60%+ off an RRP ("list") price is rejected as fake
+confirm_low_confidence = true # hold low-confidence alerts until the price is seen again on the next crawl
+confirm_minutes = 90          # ...but send anyway after this long if the product was not rechecked
 realert_after_days = 7        # don't repeat an alert for the same product within a week...
 realert_extra_drop = 0.05     # ...unless the price drops another 5%
 

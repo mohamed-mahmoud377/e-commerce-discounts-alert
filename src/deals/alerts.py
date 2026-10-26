@@ -26,6 +26,7 @@ KIND_TITLE = {
     "price_error": "🚨 خطأ محتمل في السعر",
     "price_drop": "🔥 انخفاض حقيقي في السعر",
     "all_time_low": "📉 أقل سعر على الإطلاق",
+    "early_drop": "⏳ انخفاض مبكر في السعر",
     "new_product": "🆕 منتج جديد بخصم كبير",
 }
 SITE_NAME = {"amazon_eg": "أمازون مصر", "noon_eg": "نون مصر"}
@@ -64,13 +65,19 @@ def check_product(conn: sqlite3.Connection, cfg: Config, product_id: int, *, boo
                     min_drop=watch.min_drop if watch else None)
     if deal is None or _recently_alerted(conn, cfg, product_id, deal.price, now):
         return None
+    other = db.best_other_offer(conn, p["site"], p["sku"])
+    if other is not None and other < deal.price:
+        log.info("no alert for %s: another seller has it at %s", p["sku"], other)
+        return None  # a cheaper way to buy the same item already existed
     group = (watch.label or watch.name) if watch else (p["grp"] or "")
+    confirm = (iso(now + timedelta(minutes=cfg.alerts.confirm_minutes))
+               if deal.confidence == "low" and cfg.alerts.confirm_low_confidence else None)
     conn.execute(
         """INSERT INTO alerts (product_id, kind, price, reference_price, drop_pct, score, message,
-                               created_at, next_attempt_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                               created_at, next_attempt_at, confirm_until)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (product_id, deal.kind, deal.price, deal.reference, deal.drop, deal.score,
-         format_deal(p, stats, deal, group), iso(now), iso(now)),
+         format_deal(p, stats, deal, group), iso(now), iso(now), confirm),
     )
     return deal
 
@@ -79,7 +86,8 @@ def _recently_alerted(conn, cfg: Config, product_id: int, price: int, now: datet
     """Don't repeat an alert unless the price fell noticeably further or a week passed."""
     since = iso(now - timedelta(days=cfg.alerts.realert_after_days))
     last = conn.execute(
-        "SELECT price FROM alerts WHERE product_id = ? AND created_at >= ? ORDER BY created_at DESC LIMIT 1",
+        """SELECT price FROM alerts WHERE product_id = ? AND created_at >= ?
+           AND (error IS NULL OR error NOT LIKE 'cancelled%') ORDER BY created_at DESC LIMIT 1""",
         (product_id, since),
     ).fetchone()
     return last is not None and price > last["price"] * (1 - cfg.alerts.realert_extra_drop)
@@ -120,8 +128,13 @@ def format_deal(p: sqlite3.Row, stats: PriceStats, deal: Deal, group: str = "") 
 
     if deal.kind == "new_product":
         lines.append("• منتج جديد علينا: الخصم معلن من الموقع ولم نتحقق منه بعد من سجل أسعارنا")
+    elif deal.kind == "early_drop":
+        lines.append(f"• نتابعه منذ {_days(deal.reference_days)} فقط: انخفض {deal.drop:.0%} تحت كل ما رصدناه، "
+                     "لكن السجل قصير فتأكد قبل الشراء")
     else:
         lines.append(f"• أقل من سعره المعتاد بنسبة {deal.drop:.0%} (حسب آخر {_days(deal.reference_days)})")
+        if deal.share_at_or_below:
+            lines.append(f"• كان بهذا السعر أو أقل {deal.share_at_or_below:.0%} من الوقت فقط")
     if deal.all_time_low:
         lines.append(f"• أقل سعر رأيناه على الإطلاق (أقل سعر سابق {_egp(deal.previous_low)})")
     if deal.previous:
@@ -217,13 +230,15 @@ class AlertSender(threading.Thread):
         while not self.stop_event.wait(self.interval):
             try:
                 now = utcnow()
+                self.confirm(conn, now)
                 self.fan_out(conn, now)
                 self.deliver(conn, now)
             except Exception:
                 log.exception("alert delivery loop failed")
 
     def fan_out(self, conn: sqlite3.Connection, now: datetime) -> None:
-        new = conn.execute("SELECT id, kind, message FROM alerts WHERE sent_at IS NULL ORDER BY created_at LIMIT 100").fetchall()
+        new = conn.execute("SELECT id, kind, message FROM alerts WHERE sent_at IS NULL AND confirm_until IS NULL "
+                           "ORDER BY created_at LIMIT 100").fetchall()
         for a in new:
             with conn:
                 if not self.configured:
@@ -238,6 +253,32 @@ class AlertSender(threading.Thread):
                                  (a["id"], chat_id, iso(now)))
                 conn.execute("UPDATE alerts SET sent_at = ?, error = ? WHERE id = ?",
                              (iso(now), None if recipients else "no subscribers", a["id"]))
+
+    def confirm(self, conn: sqlite3.Connection, now: datetime) -> None:
+        """Release held alerts whose product was seen again at the deal price; cancel the others.
+
+        Held alerts whose product was not seen again in time (worker asleep, slow slice) go
+        out anyway: nothing disproved them.
+        """
+        held = conn.execute(
+            """SELECT a.id, a.price, a.created_at, a.confirm_until, p.price AS now_price, p.in_stock, p.last_seen_at
+               FROM alerts a JOIN products p ON p.id = a.product_id
+               WHERE a.sent_at IS NULL AND a.confirm_until IS NOT NULL""").fetchall()
+        for a in held:
+            if a["last_seen_at"] > a["created_at"]:
+                still = a["in_stock"] and a["now_price"] is not None and a["now_price"] <= a["price"] * (1 + db.PRICE_NOISE)
+            elif iso(now) >= a["confirm_until"]:
+                still = True
+            else:
+                continue
+            with conn:
+                if still:
+                    conn.execute("UPDATE alerts SET confirm_until = NULL WHERE id = ?", (a["id"],))
+                else:
+                    log.info("alert %s cancelled: price was %s, now %s (in stock: %s)",
+                             a["id"], a["price"], a["now_price"], bool(a["in_stock"]))
+                    conn.execute("UPDATE alerts SET sent_at = ?, error = 'cancelled: price not confirmed' WHERE id = ?",
+                                 (iso(now), a["id"]))
 
     def deliver(self, conn: sqlite3.Connection, now: datetime | None = None) -> int:
         now = now or utcnow()

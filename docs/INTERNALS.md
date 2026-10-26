@@ -115,18 +115,19 @@ many have run, and `db.connect()` runs the missing ones in a transaction on star
 | 5 | `subscribers`, `deliveries`, `kv` |
 | 6 | Indexes on `price_history(observed_at)`, `alerts(created_at)`, `products(grp, site)` |
 | 7 | `worker_sites`, `events` |
+| 8 | `alerts.confirm_until` (low-confidence alerts held until the price is seen again) |
 
 **Tables and columns** (prices are integer piastres; times are UTC ISO text, which sorts correctly as text):
 
 | Table | Key | Columns and meaning |
 | --- | --- | --- |
 | `products` | `id`; unique `(site, sku)` | `title`, `url`, `currency`; `price` (None when no price shown), `list_price` (crossed-out), `list_price_kind` (`was` = Amazon's recent price, `list` = RRP or noon seller price), `in_stock`; `brand`, `seller`, `stock_left`, `recent_sales`, `rating`, `reviews`, `badges` (comma list: `limited_deal`, `mega_deal`, `selling_fast`, `lowest_30d`, `lowest_365d`, `bestseller`); `grp` (watch group); `first_seen_at`, `last_seen_at`, `last_change_at` |
-| `price_history` | `id`; index `(product_id, observed_at)` and `(observed_at)` | `product_id`, `price`, `list_price`, `in_stock`, `observed_at`. One row per change; the row's values hold until the next row |
+| `price_history` | `id`; index `(product_id, observed_at)` and `(observed_at)` | `product_id`, `price`, `list_price`, `in_stock`, `observed_at`. One row per change; the row's values hold until the next row. Moves under 1% (`db.PRICE_NOISE`) are not changes: `products.price` keeps the last recorded value so a slow creep is recorded once it adds up |
 | `jobs` | `id`; unique `(kind, site, target)`; index `(site, next_due_at)` | `kind` (`plan`/`crawl`), `target` (slice key), `root`, `grp`, `expected_total`, `oversized`; `base_interval_s` (from the watch), `interval_s` (adaptive), `next_due_at`; lease: `lease_worker`, `lease_ip`, `lease_token`, `lease_expires_at`; current run: `run_count`, `run_changes`; history: `failures`, `last_error`, `last_done_at`, `last_count`, `last_changes` |
 | `workers` | `name` | `last_seen_at`, `last_ip`, `sites`, `version`, `pages`, `jobs_done` |
 | `worker_sites` | `(worker, site)` | `last_ok_at`, `last_error_at`, `last_error`, `pages`, `products`, `blocks` |
 | `blocks` | `(site, ip)` | `strikes`, `until`, `reason`, `updated_at`; deleted on the IP's next successful page |
-| `alerts` | `id`; indexes on product, dedupe key, created | `product_id` (null for system), `kind`, `dedupe_key`, `price`, `reference_price`, `drop_pct`, `score`, `message` (final Arabic HTML), `created_at`, `sent_at` (= handed to recipients), `error` |
+| `alerts` | `id`; indexes on product, dedupe key, created | `product_id` (null for system), `kind`, `dedupe_key`, `price`, `reference_price`, `drop_pct`, `score`, `message` (final Arabic HTML), `created_at`, `sent_at` (= handed to recipients), `error` (`cancelled: price not confirmed` when a held alert's price reverted), `confirm_until` (held until then or until the product is seen again) |
 | `deliveries` | `id`; unique `(alert_id, chat_id)` | `sent_at`, `attempts`, `next_attempt_at`, `error` |
 | `subscribers` | `chat_id` | `name`, `username`, `status` (`pending`, `active`, `rejected`, `stopped`, `blocked`), `is_admin`, `approved_at` |
 | `events` | `id`; indexes on time and source | `at`, `source`, `level`, `message`; pruned after 7 days |
@@ -234,8 +235,13 @@ commented template.
 | `[alerts] atl_min_drop` | 0.20 | All-time-low threshold |
 | `[alerts] atl_min_history_days` | 14 | History needed for all-time-low alerts |
 | `[alerts] price_error_drop` | 0.60 | Labelled possible price error above this |
-| `[alerts] min_history_days` | 3 | Below this, the new-listing path is used |
+| `[alerts] min_history_days` | 3 | Below this, the early-drop or new-listing path is used |
+| `[alerts] early_min_history_days` | 1 | From this much history, a 30% drop below everything seen alerts early (low confidence) |
+| `[alerts] max_share_at_or_below` | 0.15 | No alert when the product was at or below this price more than 15% of the time |
 | `[alerts] new_product_min_drop` | 0.30 | Claimed discount needed for new listings |
+| `[alerts] list_max_claimed_drop` | 0.60 | A bigger claim against an RRP ("list") price is rejected |
+| `[alerts] confirm_low_confidence` | true | Hold low-confidence alerts until the product is seen again at that price |
+| `[alerts] confirm_minutes` | 90 | ...but send anyway after this long if nobody rechecked it |
 | `[alerts] realert_after_days` | 7 | No repeat alert within this many days... |
 | `[alerts] realert_extra_drop` | 0.05 | ...unless the price fell this much more |
 | `[schedule] min_interval_minutes` | 10 | Fastest revisit of a busy slice |

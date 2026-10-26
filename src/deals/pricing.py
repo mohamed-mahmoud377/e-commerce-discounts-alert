@@ -19,8 +19,9 @@ DAY = 86400.0
 # What can back up a shop's claimed discount on a product we have no history for.
 # Popularity ("sold recently") and urgency ("selling out fast") are marketing and
 # don't count; "only N left" only counts when N <= 3 (amazon.eg shows "only N left"
-# on about half its listings).
-STRONG_SIGNALS = {"mega_deal", "limited_deal", "lowest_365d", "lowest_30d"}
+# on about half its listings). noon's "lowest price in 30 days" sits on 19% of its
+# catalogue (measured 2026-10-26), so it is a label, not evidence.
+STRONG_SIGNALS = {"mega_deal", "limited_deal", "lowest_365d"}
 # Shops where "only N left" is shown so widely it proves nothing (amazon.eg: 45% of
 # listings show 3 or fewer left, measured 2026-10-25).
 LOW_STOCK_EVERYWHERE = {"amazon_eg"}
@@ -47,11 +48,14 @@ class PriceStats:
     history_days: float  # in-stock days of data before the current price (90-day window)
     changes_90d: int
     current_since: datetime | None
+    # Share of the in-stock time (90-day window, before the current price) spent at or
+    # below the current price: 0.0 = never this cheap, 0.4 = this cheap 40% of the time.
+    share_at_or_below: float | None = None
 
 
 def compute_stats(points: Sequence[Point], now: datetime) -> PriceStats:
     if not points:
-        return PriceStats(None, None, None, None, None, None, None, None, 0, 0, 0, None)
+        return PriceStats(None, None, None, None, None, None, None, None, 0, 0, 0, None, None)
     pts = sorted(points, key=lambda p: p.at)
     last = pts[-1]
     current = last.price if last.in_stock else None
@@ -62,6 +66,10 @@ def compute_stats(points: Sequence[Point], now: datetime) -> PriceStats:
 
     w90 = _clip(prior, now - timedelta(days=90))
     w30 = _clip(prior, now - timedelta(days=30))
+    total90 = sum(w for _, w in w90)
+    share = None
+    if current is not None and total90 > 0:
+        share = sum(w for p, w in w90 if p <= current) / total90
     return PriceStats(
         current=current,
         previous=prior[-1][0] if prior else None,
@@ -75,6 +83,7 @@ def compute_stats(points: Sequence[Point], now: datetime) -> PriceStats:
         history_days=sum(w for _, w in w90) / DAY,
         changes_90d=sum(1 for p in pts[1:] if p.at >= now - timedelta(days=90)),
         current_since=last.at,
+        share_at_or_below=share,
     )
 
 
@@ -120,7 +129,7 @@ class ProductView:
 class Deal:
     """Why a price is a deal, as facts; alerts.py turns them into a message."""
 
-    kind: str  # price_drop | all_time_low | price_error | new_product
+    kind: str  # price_drop | all_time_low | price_error | early_drop | new_product
     price: int
     reference: int  # what the drop is measured against
     drop: float  # 0.42 = 42% below reference
@@ -131,6 +140,7 @@ class Deal:
     previous: int | None = None  # the price just before, when it differs from the reference
     inflated_list_price: int | None = None  # site's crossed-out price above anything we saw
     reference_days: float = 0  # how much history the reference covers
+    share_at_or_below: float | None = None  # how often it was this cheap before (history paths)
     list_price_kind: str | None = None  # new_product: "was" or "list"
     signals: list[tuple[str, int | None]] = field(default_factory=list)  # e.g. ("only_left", 3)
 
@@ -153,22 +163,36 @@ def evaluate(product: ProductView, stats: PriceStats, rules: AlertRules, *,
     signals = _signals(product)
     facts: dict = {}
 
-    if stats.history_days >= rules.min_history_days and stats.typical_90d:
+    enough = stats.history_days >= rules.min_history_days
+    early = (not enough and stats.history_days >= rules.early_min_history_days)
+    if (enough or early) and stats.typical_90d:
         reference = stats.typical_90d
         drop = 1 - price / reference
         all_time_low = stats.low is not None and price < stats.low
-        if drop >= rules.price_error_drop:
-            kind = "price_error"
-        elif drop >= min_drop:
-            kind = "price_drop"
-        elif (all_time_low and drop >= rules.atl_min_drop
-              and stats.history_days >= rules.atl_min_history_days):
-            kind = "all_time_low"
+        share = stats.share_at_or_below or 0.0
+        if early:
+            # Short history (1 to 3 days): only a clear drop below everything seen so far,
+            # flagged as early so the reader knows the reference is thin.
+            if not (all_time_low and drop >= min_drop):
+                return None
+            kind, confidence = "early_drop", "low"
         else:
-            return None
-
-        confidence = "high" if stats.history_days >= 14 else "medium"
+            if drop >= rules.price_error_drop:
+                kind = "price_error"
+            elif drop >= min_drop:
+                kind = "price_drop"
+            elif (all_time_low and drop >= rules.atl_min_drop
+                  and stats.history_days >= rules.atl_min_history_days):
+                kind = "all_time_low"
+            else:
+                return None
+            # A price the product sits at regularly (noon's alternate-week promos, a seller
+            # that keeps winning the buy box back) is its normal cheap price, not a deal.
+            if share > rules.max_share_at_or_below:
+                return None
+            confidence = "high" if stats.history_days >= 14 and share <= 0.05 else "medium"
         facts["reference_days"] = min(stats.tracked_days, 90)
+        facts["share_at_or_below"] = share
         if all_time_low:
             facts.update(all_time_low=True, previous_low=stats.low)
         if stats.previous and stats.previous != reference:
@@ -176,7 +200,7 @@ def evaluate(product: ProductView, stats: PriceStats, rules: AlertRules, *,
         if (product.list_price and stats.high and stats.history_days >= 14
                 and product.list_price > stats.high * 1.15):
             facts["inflated_list_price"] = product.list_price
-        score = drop * 100 + (10 if all_time_low else 0)
+        score = drop * 100 + (10 if all_time_low else 0) - 50 * share
     else:
         # Not enough history of our own: rely on the site's claimed discount,
         # but only when other evidence backs it up.
@@ -185,8 +209,8 @@ def evaluate(product: ProductView, stats: PriceStats, rules: AlertRules, *,
         drop = 1 - price / product.list_price
         if drop < max(rules.new_product_min_drop, min_drop):
             return None
-        if product.list_price_kind != "was" and drop >= 0.8:
-            return None  # "80% off" an inflated RRP is almost always fake
+        if product.list_price_kind != "was" and drop >= rules.list_max_claimed_drop:
+            return None  # "60% off" an RRP the shop made up is almost always fake
         evidence = [code for code, n in signals if code in STRONG_SIGNALS
                     or (code == "only_left" and n <= 3 and product.site not in LOW_STOCK_EVERYWHERE)]
         if product.list_price_kind == "was":
