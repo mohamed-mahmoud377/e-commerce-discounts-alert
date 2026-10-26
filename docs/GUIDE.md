@@ -164,6 +164,9 @@ worker code, also restart the Mac worker: `launchctl kickstart -k gui/$(id -u)/c
 
 Changing what is tracked: edit `[[watch]]` groups in `/etc/deals/config.toml` on the server, then
 `systemctl restart deals-coordinator`. New groups are planned within a minute; removed ones are dropped.
+A group can use `search:<words>` roots and, for noisy sources, `require_words` / `exclude_words` title
+filters (see the gaming consoles group in `config.example.toml`); products already recorded stay, so
+delete them by hand if a source turned out to be junk.
 Category ids come from `deals categories amazon_eg 18018102031` or `deals categories noon_eg electronics-and-mobiles`.
 
 Adding a friend's computer as a worker (more crawling capacity from another connection):

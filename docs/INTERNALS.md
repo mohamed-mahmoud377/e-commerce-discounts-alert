@@ -255,6 +255,8 @@ commented template.
 | `[[watch]] name` | required | Group name used in the database (keep it stable) |
 | `[[watch]] label` | name | Display name in Arabic messages |
 | `[[watch]] interval_minutes` | 60 | Starting revisit interval for its slices |
+| `[[watch]] min_price` | none | EGP. Crawl price bands start here, and a *new* product below it (or without a price) is not recorded; known products keep being updated |
+| `[[watch]] require_words`, `exclude_words` | none | Title filters for new products (case-insensitive substrings): the title must contain one of `require_words` and none of `exclude_words`; a title containing "console" is never excluded. For noisy sources such as searches |
 | `[[watch]] min_price` | none | EGP floor for crawling and alerting |
 | `[[watch]] min_drop` | none | This group's own price-drop threshold |
 | `[[watch]] amazon_eg`, `noon_eg` | | One root or a list: `category:<id>` or `search:<words>`, optionally `\|price:<min>-<max>` |

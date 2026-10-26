@@ -58,6 +58,7 @@ max_delay = 2.0
 # label is the name shown in alerts (optional, defaults to name).
 # min_price (EGP) skips cheap accessories/junk both when crawling and alerting.
 # interval_minutes is the starting revisit interval; it adapts per slice.
+# require_words / exclude_words (optional) filter new products by title, for noisy sources.
 # ---------------------------------------------------------------------------
 
 [[watch]]
@@ -101,6 +102,15 @@ amazon_eg = [
     "search:xbox series s console",
 ]
 noon_eg = "category:electronics-and-mobiles/video-games-10181/gaming-console"
+# Searches and the console nodes still return pricey accessories (racing wheels, headsets, Pro
+# controllers), so only titles that look like a console are recorded; "console" in the title always wins.
+require_words = ["console", "playstation 5", "ps5", "playstation 4", "ps4", "xbox series", "xbox one",
+                 "nintendo switch", "switch 2", "switch oled", "switch lite", "steam deck", "rog ally",
+                 "legion go", "playstation portal"]
+exclude_words = ["controller", "gamepad", "joystick", "headset", "wheel", "pedal", "case", "cover", "skin",
+                 "stand", "dock", "cable", "charger", "charging", "bag", "grip", "mount", "sticker",
+                 "protector", "thumb", "strap", "card", "game ", "edition game", "mouse", "keyboard",
+                 "chair", "monitor", "camera", "microphone", "fan ", "cooling"]
 
 [[watch]]
 name = "Phones"

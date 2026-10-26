@@ -131,3 +131,35 @@ def test_config_change_removes_jobs(client, cfg):
     plan_amazon(client)
     scheduler.sync_watches(client.conn, replace(cfg, watches=[]), utcnow())
     assert client.conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 0
+
+
+def test_new_products_must_pass_price_floor_and_title_words(cfg):
+    from dataclasses import replace
+    from deals.config import Watch
+    consoles = Watch(name="TVs", targets={"amazon_eg": ["category:111"]}, interval_minutes=30, min_price=1000,
+                     require_words=("console", "playstation 5"), exclude_words=("controller", "headset"))
+    cfg = replace(cfg, watches=[consoles])
+    app = create_app(cfg, background=False)
+    with TestClient(app) as client:
+        client.conn = app.state.conn
+        plan_amazon(client)
+        job = lease(client)
+        r = client.post(f"/api/jobs/{job['id']}/page", headers=W1, json={
+            "lease_token": job["lease_token"], "page": 1, "done": True, "listings": [
+                listing("PS5", 25000, title="PlayStation 5 Slim Console"),               # kept
+                listing("BUNDLE", 27000, title="PlayStation 5 Console + extra controller"),  # "console" beats exclusions
+                listing("PAD", 4000, title="PlayStation 5 DualSense Controller"),        # excluded word
+                listing("WHEEL", 14000, title="Logitech G29 Racing Wheel for PS5"),      # no required word
+                listing("CHEAP", 500, title="PlayStation 5 Console (used)"),             # under the group minimum
+                listing("NOPRICE", 25000, title="PlayStation 5 Console", price=None),   # unknown price
+            ]})
+        assert r.json()["skipped"] == 4
+        kept = sorted(p["sku"] for p in client.conn.execute("SELECT sku FROM products"))
+        assert kept == ["BUNDLE", "PS5"]
+        # a product we already know keeps being updated even when it drops below the floor / goes unpriced
+        job = lease(client)
+        client.post(f"/api/jobs/{job['id']}/page", headers=W1, json={
+            "lease_token": job["lease_token"], "page": 1, "done": True,
+            "listings": [listing("PS5", 25000, title="PlayStation 5 Slim Console", price=None, in_stock=False)]})
+        row = client.conn.execute("SELECT in_stock FROM products WHERE sku = 'PS5'").fetchone()
+        assert row["in_stock"] == 0

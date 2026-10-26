@@ -48,6 +48,19 @@ class Watch:
     min_price: int | None = None  # EGP; cheaper products are neither crawled nor alerted
     min_drop: float | None = None  # overrides alerts.min_drop for this group
     label: str | None = None  # display name in alerts (e.g. Arabic); defaults to name
+    # Title filters for groups whose sources are noisy (searches, mixed nodes). A new
+    # product is only recorded if its title contains one of require_words (when set) and
+    # none of exclude_words; a title containing "console" is never excluded.
+    require_words: tuple[str, ...] = ()
+    exclude_words: tuple[str, ...] = ()
+
+    def accepts(self, title: str) -> bool:
+        t = title.lower()
+        if self.require_words and not any(w in t for w in self.require_words):
+            return False
+        if self.exclude_words and "console" not in t and any(w in t for w in self.exclude_words):
+            return False
+        return True
 
     def roots(self) -> list[tuple[str, Slice]]:
         out = []
@@ -99,7 +112,8 @@ def load(path: Path) -> Config:
             value = w.get(site)
             if value:
                 targets[site] = [value] if isinstance(value, str) else list(value)
-        unknown = set(w) - set(SITES) - {"name", "label", "interval_minutes", "min_price", "min_drop"}
+        unknown = set(w) - set(SITES) - {"name", "label", "interval_minutes", "min_price", "min_drop",
+                                          "require_words", "exclude_words"}
         if unknown:
             raise ValueError(f"watch {w.get('name')!r}: unknown keys {sorted(unknown)}")
         watches.append(Watch(
@@ -109,6 +123,8 @@ def load(path: Path) -> Config:
             min_price=w.get("min_price"),
             min_drop=w.get("min_drop"),
             label=w.get("label"),
+            require_words=tuple(x.lower() for x in w.get("require_words", [])),
+            exclude_words=tuple(x.lower() for x in w.get("exclude_words", [])),
         ))
         watches[-1].roots()  # fail fast on malformed target keys
     names = [w.name for w in watches]

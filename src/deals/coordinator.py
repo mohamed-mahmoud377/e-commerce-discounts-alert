@@ -192,12 +192,22 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
         # Products a slice has never shown before are only "new" to us once the
         # slice has been crawled at least once (otherwise everything is new).
         bootstrap = job["kind"] == "plan" or job["last_done_at"] is None
-        changes = deals = 0
+        watch = cfg.watch(job["grp"])
+        floor = (watch.min_price or 0) * 100 if watch else 0
+        changes = deals = skipped = 0
         with conn:
             for item in body.listings:
                 listing = item.to_listing()
                 if listing.site != job["site"]:
                     raise HTTPException(422, f"listing for {listing.site} in a {job['site']} job")
+                # Sponsored cards ignore the price filter and searches match accessories, so a
+                # product we don't know yet must be priced, at or above the group's minimum, and
+                # pass the group's title words. Known products are always updated (stock, price).
+                unwanted = (listing.price is None or listing.price < floor
+                            or (watch is not None and not watch.accepts(listing.title)))
+                if unwanted and db.find_product(conn, listing.site, listing.sku) is None:
+                    skipped += 1
+                    continue
                 rec = db.record(conn, listing, grp=job["grp"], now=now)
                 if rec.status == "changed" or (rec.status == "new" and not bootstrap):
                     changes += 1
@@ -212,7 +222,7 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
             scheduler.worker_seen(conn, worker, ip, now, pages=1, jobs_done=int(body.done))
             if body.done and job["kind"] == "crawl":
                 _finish_crawl(job_id, now)
-        return {"ok": True, "changes": changes, "deals": deals}
+        return {"ok": True, "changes": changes, "deals": deals, "skipped": skipped}
 
     def _finish_crawl(job_id: int, now: datetime) -> None:
         job = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
