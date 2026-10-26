@@ -134,6 +134,9 @@ Lines worth reacting to:
 | `unknown category` | A typo in a noon category path in the config | Fix the path in `/etc/deals/config.toml` |
 | `jumia_eg: no such page ... (HTTP 404)` / `... redirected to ...` | A wrong, aliased or renamed Jumia slug | Put the canonical slug (from the category sidebar, `deals categories jumia_eg <parent>`) in `/etc/deals/config.toml` |
 | `blocked: jumia_eg: Cloudflare challenge` | Cloudflare refused this connection (always from cloud IPs) | Pauses by itself; if a home worker is blocked every time, see [JUMIA.md](JUMIA.md) troubleshooting |
+| `blocked: cairosales_eg: ...` / `blocked: 2b_eg: ...` | Same, on Cairo Sales or 2B (both always refuse cloud IPs) | Pauses by itself; see [CAIROSALES.md](CAIROSALES.md) / [2B.md](2B.md) |
+| `cairosales_eg: /en/x/ redirected to /en/` | Unknown Cairo Sales slug (the shop answers with its homepage) | Fix the slug (`deals categories cairosales_eg <parent>`) |
+| `2b_eg: no category with id N` | Unknown 2B category id | Fix the id (`deals categories 2b_eg <parent id>`) |
 | `lease lost` | The device was too slow (over 5 min between pages) and the job went to another device | Fine occasionally |
 
 ## Telegram warnings

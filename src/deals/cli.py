@@ -235,7 +235,15 @@ def cmd_categories(args) -> None:
                                       ("Home & Kitchen", "home-and-kitchen")],
                           "jumia_eg": [("Electronics", "electronics"), ("Phones & Tablets", "phones-tablets"),
                                        ("Computing", "computing"), ("Home & Office", "home-office"),
-                                       ("Gaming", "video-games")]}[args.site]:
+                                       ("Gaming", "video-games")],
+                          "cairosales_eg": [("TVs & Screens", "tvs-screens"), ("Air Conditioners", "air-conditioners"),
+                                            ("Refrigerators", "refrigerators"), ("Mobiles", "mobiles-tablets"),
+                                            ("Small Appliances", "small-appliances"),
+                                            ("Computers", "computer-accessories"), ("Gaming", "gaming-accessories"),
+                                            ("Audio", "home-theaters-speakers")],
+                          "2b_eg": [("Computer", "118"), ("Mobile & Tablet", "266"), ("Home Appliances", "2370"),
+                                    ("Televisions", "1932"), ("Audio", "2382"), ("Gaming", "120"),
+                                    ("Electronics", "610")]}[args.site]:
             print(f"  {name:<25} {cid}")
 
 

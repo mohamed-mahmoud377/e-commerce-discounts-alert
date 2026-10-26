@@ -56,8 +56,8 @@ def jobs(conn: sqlite3.Connection, now: datetime, limit: int) -> list[dict]:
     rows = conn.execute(
         """SELECT id, kind, site, grp, target, expected_total, interval_s / 60 AS every_min, next_due_at,
                   last_done_at, last_count, last_changes, failures, last_error, lease_worker, lease_expires_at > ? AS running
-           FROM jobs ORDER BY failures DESC, (lease_expires_at > ?) DESC, next_due_at LIMIT ?""",
-        (iso(now), iso(now), limit)).fetchall()
+           FROM jobs ORDER BY next_due_at, failures DESC LIMIT ?""",
+        (iso(now), limit)).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -250,7 +250,7 @@ const views = {
     const d = await api('/api/jobs?limit=400');
     const failing = d.jobs.filter(j => j.failures > 0), running = d.jobs.filter(j => j.running);
     every(15000, render);
-    return `<p class='muted'>${failing.length} failing · ${running.length} running · ${d.jobs.length} jobs (failing first, then running, then soonest due)</p>
+    return `<p class='muted'>${failing.length} failing · ${running.length} running · ${d.jobs.length} jobs (soonest due first)</p>
       <table><tr><th>Site</th><th>Kind</th><th>Group</th><th>Slice</th><th>State</th><th>Every</th><th>Next due</th><th>Last done</th><th>Last run</th><th>Error</th></tr>
       ${d.jobs.map(j => `<tr><td>${esc(j.site)}</td><td>${esc(j.kind)}</td><td>${esc(j.grp)}</td><td class='mono'>${esc(j.target)}</td>
         <td>${j.failures ? badge('failing') + ' ×' + j.failures : j.running ? badge('crawling') + ' ' + esc(j.lease_worker) : badge('idle')}</td>
@@ -267,7 +267,7 @@ const views = {
     const nextFeed = {url: o => `/api/products?limit=${PAGE}&offset=${o}&` + query, row: productRow, rows: '#prows', count: '#pcount', more: '#more',
                       next: d.products.length, total: d.total, busy: false};
     return {feed: nextFeed, html: `<div class='row'><input id='q' placeholder='search titles, e.g. samsung 55' value='${esc(q)}' onkeydown="if(event.key==='Enter')render()" size='30'>
-      <select id='site' onchange='render()'><option value=''>all shops</option><option ${site === 'amazon_eg' ? 'selected' : ''}>amazon_eg</option><option ${site === 'noon_eg' ? 'selected' : ''}>noon_eg</option><option ${site === 'jumia_eg' ? 'selected' : ''}>jumia_eg</option></select>
+      <select id='site' onchange='render()'><option value=''>all shops</option><option ${site === 'amazon_eg' ? 'selected' : ''}>amazon_eg</option><option ${site === 'noon_eg' ? 'selected' : ''}>noon_eg</option><option ${site === 'jumia_eg' ? 'selected' : ''}>jumia_eg</option><option ${site === 'cairosales_eg' ? 'selected' : ''}>cairosales_eg</option><option ${site === '2b_eg' ? 'selected' : ''}>2b_eg</option></select>
       <select id='grp' onchange='render()'><option value=''>all groups</option>${d.groups.map(g => `<option ${g === grp ? 'selected' : ''}>${esc(g)}</option>`).join('')}</select>
       <select id='sort' onchange='render()'>${PRODUCT_SORT_NAMES.map(([v, l]) => `<option value='${v}' ${v === sort ? 'selected' : ''}>${l}</option>`).join('')}</select>
       <label><input type='checkbox' id='stock' ${stock ? 'checked' : ''} onchange='render()'> in stock only</label>
@@ -296,7 +296,7 @@ const views = {
     return {feed: nextFeed, html: `<div class='row'><select id='qname' onchange='render()'>${list.map(q => `<option value='${q.name}' ${q.name === name ? 'selected' : ''}>${esc(q.title)}</option>`).join('')}</select>
       ${d.uses_window ? `last <select id='hours' onchange='render()'>${[['6', '6 h'], ['24', '24 h'], ['72', '3 days'], ['168', '7 days'], ['720', '30 days']].map(([v, l]) => `<option value='${v}' ${v === hours ? 'selected' : ''}>${l}</option>`).join('')}</select>` : ''}
       <select id='qgrp' onchange='render()' ${d.filters.grp ? '' : 'disabled'}><option value=''>all groups</option>${groups.map(g => `<option ${g === grp ? 'selected' : ''}>${esc(g)}</option>`).join('')}</select>
-      <select id='qsite' onchange='render()' ${d.filters.site ? '' : 'disabled'}><option value=''>all shops</option><option ${site === 'amazon_eg' ? 'selected' : ''}>amazon_eg</option><option ${site === 'noon_eg' ? 'selected' : ''}>noon_eg</option><option ${site === 'jumia_eg' ? 'selected' : ''}>jumia_eg</option></select>
+      <select id='qsite' onchange='render()' ${d.filters.site ? '' : 'disabled'}><option value=''>all shops</option><option ${site === 'amazon_eg' ? 'selected' : ''}>amazon_eg</option><option ${site === 'noon_eg' ? 'selected' : ''}>noon_eg</option><option ${site === 'jumia_eg' ? 'selected' : ''}>jumia_eg</option><option ${site === 'cairosales_eg' ? 'selected' : ''}>cairosales_eg</option><option ${site === '2b_eg' ? 'selected' : ''}>2b_eg</option></select>
       <span class='muted'><span id='qcount'>${d.rows.length.toLocaleString()} of ${d.total.toLocaleString()}</span>${d.filters.grp || d.filters.site ? '' : ' · this report has no group/shop columns'}${qsort.col ? '' : ' · in its own order; click a column to sort all rows'}</span></div>
       <p class='muted'>${esc(d.about)}</p>
       <table><thead><tr>${cols.map(c => `<th class='sortable' data-qcol='${esc(c)}' title='sort all rows by ${esc(c.replace(/_/g, ' '))}'>${esc(c.replace(/_/g, ' '))}${qsort.col === c ? (qsort.desc ? " <span class='dir'>▼</span>" : " <span class='dir'>▲</span>") : ''}</th>`).join('')}</tr></thead>

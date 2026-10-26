@@ -54,15 +54,27 @@ max_delay = 2.0
 min_delay = 1.5
 max_delay = 3.0
 
+[sites.cairosales_eg]  # PrestaShop pages behind Cloudflare; home connections only
+min_delay = 1.5
+max_delay = 3.0
+
+[sites.2b_eg]  # GraphQL API (100 products per request) behind Cloudflare; home connections only
+min_delay = 1.0
+max_delay = 2.0
+
 # ---------------------------------------------------------------------------
 # What to track. Each [[watch]] is a product group with one root per site:
 #   amazon_eg = "category:<browse node id>"
 #   noon_eg   = "category:<category path>"
 #   jumia_eg  = "category:<slug>"  (the URL path, e.g. televisions; see docs/JUMIA.md)
+#   cairosales_eg = "category:<slug>"  (the URL path under /en/, e.g. tvs-screens or small-appliances/fryers; docs/CAIROSALES.md)
+#   2b_eg     = "category:<number>"  (Magento's category id, e.g. 131 = TVs; docs/2B.md)
 # (or "search:<keywords>"; a list of roots also works). Find ids with:
 #   deals categories amazon_eg 18018102031
 #   deals categories noon_eg electronics-and-mobiles
 #   deals categories jumia_eg electronics
+#   deals categories cairosales_eg tvs-screens
+#   deals categories 2b_eg 2370
 # label is the name shown in alerts (optional, defaults to name).
 # min_price (EGP) skips cheap accessories/junk both when crawling and alerting.
 # interval_minutes is the starting revisit interval; it adapts per slice.
@@ -77,6 +89,8 @@ min_price = 3000
 amazon_eg = "category:21832982031"
 noon_eg = "category:electronics-and-mobiles/television-and-video/televisions"
 jumia_eg = "category:televisions"
+cairosales_eg = "category:tvs-screens"
+2b_eg = "category:131"
 
 [[watch]]
 name = "Refrigerators"
@@ -89,6 +103,8 @@ jumia_eg = [
     "category:appliances-fridges-freezers",
     "category:freezers",
 ]
+cairosales_eg = ["category:refrigerators", "category:freezers"]
+2b_eg = ["category:260", "category:1905"]  # refrigerators, deep freezers
 
 [[watch]]
 name = "Air conditioners"
@@ -98,6 +114,8 @@ min_price = 8000
 amazon_eg = "category:21863915031"
 noon_eg = "category:home-and-kitchen/home-appliances-31235/large-appliances/heating-cooling-and-air-quality/air-conditioners"
 jumia_eg = "category:air-conditioning"
+cairosales_eg = "category:air-conditioners"
+2b_eg = "category:262"  # air conditioners (the parent also holds coolers and purifiers, below 8,000)
 
 [[watch]]
 name = "Gaming consoles"
@@ -125,6 +143,15 @@ jumia_eg = [
     "search:xbox series",
     "search:nintendo switch",
 ]
+# Cairo Sales: a Game Consoles category (mostly out of stock) plus searches (fuzzy, filtered by the words below)
+cairosales_eg = [
+    "category:gaming-accessories/game-consoles",
+    "search:playstation 5",
+    "search:xbox series",
+    "search:nintendo switch",
+]
+# 2B: a PlayStation 5 category (3 consoles) plus a search; no Xbox or Nintendo on 2B
+2b_eg = ["category:162", "search:playstation 5"]
 # Searches and the console nodes still return pricey accessories (racing wheels, headsets, Pro
 # controllers), so only titles that look like a console are recorded; "console" in the title always wins.
 require_words = ["console", "playstation 5", "ps5", "playstation 4", "ps4", "xbox series", "xbox one",
@@ -147,6 +174,8 @@ min_price = 2500
 amazon_eg = "category:21832883031"
 noon_eg = "category:electronics-and-mobiles/mobiles-and-accessories/mobiles-20905/smartphones"
 jumia_eg = "category:smartphones"
+cairosales_eg = "category:mobiles-tablets/mobiles"
+2b_eg = "category:119"
 
 [[watch]]
 name = "Tablets"
@@ -156,6 +185,8 @@ min_price = 5000
 amazon_eg = "category:21832915031"
 noon_eg = "category:electronics-and-mobiles/tablets-and-accessories/tablets"
 jumia_eg = "category:tablets"
+cairosales_eg = "category:mobiles-tablets/tablets"
+2b_eg = "category:122"
 
 [[watch]]
 name = "Laptops"
@@ -165,6 +196,8 @@ min_price = 8000
 amazon_eg = "category:21832907031"
 noon_eg = "category:electronics-and-mobiles/computers-and-accessories/computers-new/laptops"
 jumia_eg = "category:laptops"
+cairosales_eg = "category:computer-accessories/laptops-desktop-computers"
+2b_eg = "category:273"
 
 [[watch]]
 name = "Desktops"
@@ -174,6 +207,8 @@ min_price = 8000
 amazon_eg = "category:21832914031"
 noon_eg = "category:electronics-and-mobiles/computers-and-accessories/computers-new/desktops"
 jumia_eg = "category:desktop-computers"
+cairosales_eg = "category:computer-accessories/desktop-computers"
+2b_eg = "category:159"
 
 [[watch]]
 name = "Monitors"
@@ -183,6 +218,8 @@ min_price = 2500
 amazon_eg = "category:21832909031"
 noon_eg = "category:electronics-and-mobiles/computers-and-accessories/computer-accessories/monitor-accessories/monitors-17248"
 jumia_eg = "category:monitors"
+cairosales_eg = ["category:computer-accessories/computer-monitors", "category:gaming-accessories/gaming-monitors"]
+2b_eg = "category:2381"  # Monitor & Projector (includes a few projectors)
 
 [[watch]]
 name = "PC components"
@@ -192,6 +229,7 @@ min_price = 1500
 amazon_eg = "category:21832913031"
 noon_eg = "category:electronics-and-mobiles/computers-and-accessories/computer-accessories/computer-components-15997"
 jumia_eg = "category:computer-components"
+2b_eg = "category:1826"  # Cairo Sales has no components category
 # noon lists monitor arms, laptop stands and UPS units under PC components (outside every child
 # category), so new products with these words are skipped (checked against every tracked title).
 exclude_words = ["monitor arm", "monitor mount", "monitor stand", "monitor holder", "monitor desk", "monitor light",
@@ -214,6 +252,8 @@ jumia_eg = [
     "category:electronics-headphone",
     "category:mobile-phone-bluetooth-headsets",
 ]
+cairosales_eg = ["category:home-theaters-speakers/headphones", "category:gaming-accessories/gaming-headphones"]
+2b_eg = "category:592"  # headphones: over-ear, in-ear, earbuds
 
 [[watch]]
 name = "Kitchen machines"
@@ -250,6 +290,27 @@ jumia_eg = [
     "category:rice-cooker",
     "category:small-appliances-microwave",
     "category:ovens-toasters",
+]
+cairosales_eg = [
+    "category:small-appliances/fryers",
+    "category:small-appliances/coffee-maker",
+    "category:small-appliances/blenders",
+    "category:small-appliances/hand-stand-mixers",
+    "category:small-appliances/food-processors",
+    "category:small-appliances/kitchen-machines",
+    "category:small-appliances/chopper",
+    "category:small-appliances/ovens-toasters",
+    "category:small-appliances/cookers",
+    "category:microwaves",
+]
+2b_eg = [
+    "category:1973",  # air fryers
+    "category:1972",  # coffee makers
+    "category:1967",  # blenders & choppers
+    "category:2395",  # hand blenders
+    "category:1969",  # mixers
+    "category:1970",  # food processors & juicers
+    "category:313",   # microwaves & electric ovens
 ]
 
 # The rest of the small appliances (kettles, irons, toasters, grinders...): low priority.
@@ -312,6 +373,23 @@ jumia_eg = [
     "category:small-appliances-ironing-laundry",
     "category:water-coolers-filters",
 ]
+cairosales_eg = [
+    "category:small-appliances/kettle",
+    "category:small-appliances/juicer",
+    "category:small-appliances/grills",
+    "category:small-appliances/meat-grinders",
+    "category:small-appliances/sandwich-maker",
+    "category:small-appliances/iron",
+    "category:water-dispenser/water-dispenser",
+    "category:water-dispenser/filters",
+]
+2b_eg = [
+    "category:1971",  # kettles
+    "category:1964",  # sandwich makers & grills
+    "category:326",   # irons
+    "category:324",   # water dispensers
+    "category:284",   # water filters
+]
 
 [[watch]]
 name = "Cooking & dishwashers"
@@ -330,3 +408,10 @@ jumia_eg = [
     "category:wall-ovens",
     "category:dishwashers",
 ]
+cairosales_eg = [
+    "category:cookers-ovens",
+    "category:dishwashers",
+    "category:built-in-kitchen-products/built-in-ovens",
+    "category:built-in-kitchen-products/built-in-hobs",
+]
+2b_eg = ["category:2416", "category:314", "category:611"]  # cookers, dishwashers, built-in

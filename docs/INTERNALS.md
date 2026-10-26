@@ -15,6 +15,8 @@ owns one job.
 | `sites/amazon_eg.py` | 198 | Fetching and parsing amazon.eg listing pages; cookies from headless Chromium | models, base |
 | `sites/noon_eg.py` | 139 | Fetching and parsing noon's catalog JSON; per-seller keys | models |
 | `sites/jumia_eg.py` | 191 | Fetching Jumia category pages with Safari's TLS fingerprint (Cloudflare), reading the embedded `__STORE__` JSON, detecting redirects to the parent category | models, base |
+| `sites/cairosales_eg.py` | 150 | Fetching Cairo Sales (PrestaShop) category pages with Chrome's TLS fingerprint, 60 cards a page sorted by price; unpriced cards are out of stock; homepage redirects are unknown slugs | models, base |
+| `sites/twob_eg.py` | 140 | 2B's Magento GraphQL API: one POST per 100 products with exact counts, categories by numeric id | models |
 | `sites/base.py` | 35 | The `Site` interface every shop implements; money and count parsing | models |
 | `planner.py` | 93 | Splitting a root into slices under the shop's limit, by price ranges only | models |
 | `db.py` | 349 | Schema and migrations; `record()` (upsert a product, append history on change); backups | models |
@@ -164,7 +166,7 @@ Base address `http://207.154.206.127:8787` (port 8787 open in the firewall). Wor
 | `GET /ui`, `GET/POST /ui/login`, `GET /ui/logout` | anyone / viewer | `token` (form or one-click `?token=`) | The web UI; login sets the HttpOnly cookie `deals_ui` (30 days) |
 | `GET /api/overview` | viewer | | totals, health checks, devices, shops, live revision |
 | `GET /api/alerts?days=&kind=&limit=` | viewer | | recent alerts with delivery counts |
-| `GET /api/jobs?limit=` | viewer | | jobs, failing first then running |
+| `GET /api/jobs?limit=` | viewer | | jobs, soonest due first |
 | `GET /api/products?q=&site=&limit=`, `GET /api/products/{id}` | viewer | | product search; one product with stats and history |
 
 A `Listing` in JSON: `site`, `sku`, `title`, `url`, `price`, `list_price`, `currency`, `in_stock`, and
@@ -188,7 +190,7 @@ and `DEALS_DATA_DIR` (or the matching flags). It keeps no database; its only loc
 | Thread | Does |
 | --- | --- |
 | main | Starts the others, waits, handles Ctrl+C / SIGTERM by setting the stop event |
-| one per shop (`amazon_eg`, `noon_eg`, `jumia_eg`) | `_loop`: lease, crawl or plan, pause, repeat. Each holds its own shop adapter and HTTP session |
+| one per shop (`amazon_eg`, `noon_eg`, `jumia_eg`, `cairosales_eg`, `2b_eg`) | `_loop`: lease, crawl or plan, pause, repeat. Each holds its own shop adapter and HTTP session |
 | `log-shipper` | Every 10 s posts up to 500 buffered log lines to `/api/logs`; keeps up to 1,000 while the server is unreachable |
 
 **Timeouts and retries.**
@@ -198,7 +200,7 @@ and `DEALS_DATA_DIR` (or the matching flags). It keeps no database; its only loc
 | Shop request timeout | 30 s |
 | Page retries on network errors | after 5, 20, 60 s, then the job is reported failed |
 | Coordinator calls | retried forever with backoff 2 s doubling to 60 s; stops only when shutting down. Logged as INFO for the first 60 s of an outage, WARNING after, plus "reachable again" |
-| Pause between pages and between jobs | random within the shop's `min_delay`..`max_delay` (Amazon 2-4 s, noon 1-2 s, Jumia 1.5-3 s) |
+| Pause between pages and between jobs | random within the shop's `min_delay`..`max_delay` (Amazon 2-4 s, noon 1-2 s, Jumia 1.5-3 s, Cairo Sales 1.5-3 s, 2B 1-2 s) |
 | Nothing due | waits the `retry_after` the coordinator sends (5-60 s) |
 | Lease | 5 min, renewed by each page post |
 
@@ -255,7 +257,7 @@ commented template.
 | `[schedule] max_interval_factor` | 3.0 | Quiet slices slow down to group interval times this |
 | `[schedule] replan_days` | 7 | How often categories are re-split |
 | `[schedule] lease_minutes` | 5 | Lease length, renewed per page |
-| `[sites.SHOP] min_delay`, `max_delay` | 2.0, 4.0 | Seconds between requests per worker (config sets noon to 1-2, Jumia to 1.5-3) |
+| `[sites.SHOP] min_delay`, `max_delay` | 2.0, 4.0 | Seconds between requests per worker (config sets noon and 2B to 1-2, Jumia and Cairo Sales to 1.5-3) |
 | `[[watch]] name` | required | Group name used in the database (keep it stable) |
 | `[[watch]] label` | name | Display name in Arabic messages |
 | `[[watch]] interval_minutes` | 60 | Starting revisit interval for its slices |
@@ -263,7 +265,7 @@ commented template.
 | `[[watch]] require_words`, `exclude_words` | none | Title filters for new products (case-insensitive substrings): the title must contain one of `require_words` and none of `exclude_words`; a title containing "console" is not excluded (bundles) unless it also contains " for " (an accessory for a console). For noisy sources such as searches |
 | `[[watch]] min_price` | none | EGP floor for crawling and alerting |
 | `[[watch]] min_drop` | none | This group's own price-drop threshold |
-| `[[watch]] amazon_eg`, `noon_eg`, `jumia_eg` | | One root or a list: `category:<id>` or `search:<words>`, optionally `\|price:<min>-<max>` (Jumia ids are URL slugs, e.g. `televisions`) |
+| `[[watch]] amazon_eg`, `noon_eg`, `jumia_eg`, `cairosales_eg`, `2b_eg` | | One root or a list: `category:<id>` or `search:<words>`, optionally `\|price:<min>-<max>` (Jumia and Cairo Sales ids are URL slugs, e.g. `televisions`, `tvs-screens/oled`; 2B ids are Magento's numbers, e.g. `131`) |
 
 Changing a watch's `min_price` or roots creates new plan jobs and deletes the old ones with their slices;
 product history is kept.
@@ -274,8 +276,9 @@ Every change follows the same loop: write a test that shows what you want, chang
 `make deploy`, restart the Mac worker if worker or site code changed, `make health`, then check the real
 data with `make sql` or `make devices`.
 
-**Add a shop** (Jumia was added exactly this way on 26 October 2026; [JUMIA.md](JUMIA.md) shows the analysis
-to do first: access, URL scheme, page caps, empty-result behaviour, category tree, signals):
+**Add a shop** (Jumia was added exactly this way on 26 October 2026, Cairo Sales and 2B on 27 October;
+[JUMIA.md](JUMIA.md), [CAIROSALES.md](CAIROSALES.md) and [2B.md](2B.md) show the analysis to do first: access,
+URL scheme or API, page caps, empty-result behaviour, category tree, signals):
 
 1. Create `src/deals/sites/<shop>.py` with a class having `name`, `max_slice_total` (the most products the
    shop lets you page through) and `fetch_page(slice, page) -> PageResult`. Return `total` when the shop

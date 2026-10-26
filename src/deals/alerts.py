@@ -29,7 +29,8 @@ KIND_TITLE = {
     "early_drop": "⏳ انخفاض مبكر في السعر",
     "new_product": "🆕 منتج جديد بخصم كبير",
 }
-SITE_NAME = {"amazon_eg": "أمازون مصر", "noon_eg": "نون مصر", "jumia_eg": "جوميا مصر"}
+SITE_NAME = {"amazon_eg": "أمازون مصر", "noon_eg": "نون مصر", "jumia_eg": "جوميا مصر",
+             "cairosales_eg": "كايرو سيلز", "2b_eg": "توبي (2B)"}
 CONFIDENCE = {"high": "عالية", "medium": "متوسطة", "low": "منخفضة"}
 SIGNAL_TEXT = {
     "only_left": "متبقٍ {n} فقط",

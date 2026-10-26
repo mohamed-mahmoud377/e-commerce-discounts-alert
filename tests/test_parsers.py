@@ -145,3 +145,132 @@ def test_jumia_challenge_is_a_block(monkeypatch):
     with pytest.raises(Blocked, match="Cloudflare"):
         jumia_eg.JumiaEG().fetch_page(Slice("category", "televisions", 3000, None), 1)
     assert sessions == ["safari", "safari"]  # one fresh session was tried before giving up
+
+
+def test_cairosales_category_page():
+    from deals.sites.cairosales_eg import page_url, parse_listing_page
+    path, url = page_url(Slice("category", "tvs-screens", 3000, None), 2)
+    assert path == "/en/tvs-screens/" and url.endswith("/en/tvs-screens/?n=60&orderby=price&orderway=asc&price=3000-10000000&p=2")
+    assert page_url(Slice("search", "playstation 5", 8000, 12000), 1)[1].endswith(
+        "/en/search?controller=search&search_query=playstation+5&n=60&orderby=price&orderway=asc&price=8000-12000")
+    result = parse_listing_page(fixture_text("cairosales_category.html.gz"), "tvs-screens")
+    assert len(result.listings) == 60 and result.total == 820 and result.has_next
+    assert len({x.sku for x in result.listings}) == 60
+    first = result.listings[0]
+    assert (first.sku, first.price, first.list_price, first.list_price_kind, first.in_stock) == ("31774", 494900, 549900, "list", True)
+    assert first.title == "Ultra 32 Inch HD LED TV FSKE32H" and first.url.startswith("https://cairosales.com/en/tvs-screens/ultra-32")
+    assert first.brand and first.stock_left is None and first.currency == "EGP"
+    assert [c.id for c in result.subcategories][:3] == ["tvs-screens/25-32-inch", "tvs-screens/43-54-inch", "tvs-screens/55-65-inch"]
+    assert all(c.id.startswith("tvs-screens/") for c in result.subcategories) and len(result.subcategories) == 17
+
+
+def test_cairosales_out_of_stock_products_hide_their_price():
+    from deals.sites.cairosales_eg import parse_listing_page
+    result = parse_listing_page(fixture_text("cairosales_mobiles.html.gz"), "mobiles-tablets/mobiles")
+    assert result.total == 263 and len(result.listings) == 60 and result.has_next
+    hidden = [x for x in result.listings if x.price is None]
+    assert len(hidden) == 55 and not any(x.in_stock for x in hidden)
+    assert all(x.in_stock for x in result.listings if x.price is not None)
+    assert result.subcategories == []  # a leaf category has no "Subcategories" block
+    # out-of-stock products sort last, so a page with no price at all ends the crawl early
+    dead = ('<ul class="product_list"><li class="ajax_block_product" data-id-product="1"><a class="product-name" '
+            'href="https://cairosales.com/en/x.html">Old phone</a></li></ul><a rel="next" href="?p=3">Next</a>'
+            '<p>Showing 61 - 120 of 263 items</p>')
+    page = parse_listing_page(dead)
+    assert page.total == 263 and len(page.listings) == 1 and not page.has_next
+
+
+def test_cairosales_empty_page_redirect_and_challenge(monkeypatch):
+    from deals.models import Blocked, UnknownTarget
+    from deals.sites import cairosales_eg
+    from deals.sites.cairosales_eg import parse_listing_page
+    empty = parse_listing_page("<html><ul class='product_list'></ul><p>No products</p></html>", "x")
+    assert empty.listings == [] and empty.total == 0 and not empty.has_next
+
+    answers = []
+
+    class Response:
+        def __init__(self, status_code, text, url):
+            self.status_code, self.text, self.url = status_code, text, url
+
+        def raise_for_status(self):
+            pass
+
+    class Session:
+        def __init__(self, impersonate):
+            answers.append(impersonate)
+
+        def get(self, url, timeout, allow_redirects):
+            return next_response(url)
+
+    monkeypatch.setattr(cairosales_eg.requests, "Session", Session)
+    # an unknown slug is answered with the homepage after a redirect
+    next_response = lambda url: Response(200, "<html>home</html>", "https://cairosales.com/en/")
+    with pytest.raises(UnknownTarget, match="redirected to /en/"):
+        cairosales_eg.CairoSalesEG().fetch_page(Slice("category", "no-such-thing", 3000, None), 1)
+    # a Cloudflare challenge: one fresh session, then Blocked
+    next_response = lambda url: Response(403, "<html><title>Attention Required! | Cloudflare</title></html>", url)
+    answers.clear()
+    with pytest.raises(Blocked, match="Cloudflare"):
+        cairosales_eg.CairoSalesEG().fetch_page(Slice("category", "tvs-screens", 3000, None), 1)
+    assert answers == ["chrome", "chrome"]
+
+
+def test_2b_products_query_and_parse():
+    from deals.models import UnknownTarget
+    from deals.sites.twob_eg import build_query, parse_products
+    q = build_query(Slice("category", "131", 3000, 10000), 2)
+    assert 'filter: {category_id: {eq: "131"}, price: {from: "3000", to: "10000"}}' in q
+    assert "currentPage: 2" in q and 'categories(filters: {ids: {eq: "131"}})' in q
+    q = build_query(Slice("search", "playstation 5", 8000, None), 1)
+    assert 'search: "playstation 5", filter: {price: {from: "8000"}}' in q and "categories(" not in q
+    with pytest.raises(UnknownTarget, match="numbers"):
+        build_query(Slice("category", "tvs", None, None), 1)
+
+    result = parse_products(fixture_json("2b_products.json.gz"), 1)
+    assert len(result.listings) == 96 and result.total == 96 and not result.has_next
+    tv = next(x for x in result.listings if x.sku == "TV442")
+    assert (tv.price, tv.list_price, tv.list_price_kind, tv.in_stock, tv.brand) == (1169900, 1599900, "list", True, "Xiaomi")
+    assert tv.url == "https://2b.com.eg/en/xiaomi-tv-43-inch-led-fhd-smart-google-tv-with-built-in-receiver-l43mb-afme-2026.html"
+    rated = next(x for x in result.listings if x.sku == "TV118")
+    assert (rated.rating, rated.reviews) == (5.0, 1)
+    assert sum(x.stock_left is not None for x in result.listings) == 54  # "only N left" is everywhere
+    assert all(x.rating is None for x in result.listings if not x.reviews)
+    assert result.subcategories[0].id == "2167" and result.subcategories[0].name == "LG (11)"
+
+
+def test_2b_challenge_and_unknown_category(monkeypatch):
+    from deals.models import Blocked, UnknownTarget
+    from deals.sites import twob_eg
+
+    class Response:
+        def __init__(self, status_code, body, ctype="application/json"):
+            self.status_code, self._body, self.headers = status_code, body, {"content-type": ctype}
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self._body
+
+    sessions = []
+
+    class Session:
+        def __init__(self, impersonate):
+            sessions.append(impersonate)
+
+        def post(self, url, json, timeout, headers):
+            return next_response()
+
+    monkeypatch.setattr(twob_eg.requests, "Session", Session)
+    next_response = lambda: Response(403, None, "text/html")
+    with pytest.raises(Blocked, match="Cloudflare"):
+        twob_eg.TwoBEG().fetch_page(Slice("category", "131", 3000, None), 1)
+    assert sessions == ["chrome", "chrome"]
+    next_response = lambda: Response(200, {"data": {"products": {"total_count": 0, "page_info": {"total_pages": 0}, "items": []},
+                                                     "category": {"items": []}}})
+    with pytest.raises(UnknownTarget, match="no category with id 999"):
+        twob_eg.TwoBEG().fetch_page(Slice("category", "999", None, None), 1)
+    next_response = lambda: Response(200, {"errors": [{"message": "Cannot query field x"}]})
+    with pytest.raises(ValueError, match="GraphQL error"):
+        twob_eg.TwoBEG().fetch_page(Slice("category", "131", None, None), 1)

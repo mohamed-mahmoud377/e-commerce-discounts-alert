@@ -1,6 +1,7 @@
 # deals: e-commerce price tracker and real-discount alerts
 
-`deals` crawls whole categories on **amazon.eg**, **noon.com (Egypt)** and **jumia.com.eg**, keeps the
+`deals` crawls whole categories on **amazon.eg**, **noon.com (Egypt)**, **jumia.com.eg**, **cairosales.com** and
+**2b.com.eg**, keeps the
 price history of every product, and sends you a **Telegram** message when a price
 is genuinely low, judged against the product's own history rather than the
 "was" price a shop shows.
@@ -31,8 +32,8 @@ Each worker only takes jobs for the sites its internet connection can reach.
       ┌────────────┼─────────────────────┐
   your Mac (launchd)            friend's PC (optional)
   deals worker                  deals worker
-  noon_eg + amazon_eg           noon_eg, amazon_eg,
-  + jumia_eg                    jumia_eg
+  noon, amazon, jumia,          any shop it can reach
+  cairosales, 2b                (home connections: all five)
 ```
 
 ## What it tracks
@@ -149,7 +150,7 @@ Prices are stored in piastres (divide by 100 for EGP); times are UTC.
    and restart the coordinator.
 2. On the other machine: clone the repo, create the venv as in Quick start, then:
    ```bash
-   DEALS_COORDINATOR=http://207.154.206.127:8787 DEALS_TOKEN=... DEALS_SITES=noon_eg,amazon_eg,jumia_eg \
+   DEALS_COORDINATOR=http://207.154.206.127:8787 DEALS_TOKEN=... DEALS_SITES=noon_eg,amazon_eg,jumia_eg,cairosales_eg,2b_eg \
      .venv/bin/deals worker
    ```
 That's all. The coordinator never gives two workers on the same internet connection the
@@ -163,6 +164,8 @@ home don't.
 .venv/bin/deals categories amazon_eg 18018102031        # children of Electronics
 .venv/bin/deals categories noon_eg electronics-and-mobiles
 .venv/bin/deals categories jumia_eg electronic-television-video
+.venv/bin/deals categories cairosales_eg tvs-screens
+.venv/bin/deals categories 2b_eg 2370                    # 2B uses numeric ids
 .venv/bin/deals plan noon_eg "category:electronics-and-mobiles/television-and-video/televisions|price:3000-"
 .venv/bin/deals crawl amazon_eg "category:21832982031|price:3000-" --pages 2   # check the parser
 ```
@@ -171,7 +174,8 @@ home don't.
 
 ```
 src/deals/
-  sites/amazon_eg.py, noon_eg.py, jumia_eg.py   fetch + parse one listing page per site
+  sites/amazon_eg.py, noon_eg.py, jumia_eg.py,  fetch + parse one listing page per site
+  cairosales_eg.py, twob_eg.py
   planner.py      split a category into slices each site lets us page through completely
   scheduler.py    job queue: leases, adaptive revisit intervals, per-IP block cooldowns
   coordinator.py  HTTP API for workers + watchdog (stalls, offline workers, backups)

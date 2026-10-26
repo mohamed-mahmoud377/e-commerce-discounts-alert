@@ -8,7 +8,7 @@ alert, with worked examples).
 
 ## Overview
 
-The system crawls whole categories on amazon.eg, noon.com (Egypt) and jumia.com.eg, stores every product's price
+The system crawls whole categories on amazon.eg, noon.com (Egypt), jumia.com.eg, cairosales.com and 2b.com.eg, stores every product's price
 history, and sends an Arabic Telegram alert when a price is genuinely low compared with that product's
 own history. It tracks about 50,000 products on Amazon and noon plus about 14,000 on Jumia, in 14 groups: TVs, refrigerators, air conditioners, gaming consoles,
 phones, tablets, laptops, desktops, monitors, PC components, headphones, kitchen machines (fryers, coffee
@@ -21,17 +21,17 @@ crawling from their own internet connections.
 | --- | --- | --- |
 | Coordinator (`deals serve`) | Droplet 207.154.206.127 | Owns the SQLite database, hands out crawl jobs, stores results, detects deals, runs the Telegram bot, watches for problems, takes daily backups |
 | Worker (`deals worker`) | Your Mac, the droplet, any friend's PC | Asks for a job, downloads the shop pages, sends the products back. Holds no database |
-| Site adapters (`sites/amazon_eg.py`, `sites/noon_eg.py`, `sites/jumia_eg.py`) | Inside each worker | Know how to fetch and read one listing page of each shop |
+| Site adapters (`sites/amazon_eg.py`, `sites/noon_eg.py`, `sites/jumia_eg.py`, `sites/cairosales_eg.py`, `sites/twob_eg.py`) | Inside each worker | Know how to fetch and read one listing page of each shop |
 | Telegram bot (@Jerrys_deals_bot) | Inside the coordinator | Sends deal alerts to approved subscribers and system warnings to you |
 
 Workers only make outgoing requests to the coordinator, so nothing needs to be opened on your Mac or on a
-friend's router. Your Mac does the real crawling because the shops refuse most datacenter traffic (noon and
-Jumia always); the droplet's worker is a fallback for Amazon.
+friend's router. Your Mac does the real crawling because the shops refuse most datacenter traffic (noon,
+Jumia, Cairo Sales and 2B always); the droplet's worker is a fallback for Amazon.
 
 ```mermaid
 flowchart TB
-    shops["amazon.eg, noon.com and jumia.com.eg<br/>category listing pages"]
-    shops --> mac["Your Mac (launchd)<br/>noon + amazon + jumia<br/>does most of the crawling"]
+    shops["amazon.eg, noon.com, jumia.com.eg,<br/>cairosales.com, 2b.com.eg<br/>category listing pages"]
+    shops --> mac["Your Mac (launchd)<br/>all five shops<br/>does most of the crawling"]
     shops --> dw["Droplet worker<br/>amazon only<br/>fallback: often refused"]
     shops --> fr["Friend's PC (optional)<br/>any shop it can reach"]
     mac -- "lease a job, post each page" --> api
@@ -176,7 +176,7 @@ Adding a friend's computer as a worker (more crawling capacity from another conn
 1. On the server, create a token with `deals token`, add it under `[workers]` as `ahmed = "..."`, restart
    the coordinator.
 2. On their computer: clone the repo, do setup steps 1 and 2, then run
-   `DEALS_COORDINATOR=http://207.154.206.127:8787 DEALS_TOKEN=... DEALS_SITES=noon_eg,amazon_eg,jumia_eg .venv/bin/deals worker`.
+   `DEALS_COORDINATOR=http://207.154.206.127:8787 DEALS_TOKEN=... DEALS_SITES=noon_eg,amazon_eg,jumia_eg,cairosales_eg,2b_eg .venv/bin/deals worker`.
 
 Running everything on one machine without the server (for experiments): `cp config.example.toml config.toml`,
 then `.venv/bin/deals local` starts a coordinator and a worker in one process with a local database.
@@ -215,6 +215,17 @@ past the end) silently redirects to the *parent* category, so every page's serve
 one asked for; and a category holds products that are in none of its children, so Jumia is split by price
 only (now true of every shop, see Algorithm 2). Details, numbers and the category map: [JUMIA.md](JUMIA.md).
 
+**cairosales.com.** Cairo Sales Stores runs PrestaShop behind Cloudflare; Chrome's fingerprint passes from
+home. Category pages (`/en/<slug>/?n=60&p=N&price=<min>-<max>`) carry an exact count ("Showing 1 - 60 of
+820 items") and 60 product cards each; they are fetched sorted by price because the default order is
+shuffled daily. Out-of-stock products stay listed without a price (recorded as out of stock), and an unknown
+slug redirects to the homepage, which the adapter turns into a loud failure. Details: [CAIROSALES.md](CAIROSALES.md).
+
+**2b.com.eg.** 2B runs Magento 2, and its public GraphQL API (`/graphql`) answers with exact counts, an
+inclusive price filter and 100 structured products per request, so no HTML is parsed at all. Categories are
+keyed by Magento's numeric id (`category:131` = TVs). Only in-stock products are returned, so a sold-out
+product disappears from its category until it is back. Details: [2B.md](2B.md).
+
 **Which machine can reach which shop** (tested 25 October 2026):
 
 | Shop | Home IP (your Mac) | Droplet (DigitalOcean Frankfurt) |
@@ -222,14 +233,16 @@ only (now true of every shop, see Algorithm 2). Details, numbers and the categor
 | amazon.eg | Works | Varies: category pages were refused about 5 times in 6 in one test, fine in others |
 | noon.com | Works | Always refused (Akamai 403) |
 | jumia.com.eg | Works with Safari's fingerprint (tested 26 October) | Always refused (Cloudflare 403, every fingerprint) |
+| cairosales.com | Works with Chrome's fingerprint (tested 27 October) | Always refused (Cloudflare 403) |
+| 2b.com.eg | Works with Chrome's fingerprint, HTML and GraphQL (tested 27 October) | Always refused (Cloudflare challenge) |
 
 **What is read from each product card** (no extra requests):
 
-| Signal | amazon.eg | noon | Jumia |
-| --- | --- | --- | --- |
-| Price | The featured offer's price | The offer's sale price, else its price | The product's price |
-| Crossed-out price | "Was:" (Amazon's own recent price, trusted) or "List:" (brand RRP, often inflated) | Seller-set, treated like an RRP | Seller-set (on 88% of cards), treated like an RRP |
-| Stock left | "Only 3 left in stock" | "Only 3 left" | "1 item left" (45% of cards say 3 or fewer, so not evidence) |
+| Signal | amazon.eg | noon | Jumia | Cairo Sales | 2B |
+| --- | --- | --- | --- | --- | --- |
+| Price | The featured offer's price | The offer's sale price, else its price | The product's price | The price (hidden when out of stock) | `final_price` |
+| Crossed-out price | "Was:" (Amazon's own recent price, trusted) or "List:" (brand RRP, often inflated) | Seller-set, treated like an RRP | Seller-set (on 88% of cards), treated like an RRP | The shop's "regular" price (every card), treated like an RRP | `regular_price` (every product), treated like an RRP |
+| Stock left | "Only 3 left in stock" | "Only 3 left" | "1 item left" (45% of cards say 3 or fewer, so not evidence) | none | `only_x_left_in_stock` (57% of products, so not evidence) |
 | Deal badge | "Limited time deal" | "Deal", "Mega Deal" | none on category pages (flash sales are only marked on `/flash-sales/`) |
 | Shop's own price history | none | "Lowest price in 30 days", "in a year" | none |
 | Demand | "300+ bought in past month" | "200+ sold recently", "Selling out fast", bestseller | none |

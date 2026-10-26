@@ -37,7 +37,7 @@ if launchctl print "gui/$(id -u)/com.deals.worker" 2>/dev/null | grep -q "state 
   errors=$(tail -n 2000 ~/Library/Logs/deals-worker.log 2>/dev/null | grep -cE "ERROR|Traceback")
   [ "$errors" = 0 ] && ok "no errors in its recent log" || warn "$errors error lines in ~/Library/Logs/deals-worker.log"
 else
-  warn "worker not running on this Mac (make install-mac-worker), so noon and jumia have no worker unless another machine runs one"
+  warn "worker not running on this Mac (make install-mac-worker), so noon, jumia, Cairo Sales and 2B have no worker unless another machine runs one"
 fi
 
 echo

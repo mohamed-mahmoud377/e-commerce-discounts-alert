@@ -111,6 +111,64 @@ Facts that shaped the crawler:
   is split by price only. The same turned out true on Amazon and noon (below), so every shop is now.
 - 88% of cards show a seller-set crossed-out price and 45% say "3 or fewer left": neither is evidence.
 
+## cairosales.com category slugs
+
+Full analysis: [CAIROSALES.md](CAIROSALES.md). Ids are the URL paths under `/en/`; roots for the
+`categories` command: `tvs-screens`, `air-conditioners`, `refrigerators`, `mobiles-tablets`, `small-appliances`,
+`computer-accessories`, `gaming-accessories`, `home-theaters-speakers` (the full tree is at `/en/sitemap`).
+
+| Group | Slugs |
+| --- | --- |
+| TVs | tvs-screens |
+| Refrigerators | refrigerators, freezers |
+| Air conditioners | air-conditioners |
+| Gaming consoles | gaming-accessories/game-consoles + searches "playstation 5", "xbox series", "nintendo switch" |
+| Phones / Tablets | mobiles-tablets/mobiles / mobiles-tablets/tablets |
+| Laptops / Desktops | computer-accessories/laptops-desktop-computers / computer-accessories/desktop-computers |
+| Monitors | computer-accessories/computer-monitors, gaming-accessories/gaming-monitors |
+| Headphones | home-theaters-speakers/headphones, gaming-accessories/gaming-headphones |
+| Kitchen machines | small-appliances/fryers, coffee-maker, blenders, hand-stand-mixers, food-processors, kitchen-machines, chopper, ovens-toasters, cookers; microwaves |
+| Kitchen appliances | small-appliances/kettle, juicer, grills, meat-grinders, sandwich-maker, iron; water-dispenser/water-dispenser, water-dispenser/filters |
+| Cooking & dishwashers | cookers-ovens, dishwashers, built-in-kitchen-products/built-in-ovens, built-in-kitchen-products/built-in-hobs |
+
+Facts that shaped the crawler:
+
+- PrestaShop behind Cloudflare: Chrome's fingerprint passes from home, every datacenter IP is refused.
+- 60 products per page (`?n=60`), no page cap, exact counts; pages are fetched sorted by price because the
+  default order is shuffled with a daily random seed.
+- Out-of-stock products stay listed without a price and are sorted last; most phones, tablets, laptops and
+  consoles on the shop are such dead listings. A page with no price at all ends the crawl.
+- An unknown slug redirects to the homepage (HTTP 200); the adapter checks the served path.
+- Every in-stock card shows a crossed-out price set by the shop (treated like an RRP); no other signals.
+
+## 2b.com.eg category ids
+
+Full analysis: [2B.md](2B.md). Ids are Magento's numeric category ids (readable paths in the API differ
+from the site's menu); roots for the `categories` command: Computer `118`, Mobile & Tablet `266`, Home
+Appliances `2370`, Televisions `1932`, Audio `2382`, Gaming `120`, Electronics `610`.
+
+| Group | Ids |
+| --- | --- |
+| TVs | 131 |
+| Refrigerators | 260 (refrigerators), 1905 (deep freezers) |
+| Air conditioners | 262 |
+| Gaming consoles | 162 (PlayStation 5) + search "playstation 5" |
+| Phones / Tablets | 119 / 122 |
+| Laptops / Desktops / Monitors / PC components | 273 / 159 / 2381 / 1826 |
+| Headphones | 592 |
+| Kitchen machines | 1973 air fryers, 1972 coffee makers, 1967 blenders, 2395 hand blenders, 1969 mixers, 1970 food processors, 313 microwaves & ovens |
+| Kitchen appliances | 1971 kettles, 1964 sandwich makers & grills, 326 irons, 324 water dispensers, 284 water filters |
+| Cooking & dishwashers | 2416 cookers, 314 dishwashers, 611 built-in |
+
+Facts that shaped the crawler:
+
+- The Magento GraphQL API (`/graphql`, `Store: en`) gives exact counts, an inclusive price filter on the
+  final price, and 100 products per request; Cloudflare lets Chrome's fingerprint through from home only.
+- Only in-stock products are returned; sold-out products vanish until they are back.
+- "Only N left" sits on 57% of products, so it is not evidence (`LOW_STOCK_EVERYWHERE`); every product
+  shows a regular price above its final price (claims of 25 to 30% are the norm), treated like an RRP.
+- An unknown category id returns 0 products with no error, so the adapter looks the category up separately.
+
 ## Parent categories hold products their children don't (all shops)
 
 Measured 26 October 2026 by comparing a category's count with the sum of its children's counts (same price

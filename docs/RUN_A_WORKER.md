@@ -2,7 +2,7 @@
 
 This page is written to be followed literally, by a person or by an AI assistant acting for them. It sets up
 one computer as a **worker** for an existing deals server: the computer downloads shop pages (amazon.eg,
-noon.com and jumia.com.eg) and sends the products it finds to the server. It keeps no data, sends no messages, and changes
+noon.com, jumia.com.eg, cairosales.com and 2b.com.eg) and sends the products it finds to the server. It keeps no data, sends no messages, and changes
 nothing on the server. Background explanation is in [GETTING_STARTED.md](GETTING_STARTED.md), path A.
 
 ## 0. Inputs you must have before starting
@@ -65,7 +65,7 @@ Replace the two values and run (one command, four lines):
 ```bash
 DEALS_COORDINATOR=SERVER \
 DEALS_TOKEN=TOKEN \
-DEALS_SITES=noon_eg,amazon_eg,jumia_eg \
+DEALS_SITES=noon_eg,amazon_eg,jumia_eg,cairosales_eg,2b_eg \
 .venv/bin/deals worker
 ```
 
@@ -81,7 +81,8 @@ Read the output for 2 minutes. What the lines mean:
 | `blocked: amazon_eg ... challenged` | Amazon refused this connection for now | None: the worker pauses that shop (15 min, doubling) and retries alone. If it never stops, the connection is probably a datacenter/VPN; drop `amazon_eg` from `DEALS_SITES` |
 | `blocked: noon_eg ... 403` | noon refuses this connection | Set `DEALS_SITES=amazon_eg` (see section 1) |
 | `blocked: jumia_eg: Cloudflare challenge` | Jumia (Cloudflare) refuses this connection | It pauses and retries alone. If every Jumia job is blocked, the connection is a datacenter/VPN: drop `jumia_eg` from `DEALS_SITES`. (A plain `curl` of jumia.com.eg always gets 403, even from home: only the worker's Safari fingerprint passes, so test with `.venv/bin/deals crawl jumia_eg "category:televisions\|price:3000-"`, which should print 40 products) |
-| nothing at all for 5 minutes after `worker 0.1.0 started for noon_eg, amazon_eg, jumia_eg` | Every job is taken by other devices on the same network, or nothing is due yet | Normal if another worker runs on the same Wi-Fi. Wait 10 minutes |
+| `blocked: cairosales_eg: Cloudflare challenge` / `blocked: 2b_eg: Cloudflare challenge` | Cloudflare refuses this connection on Cairo Sales or 2B | Same as Jumia: expected from datacenter/VPN connections, drop the shop from `DEALS_SITES` there |
+| nothing at all for 5 minutes after `worker 0.1.0 started for noon_eg, amazon_eg, jumia_eg, cairosales_eg, 2b_eg` | Every job is taken by other devices on the same network, or nothing is due yet | Normal if another worker runs on the same Wi-Fi. Wait 10 minutes |
 
 Stop it with Ctrl+C when you have seen `done` lines (or a clear error). Ctrl+C is safe: an unfinished job
 goes back to the queue within 5 minutes.
@@ -113,7 +114,7 @@ that name.
    ```
    DEALS_COORDINATOR=SERVER
    DEALS_TOKEN=TOKEN
-   DEALS_SITES=noon_eg,amazon_eg,jumia_eg
+   DEALS_SITES=noon_eg,amazon_eg,jumia_eg,cairosales_eg,2b_eg
    DEALS_DATA_DIR=/Users/<you>/e-commerce-discounts-alert/data
    ```
 
@@ -142,7 +143,7 @@ Everyday commands on macOS: `make worker-log` (follow the log), `make restart-ma
    WorkingDirectory=%h/e-commerce-discounts-alert
    Environment=DEALS_COORDINATOR=SERVER
    Environment=DEALS_TOKEN=TOKEN
-   Environment=DEALS_SITES=noon_eg,amazon_eg,jumia_eg
+   Environment=DEALS_SITES=noon_eg,amazon_eg,jumia_eg,cairosales_eg,2b_eg
    Environment=DEALS_DATA_DIR=%h/e-commerce-discounts-alert/data
    ExecStart=%h/e-commerce-discounts-alert/.venv/bin/deals worker
    Restart=always
