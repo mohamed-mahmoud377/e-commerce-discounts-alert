@@ -137,8 +137,8 @@ After `make ssh`:
 | Connect a bot | `make telegram TOKEN=<token from @BotFather>` |
 | See subscribers | send `/subscribers` to the bot |
 | Remove someone | `/subscribers`, tap ❌ next to their name, then confirm |
-| Make someone a helper admin (gets join requests, system warnings, daily report) | `/subscribers`, tap ⭐ next to their name (⬇️ undoes it) |
-| Approve a friend | tap the approve button on the request message (you or any helper admin) |
+| Make someone a helper admin (also gets system warnings and the daily report) | `/subscribers`, tap ⭐ next to their name (⬇️ undoes it) |
+| Approve a friend | tap the approve button on the request message (only you get requests) |
 | Test message | `make ssh`, then `runuser -u deals -- /opt/deals/.venv/bin/deals telegram --test --config /etc/deals/config.toml` |
 
 ## The deals command

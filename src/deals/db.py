@@ -219,8 +219,7 @@ MIGRATIONS = [
     ALTER TABLE alerts ADD COLUMN confirm_until TEXT;
     """,
     """
-    -- Helper admins: chosen by the owner, they also get join requests (and may answer them),
-    -- system warnings and the daily report.
+    -- Helper admins: chosen by the owner, they also get the system warnings and the daily report.
     ALTER TABLE subscribers ADD COLUMN is_manager INTEGER NOT NULL DEFAULT 0;
     """,
 ]

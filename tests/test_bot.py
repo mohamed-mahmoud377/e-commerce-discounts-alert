@@ -173,7 +173,7 @@ def test_owner_removes_someone_after_confirming(env, monkeypatch):
     assert [b for c, _, b in tg.sent if c == ADMIN][-1][0][0]["callback_data"] == f"approve:{FRIEND}"
 
 
-def test_helper_admin_gets_requests_warnings_and_report(env, monkeypatch):
+def test_helper_admin_gets_only_warnings_and_report(env, monkeypatch):
     cfg, conn, tg = env
     monkeypatch.setattr("time.sleep", lambda _: None)
     subscribe(conn, cfg, tg, FRIEND, 1)
@@ -190,23 +190,23 @@ def test_helper_admin_gets_requests_warnings_and_report(env, monkeypatch):
     assert not any("noon stalled" in t for t in tg.to(FRIEND))
     assert "tv deal" in tg.to(HELPER) and "tv deal" in tg.to(FRIEND)
 
-    # a join request reaches both admins; the helper answers, both copies show who decided
+    # join requests go to the owner only, and a helper can't answer one
     bot.handle_update(conn, cfg, tg, message(7, NEWBIE, "/start", first_name="Sara"))
-    owner_copy = [i + 1 for i, (c, _, b) in enumerate(tg.sent) if c == ADMIN and b][-1]
-    helper_copy = [i + 1 for i, (c, _, b) in enumerate(tg.sent) if c == HELPER and b][-1]
-    bot.handle_update(conn, cfg, tg, button(8, HELPER, f"approve:{NEWBIE}", chat=HELPER, message_id=helper_copy))
+    assert not [b for c, _, b in tg.sent if c == HELPER and b]
+    bot.handle_update(conn, cfg, tg, button(8, HELPER, f"approve:{NEWBIE}", chat=HELPER))
+    assert status(conn, NEWBIE) == "pending"
+    bot.handle_update(conn, cfg, tg, button(9, ADMIN, f"approve:{NEWBIE}"))
     assert status(conn, NEWBIE) == "active"
-    edits = {(p["chat_id"], p["message_id"]): p["text"] for m, p in tg.calls if m == "editMessageText"}
-    assert "تمت الموافقة" in edits[(ADMIN, owner_copy)] and "تمت الموافقة" in edits[(HELPER, helper_copy)]
-    # the owner pressing the stale copy changes nothing and says it was handled
-    bot.handle_update(conn, cfg, tg, button(9, ADMIN, f"reject:{NEWBIE}", message_id=owner_copy))
+    bot.handle_update(conn, cfg, tg, button(10, ADMIN, f"reject:{NEWBIE}"))  # a second tap changes nothing
     assert status(conn, NEWBIE) == "active" and "بالفعل" in answers(tg)[-1]
-    # helpers can't remove people or name other helpers
-    bot.handle_update(conn, cfg, tg, button(10, HELPER, f"remove_yes:{FRIEND}", chat=HELPER))
-    bot.handle_update(conn, cfg, tg, button(11, HELPER, f"promote:{FRIEND}", chat=HELPER))
+    # helpers can't remove people or name other helpers, and don't get the list
+    bot.handle_update(conn, cfg, tg, button(11, HELPER, f"remove_yes:{FRIEND}", chat=HELPER))
+    bot.handle_update(conn, cfg, tg, button(12, HELPER, f"promote:{FRIEND}", chat=HELPER))
     assert status(conn, FRIEND) == "active" and not bot.is_manager(conn, FRIEND)
+    bot.handle_update(conn, cfg, tg, message(13, HELPER, "/subscribers"))
+    assert "المشتركون" not in tg.to(HELPER)[-1]
 
-    bot.handle_update(conn, cfg, tg, button(12, ADMIN, f"demote:{HELPER}"))
+    bot.handle_update(conn, cfg, tg, button(14, ADMIN, f"demote:{HELPER}"))
     assert not bot.is_manager(conn, HELPER)
     queue_alert(conn, kind="system", text="disk low")
     send_all(cfg, conn, tg)

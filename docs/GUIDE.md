@@ -622,11 +622,10 @@ to have changed, low disk) and the daily report go to you and to your helper adm
 | Who | Deal alerts | Join requests | System warnings and daily report | Manage people |
 | --- | --- | --- | --- | --- |
 | You (the owner, `[telegram] chat_id`) | ✅ | ✅ approve/reject | ✅ | ✅ remove, make/unmake helpers |
-| Helper admin (⭐) | ✅ | ✅ approve/reject | ✅ | ❌ (sees `/subscribers`, no buttons) |
+| Helper admin (⭐) | ✅ | ❌ | ✅ | ❌ |
 | Subscriber | ✅ | ❌ | ❌ | ❌ |
 
-A join request goes to every admin; the first answer wins and every copy is updated with the decision (and
-who made it), so a later tap on an old copy just says it was handled. A helper who sends `/stop` gets
+A second tap on an already answered request just says it was handled. A helper who sends `/stop` gets
 nothing until `/start` again. `make report` (sending the report by hand) still goes only to you.
 
 ## Keeping it healthy

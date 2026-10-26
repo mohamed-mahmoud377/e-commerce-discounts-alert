@@ -4,15 +4,14 @@
   approved people get deal alerts.
 - /stop unsubscribes. People who were approved before can /start again without
   a new approval.
-- The owner (config [telegram] chat_id) manages people from /subscribers: remove
-  someone, or make them a helper admin. Helper admins also get join requests (and
-  may answer them), system warnings and the daily report.
+- The owner (config [telegram] chat_id) answers join requests and manages people
+  from /subscribers: remove someone, or make them a helper admin. Helper admins
+  also get the system warnings and the daily report, nothing more.
 
 Updates are read by long polling, so nothing has to listen on a public port.
 """
 
 import html
-import json
 import logging
 import sqlite3
 import threading
@@ -44,12 +43,9 @@ HELP = ("🤖 بوت تنبيهات العروض الحقيقية من أماز�
 ADMIN_START = ("أنت المسؤول عن هذا البوت ✅\n"
                "تصلك كل تنبيهات العروض وتنبيهات النظام والتقرير اليومي. عندما يضغط شخص /start ستصلك رسالة للموافقة أو الرفض.\n"
                "/subscribers لعرض المشتركين، وإزالة أي شخص، أو جعله مساعدًا للمسؤول")
-MANAGER_INFO = ("⭐ أنت مساعد للمسؤول: تصلك طلبات الاشتراك الجديدة (ويمكنك قبولها أو رفضها)، "
-                "وتنبيهات النظام، والتقرير اليومي، بالإضافة إلى تنبيهات العروض.\n"
-                "/subscribers لعرض المشتركين")
+MANAGER_INFO = "⭐ أنت مساعد للمسؤول: تصلك تنبيهات النظام والتقرير اليومي، بالإضافة إلى تنبيهات العروض."
 MADE_MANAGER = ("⭐ جعلك المسؤول مساعدًا له.\n"
-                "ستصلك من الآن طلبات الاشتراك الجديدة (ويمكنك قبولها أو رفضها)، وتنبيهات النظام، والتقرير اليومي، "
-                "بالإضافة إلى تنبيهات العروض.\n/subscribers لعرض المشتركين")
+                "ستصلك من الآن تنبيهات النظام (مشاكل الجمع والحظر وغيرها) والتقرير اليومي، بالإضافة إلى تنبيهات العروض.")
 NO_LONGER_MANAGER = "لم تعد مساعدًا للمسؤول. ستصلك تنبيهات العروض فقط كالمعتاد."
 NOT_ALLOWED = "هذا الإجراء للمسؤول فقط"
 STATUS_LABEL = {"active": "✅ مشترك", "pending": "⏳ ينتظر الموافقة", "stopped": "🔕 أوقف التنبيهات",
@@ -75,13 +71,6 @@ def is_manager(conn: sqlite3.Connection, chat_id: int) -> bool:
     """An active helper admin (a helper who sent /stop gets nothing, requests included)."""
     return conn.execute("SELECT 1 FROM subscribers WHERE chat_id = ? AND is_manager = 1 AND status = 'active'",
                         (chat_id,)).fetchone() is not None
-
-
-def admins(conn: sqlite3.Connection, owner: int) -> list[int]:
-    """Who gets join requests: the owner, then the active helper admins."""
-    helpers = conn.execute("SELECT chat_id FROM subscribers WHERE is_manager = 1 AND status = 'active' AND chat_id != ? "
-                           "ORDER BY approved_at", (owner,)).fetchall()
-    return [owner] + [r["chat_id"] for r in helpers]
 
 
 def handle_update(conn: sqlite3.Connection, cfg: Config, tg: Telegram, update: dict,
@@ -121,7 +110,10 @@ def handle_update(conn: sqlite3.Connection, cfg: Config, tg: Telegram, update: d
                     (chat_id, name, user.get("username"), iso(now), iso(now)),
                 )
             tg.send(chat_id, REQUEST_SENT.format(name=html.escape(name, quote=False)))
-            _send_request(conn, tg, owner, chat_id, name, user.get("username"))
+            handle = f" (@{user['username']})" if user.get("username") else ""
+            tg.send(owner, f"🔔 <b>طلب اشتراك جديد</b>\n{html.escape(name, quote=False)}{handle}\nchat id: {chat_id}",
+                    buttons=[[{"text": "✅ موافقة", "callback_data": f"approve:{chat_id}"},
+                              {"text": "❌ رفض", "callback_data": f"reject:{chat_id}"}]])
             log.info("subscription request from %s (%s)", chat_id, name)
     elif command == "/stop":
         if sub and sub["status"] in ("active", "pending"):
@@ -131,31 +123,8 @@ def handle_update(conn: sqlite3.Connection, cfg: Config, tg: Telegram, update: d
             tg.send(chat_id, NOT_SUBSCRIBED)
     elif command == "/subscribers" and chat_id == owner:
         tg.send(chat_id, _subscriber_list(conn), buttons=_manage_buttons(conn))
-    elif command == "/subscribers" and is_manager(conn, chat_id):
-        tg.send(chat_id, _subscriber_list(conn))
     else:
         tg.send(chat_id, HELP)
-
-
-def _send_request(conn, tg: Telegram, owner: int, chat_id: int, name: str, username: str | None) -> None:
-    """Send the join request to every admin and remember the messages, so the first answer
-    can update all of them."""
-    handle = f" (@{username})" if username else ""
-    text = f"🔔 <b>طلب اشتراك جديد</b>\n{html.escape(name, quote=False)}{handle}\nchat id: {chat_id}"
-    buttons = [[{"text": "✅ موافقة", "callback_data": f"approve:{chat_id}"},
-                {"text": "❌ رفض", "callback_data": f"reject:{chat_id}"}]]
-    sent = []
-    for admin in admins(conn, owner):
-        try:
-            result = tg.send(admin, text, buttons=buttons)
-        except Exception as exc:  # one unreachable helper must not stop the owner getting it
-            log.warning("could not send the join request to %s (%s)", admin, exc)
-            continue
-        if isinstance(result, dict) and "message_id" in result:
-            sent.append([admin, result["message_id"]])
-    with conn:
-        conn.execute("INSERT INTO kv (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
-                     (f"request:{chat_id}", json.dumps(sent)))
 
 
 def _on_button(conn, tg: Telegram, cq: dict, owner: int, now: datetime) -> None:
@@ -166,8 +135,7 @@ def _on_button(conn, tg: Telegram, cq: dict, owner: int, now: datetime) -> None:
     def answer(text: str) -> None:
         tg.call("answerCallbackQuery", callback_query_id=cq["id"], text=text)
 
-    allowed = presser == owner or (action in ("approve", "reject") and is_manager(conn, presser))
-    if not allowed:
+    if presser != owner:
         answer(NOT_ALLOWED)
         return
     if action == "list":
@@ -194,10 +162,11 @@ def _on_button(conn, tg: Telegram, cq: dict, owner: int, now: datetime) -> None:
             _set_status(conn, sub["chat_id"], "rejected", now)
             tg.send(sub["chat_id"], REJECTED)
             result = "❌ تم الرفض"
-        by = "" if presser == owner else _name(conn, presser)
-        _close_request(conn, tg, sub["chat_id"], message, f"{result}" + (f" (بواسطة {by})" if by else ""))
+        if message:  # replace the buttons with the decision
+            tg.call("editMessageText", chat_id=message["chat"]["id"], message_id=message["message_id"],
+                    text=f"{html.escape(message.get('text', ''), quote=False)}\n\n{result}", parse_mode="HTML")
         answer(result)
-        log.info("subscriber %s: %s by %s", sub["chat_id"], action, presser)
+        log.info("subscriber %s: %s", sub["chat_id"], action)
     elif action == "remove":  # ask first: a slip of the finger shouldn't drop a friend
         _edit(tg, message, f"إزالة <b>{who}</b>؟ لن تصله التنبيهات بعد الآن، ويمكنه طلب الاشتراك من جديد.",
               [[{"text": "🗑 نعم، أزله", "callback_data": f"remove_yes:{sub['chat_id']}"},
@@ -226,24 +195,6 @@ def _on_button(conn, tg: Telegram, cq: dict, owner: int, now: datetime) -> None:
         answer("طلب غير معروف")
 
 
-def _close_request(conn, tg: Telegram, chat_id: int, pressed: dict, result: str) -> None:
-    """Replace the buttons with the decision on every admin's copy of the request."""
-    key = f"request:{chat_id}"
-    row = conn.execute("SELECT value FROM kv WHERE key = ?", (key,)).fetchone()
-    copies = json.loads(row["value"]) if row else []
-    if pressed and [pressed["chat"]["id"], pressed["message_id"]] not in copies:
-        copies.append([pressed["chat"]["id"], pressed["message_id"]])
-    text = pressed.get("text", "") if pressed else ""
-    for admin, message_id in copies:
-        try:
-            tg.call("editMessageText", chat_id=admin, message_id=message_id,
-                    text=f"{html.escape(text or 'طلب اشتراك', quote=False)}\n\n{result}", parse_mode="HTML")
-        except Exception as exc:  # already edited, deleted by the admin...
-            log.info("could not update request copy %s/%s (%s)", admin, message_id, exc)
-    with conn:
-        conn.execute("DELETE FROM kv WHERE key = ?", (key,))
-
-
 def _show_list(conn, tg: Telegram, message: dict) -> None:
     _edit(tg, message, _subscriber_list(conn), _manage_buttons(conn))
 
@@ -262,11 +213,6 @@ def _notify(tg: Telegram, chat_id: int, text: str) -> None:
         log.info("could not tell %s (%s)", chat_id, exc)
 
 
-def _name(conn, chat_id: int) -> str:
-    row = conn.execute("SELECT name FROM subscribers WHERE chat_id = ?", (chat_id,)).fetchone()
-    return html.escape((row and row["name"]) or str(chat_id), quote=False)
-
-
 def _set_status(conn, chat_id: int, status: str, now: datetime) -> None:
     with conn:
         conn.execute("UPDATE subscribers SET status = ?, updated_at = ? WHERE chat_id = ?", (status, iso(now), chat_id))
@@ -282,7 +228,7 @@ def _subscriber_list(conn) -> str:
             who += f" (@{r['username']})"
         role = "👑 " if r["is_admin"] else "⭐ " if r["is_manager"] else ""
         lines.append(f"{role}{who}: {STATUS_LABEL.get(r['status'], r['status'])}")
-    lines.append("\n👑 المسؤول · ⭐ مساعد: تصله طلبات الاشتراك وتنبيهات النظام والتقرير اليومي")
+    lines.append("\n👑 المسؤول · ⭐ مساعد: تصله تنبيهات النظام والتقرير اليومي")
     return "\n".join(lines)
 
 

@@ -114,8 +114,8 @@ Send friends the bot link (t.me/Jerrys_deals_bot). When they press **Start**, yo
 **✅ موافقة / ❌ رفض** buttons; once approved they receive every deal alert (system warnings stay
 yours). They can send `/stop` to pause and `/start` to come back without a new approval. Send
 `/subscribers` to the bot to see who is subscribed, with buttons to **remove** someone (asks to confirm;
-they can request again later) or make them a **helper admin** (⭐), who then also gets the join requests
-(and can answer them), system warnings and the daily report. People who block the bot are dropped
+they can request again later) or make them a **helper admin** (⭐), who then also gets the system warnings and the daily report
+(join requests stay yours). People who block the bot are dropped
 automatically.
 
 ### Devices, fetch status and logs (API)
