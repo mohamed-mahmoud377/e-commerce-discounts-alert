@@ -35,6 +35,9 @@ python3 -m venv .venv
 
 ## A. Run a worker for an existing server
 
+> Step-by-step version with expected outputs and failure handling, written to be followed literally
+> (also by an AI assistant): [RUN_A_WORKER.md](RUN_A_WORKER.md).
+
 A worker downloads shop pages and sends the products to the server; it keeps no data itself. The server
 owner gives you two things: the server address (for example `http://207.154.206.127:8787`) and **your own
 worker token** (they add it under `[workers]` in their config, named after you).
