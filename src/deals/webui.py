@@ -179,9 +179,6 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const egp = p => p == null ? '-' : (p / 100).toLocaleString('en', {maximumFractionDigits: 0}) + ' EGP';
 const ago = t => { if (!t) return 'never'; const s = (Date.now() - Date.parse(t)) / 1000;
   return s < 120 ? Math.round(s) + 's ago' : s < 7200 ? Math.round(s / 60) + ' min ago' : (s / 3600).toFixed(1) + ' h ago'; };
-const due = t => { if (!t) return '-'; const s = (Date.parse(t) - Date.now()) / 1000, m = Math.abs(s) / 60;
-  const span = m < 120 ? Math.round(m) + ' min' : (m / 60).toFixed(1) + ' h';
-  return (s < -60 ? 'overdue ' : 'in ') + span + ` <span class='muted'>${esc(t.slice(5, 16).replace('T', ' '))} UTC</span>`; };
 const badge = s => `<span class='b ${esc(s)}'>${esc(s)}</span>`;
 let inflight = 0;
 function busy(on) {
@@ -257,7 +254,7 @@ const views = {
       <table><tr><th>Site</th><th>Kind</th><th>Group</th><th>Slice</th><th>State</th><th>Every</th><th>Next due</th><th>Last done</th><th>Last run</th><th>Error</th></tr>
       ${d.jobs.map(j => `<tr><td>${esc(j.site)}</td><td>${esc(j.kind)}</td><td>${esc(j.grp)}</td><td class='mono'>${esc(j.target)}</td>
         <td>${j.failures ? badge('failing') + ' ×' + j.failures : j.running ? badge('crawling') + ' ' + esc(j.lease_worker) : badge('idle')}</td>
-        <td>${j.every_min} min</td><td>${due(j.next_due_at)}</td><td>${ago(j.last_done_at)}</td>
+        <td>${j.every_min} min</td><td>${esc((j.next_due_at || '').slice(11, 16))}</td><td>${ago(j.last_done_at)}</td>
         <td>${j.last_count ?? ''} products, ${j.last_changes ?? 0} changes</td><td>${esc(j.last_error || '')}</td></tr>`).join('')}</table>`;
   },
   async Products() {
