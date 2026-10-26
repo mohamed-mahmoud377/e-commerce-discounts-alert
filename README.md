@@ -14,6 +14,7 @@ Each worker only takes jobs for the sites its internet connection can reach.
 - Category ids for every shop and what we learned about them: [docs/CATEGORIES.md](docs/CATEGORIES.md); Jumia in depth: [docs/JUMIA.md](docs/JUMIA.md)
 - **Every useful command in one place: [docs/COMMANDS.md](docs/COMMANDS.md)**
 - The complete guide (server, database, running it, every algorithm): [docs/GUIDE.md](docs/GUIDE.md)
+- One product from first sighting to Telegram alert, with worked examples (how the discount is calculated, why an alert did or didn't go out): [docs/PRODUCT_FLOW.md](docs/PRODUCT_FLOW.md)
 - Monitoring, health checks, devices, logs and the runbook: [docs/MONITORING.md](docs/MONITORING.md)
 - Code-level detail for improving it (modules, one page end to end, schema, API, config): [docs/INTERNALS.md](docs/INTERNALS.md)
 - First review of the live system and ranked improvements: [docs/REVIEW-2026-10-25.md](docs/REVIEW-2026-10-25.md)

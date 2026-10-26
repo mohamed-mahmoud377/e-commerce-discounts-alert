@@ -3,7 +3,8 @@
 Also kept as a shared doc with the same content. Companion docs: [MONITORING.md](MONITORING.md)
 (health, devices, logs, runbook), [INTERNALS.md](INTERNALS.md) (code-level detail),
 [REVIEW-2026-10-25.md](REVIEW-2026-10-25.md) (first review of the live system), [ROADMAP.md](ROADMAP.md),
-[JUMIA.md](JUMIA.md) (the Jumia analysis).
+[JUMIA.md](JUMIA.md) (the Jumia analysis), [PRODUCT_FLOW.md](PRODUCT_FLOW.md) (one product from first sighting to
+alert, with worked examples).
 
 ## Overview
 
@@ -576,7 +577,8 @@ badge, or the shop's own "lowest price" badge, then multiplied by 1.0 (high conf
 | Blender that alternates 5 days at 5,000 and 2 days at 3,400, now 3,400 again | 32% below typical, but at this price 29% of the time: its regular promo, no alert |
 | Same blender now 2,900 | Never this cheap: real price drop |
 | noon seller A drops a TV from 5,000 to 3,200 while seller B sells it at 3,000 | Not the cheapest offer: no alert |
-| Air fryer tracked for 2 days at 5,220, now 3,977 | Early drop (⏳), low confidence, sent after the next crawl confirms the price |
+| Air fryer tracked for 2 days at 5,220, now 3,500 | 33% below and a new low: early drop (⏳), low confidence, sent at once |
+| Same air fryer at 3,977 | Only 24% below: under the 30% early-drop bar, no alert (yet) |
 
 ## Alerts and the Telegram bot
 
