@@ -179,7 +179,7 @@ or a Bearer header (no token needed on the server itself). Full reference: [INTE
 | `GET /ui` | The web UI (login at `/ui/login`) |
 | `GET /api/overview` | Status, totals, every health check, devices, shops |
 | `GET /api/alerts?days=1` | Recent alerts with delivery counts |
-| `GET /api/jobs` | Every job, soonest due first |
+| `GET /api/jobs` | Every job, failing first |
 | `GET /api/products?q=samsung+55` / `GET /api/products/{id}` | Product search / one product with stats and history |
 | `GET /dashboard` | The older one-page dashboard |
 | `GET /docs` | Interactive API schema |

@@ -56,8 +56,8 @@ def jobs(conn: sqlite3.Connection, now: datetime, limit: int) -> list[dict]:
     rows = conn.execute(
         """SELECT id, kind, site, grp, target, expected_total, interval_s / 60 AS every_min, next_due_at,
                   last_done_at, last_count, last_changes, failures, last_error, lease_worker, lease_expires_at > ? AS running
-           FROM jobs ORDER BY next_due_at, failures DESC LIMIT ?""",
-        (iso(now), limit)).fetchall()
+           FROM jobs ORDER BY failures DESC, (lease_expires_at > ?) DESC, next_due_at LIMIT ?""",
+        (iso(now), iso(now), limit)).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -250,7 +250,7 @@ const views = {
     const d = await api('/api/jobs?limit=400');
     const failing = d.jobs.filter(j => j.failures > 0), running = d.jobs.filter(j => j.running);
     every(15000, render);
-    return `<p class='muted'>${failing.length} failing · ${running.length} running · ${d.jobs.length} jobs (soonest due first)</p>
+    return `<p class='muted'>${failing.length} failing · ${running.length} running · ${d.jobs.length} jobs (failing first, then running, then soonest due)</p>
       <table><tr><th>Site</th><th>Kind</th><th>Group</th><th>Slice</th><th>State</th><th>Every</th><th>Next due</th><th>Last done</th><th>Last run</th><th>Error</th></tr>
       ${d.jobs.map(j => `<tr><td>${esc(j.site)}</td><td>${esc(j.kind)}</td><td>${esc(j.grp)}</td><td class='mono'>${esc(j.target)}</td>
         <td>${j.failures ? badge('failing') + ' ×' + j.failures : j.running ? badge('crawling') + ' ' + esc(j.lease_worker) : badge('idle')}</td>

@@ -166,7 +166,7 @@ Base address `http://207.154.206.127:8787` (port 8787 open in the firewall). Wor
 | `GET /ui`, `GET/POST /ui/login`, `GET /ui/logout` | anyone / viewer | `token` (form or one-click `?token=`) | The web UI; login sets the HttpOnly cookie `deals_ui` (30 days) |
 | `GET /api/overview` | viewer | | totals, health checks, devices, shops, live revision |
 | `GET /api/alerts?days=&kind=&limit=` | viewer | | recent alerts with delivery counts |
-| `GET /api/jobs?limit=` | viewer | | jobs, soonest due first |
+| `GET /api/jobs?limit=` | viewer | | jobs, failing first then running |
 | `GET /api/products?q=&site=&limit=`, `GET /api/products/{id}` | viewer | | product search; one product with stats and history |
 
 A `Listing` in JSON: `site`, `sku`, `title`, `url`, `price`, `list_price`, `currency`, `in_stock`, and
