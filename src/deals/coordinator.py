@@ -465,4 +465,7 @@ class Watchdog(threading.Thread):
 def serve(cfg: Config) -> None:
     import uvicorn
 
-    uvicorn.run(create_app(cfg), host=cfg.host, port=cfg.port, log_level="info", access_log=False)
+    # Restarts must be quick: an open browser tab or a long poll must not hold a deploy for
+    # systemd's 90 s kill timeout (SQLite in WAL mode is safe either way).
+    uvicorn.run(create_app(cfg), host=cfg.host, port=cfg.port, log_level="info", access_log=False,
+                timeout_graceful_shutdown=10)
