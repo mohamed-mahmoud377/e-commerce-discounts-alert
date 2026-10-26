@@ -358,10 +358,12 @@ Things that add delay:
 
 ### Priority: which slice goes next
 
-There is no separate priority setting. The coordinator always hands out plan jobs first, then the crawl
-job that has been due the longest. A group's priority is therefore its revisit interval: a 20-minute group
-comes due three times as often as a 60-minute one and gets that share of the crawling. Each shop is
-crawled separately (one job per shop per connection), so Amazon and noon never wait for each other.
+There is no separate priority setting. The coordinator hands out plan jobs first, then the crawl job that is
+latest *relative to its own interval*: a 10-minute slice that is 6 minutes late (60%) goes before a 3-hour
+slice that is 14 minutes late (8%). A group's priority is therefore its revisit interval, and when the queue
+is behind (Amazon often has 20 slices due with 3 workers) the fast groups keep their pace while slow groups
+absorb the delay. Each shop is crawled separately (one job per shop per connection), so Amazon and noon
+never wait for each other.
 
 ### Changing how often a group is checked
 

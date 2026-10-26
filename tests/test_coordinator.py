@@ -175,3 +175,19 @@ def test_new_products_must_pass_price_floor_and_title_words(cfg):
             "listings": [listing("HS1", 9000, title="Pulse Elite Headset")]})
         row = client.conn.execute("SELECT grp, price FROM products WHERE sku = 'HS1'").fetchone()
         assert row["grp"] == "Headphones" and row["price"] == 900_000
+
+
+def test_lease_prefers_the_job_latest_relative_to_its_interval(cfg):
+    from deals import scheduler
+    conn = db.connect(cfg.db_path)
+    now = utcnow()
+    with conn:
+        for target, interval_min, late_min in [("slow", 180, 14), ("fast", 10, 6), ("mid", 60, 20)]:
+            conn.execute("""INSERT INTO jobs (kind, site, target, root, grp, base_interval_s, interval_s, next_due_at, created_at)
+                            VALUES ('crawl', 'amazon_eg', ?, ?, 'G', ?, ?, ?, ?)""",
+                         (target, target, interval_min * 60, interval_min * 60, iso(now - timedelta(minutes=late_min)), iso(now)))
+    order = []
+    for _ in range(3):
+        job = scheduler.lease(conn, cfg, f"w{len(order)}", f"ip{len(order)}", ["amazon_eg"], now)
+        order.append(job["target"])
+    assert order == ["fast", "mid", "slow"]  # 60% late, 33% late, 8% late

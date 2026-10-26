@@ -71,12 +71,17 @@ def lease(conn: sqlite3.Connection, cfg: Config, worker: str, ip: str, sites: li
         if not eligible:
             conn.execute("COMMIT")
             return None
+        # Plan jobs first, then the job that is latest *relative to its own interval*: a
+        # 10-minute slice 6 minutes late (60%) beats a 3-hour slice 14 minutes late (8%),
+        # so fast groups keep their pace when the queue is behind.
         job = conn.execute(
             f"""SELECT * FROM jobs
                 WHERE site IN ({','.join('?' * len(eligible))}) AND next_due_at <= ?
                   AND (lease_expires_at IS NULL OR lease_expires_at <= ?)
-                ORDER BY kind = 'plan' DESC, next_due_at LIMIT 1""",
-            (*eligible, now_s, now_s),
+                ORDER BY kind = 'plan' DESC,
+                         (julianday(?) - julianday(next_due_at)) * 86400.0 / interval_s DESC, next_due_at
+                LIMIT 1""",
+            (*eligible, now_s, now_s, now_s),
         ).fetchone()
         if job is None:
             conn.execute("COMMIT")

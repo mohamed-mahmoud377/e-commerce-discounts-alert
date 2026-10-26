@@ -90,3 +90,7 @@ Facts that shaped the crawler:
   the Overview (all health checks, ~0.35 s). Viewer endpoints run on their own read-only connections.
 - `make health` can show transient problems for a minute right after a restart; run it again before
   acting.
+- Amazon capacity (26 Oct, 3 devices): about 650 pages per full pass of 15,600 products, roughly 5 s per
+  page per device including politeness delays, so a full pass is about 20 minutes of three devices. With
+  four 10-minute groups plus the rest, the Amazon queue regularly has about 20 slices due; the lease order
+  was changed to relative lateness so the 10-minute groups are not starved by big slow groups.
