@@ -5,7 +5,8 @@ product's price history in SQLite, and sends Arabic Telegram alerts for real dis
 Read [README.md](README.md), [docs/GUIDE.md](docs/GUIDE.md) (design and algorithms) and
 [docs/INTERNALS.md](docs/INTERNALS.md) (code map, schema, API) before changing behaviour;
 [docs/MONITORING.md](docs/MONITORING.md) is the runbook and [docs/COMMANDS.md](docs/COMMANDS.md) lists every command.
-Keep these in step with the code.
+[docs/CATEGORIES.md](docs/CATEGORIES.md) holds category ids and shop quirks. Keep these in step with the code, and
+write down anything new you learn about the shops or the operations there (the user wants findings kept).
 
 ## Where things run
 
@@ -48,3 +49,5 @@ Keep these in step with the code.
   save a new page there and fix the parser against it.
 - Never commit `config.toml`, `worker.env` or `data/` (gitignored: they hold tokens and data).
 - Ask before committing; deploying and live checks on the droplet are fine without asking.
+- After pushing to `main` don't also run `make deploy`: GitHub Actions deploys the same commit a minute
+  later and the two overlap (an older commit can land last). Use one or the other.

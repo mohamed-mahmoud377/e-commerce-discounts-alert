@@ -11,6 +11,7 @@ Each worker only takes jobs for the sites its internet connection can reach.
 
 - **New here? Start with [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)**: get alerts, run a worker, try it on one computer, or run your own server
 - **Running a worker on your computer for someone's server: [docs/RUN_A_WORKER.md](docs/RUN_A_WORKER.md)** (exact steps, expected outputs, what to do when something fails)
+- Category ids for both shops and what we learned about them: [docs/CATEGORIES.md](docs/CATEGORIES.md)
 - **Every useful command in one place: [docs/COMMANDS.md](docs/COMMANDS.md)**
 - The complete guide (server, database, running it, every algorithm): [docs/GUIDE.md](docs/GUIDE.md)
 - Monitoring, health checks, devices, logs and the runbook: [docs/MONITORING.md](docs/MONITORING.md)
