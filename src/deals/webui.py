@@ -40,7 +40,9 @@ def overview(conn: sqlite3.Connection, cfg: Config, now: datetime, revision: str
 def alerts(conn: sqlite3.Connection, now: datetime, days: float, kind: str | None, limit: int) -> list[dict]:
     rows = conn.execute(
         """SELECT a.id, a.created_at, a.kind, a.price, a.reference_price, a.drop_pct, a.score, a.message, a.error,
-                  p.site, p.title, p.url, p.grp,
+                  a.product_id, p.site, p.title, p.url, p.grp,
+                  CASE WHEN a.confirm_until IS NOT NULL THEN 'held' WHEN a.error LIKE 'cancelled%' THEN 'cancelled'
+                       WHEN a.sent_at IS NULL THEN 'queued' ELSE 'sent' END AS state,
                   (SELECT COUNT(*) FROM deliveries d WHERE d.alert_id = a.id AND d.sent_at IS NOT NULL) delivered
            FROM alerts a LEFT JOIN products p ON p.id = a.product_id
            WHERE a.created_at >= ? AND (? IS NULL OR a.kind = ?)
@@ -58,15 +60,27 @@ def jobs(conn: sqlite3.Connection, now: datetime, limit: int) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def products(conn: sqlite3.Connection, q: str, site: str | None, limit: int) -> list[dict]:
+PRODUCT_SORTS = {"recent": "last_change_at DESC", "cheap": "price IS NULL, price", "dear": "price DESC",
+                 "rating": "rating IS NULL, rating DESC, reviews DESC", "reviews": "reviews IS NULL, reviews DESC"}
+
+
+def products(conn: sqlite3.Connection, q: str, site: str | None, limit: int, grp: str | None = None,
+             sort: str = "recent", in_stock_only: bool = False) -> list[dict]:
     words = [w for w in q.split() if w][:6]
     where = " AND ".join("title LIKE ?" for _ in words) or "1"
+    if in_stock_only:
+        where += " AND in_stock = 1"
+    order = PRODUCT_SORTS.get(sort, PRODUCT_SORTS["recent"])
     rows = conn.execute(
         f"""SELECT id, site, sku, title, url, grp, price, list_price, in_stock, stock_left, seller, rating, reviews,
-                   last_seen_at, last_change_at
-            FROM products WHERE {where} AND (? IS NULL OR site = ?) ORDER BY last_change_at DESC LIMIT ?""",
-        (*[f"%{w}%" for w in words], site, site, limit)).fetchall()
+                   badges, last_seen_at, last_change_at, first_seen_at
+            FROM products WHERE {where} AND (? IS NULL OR site = ?) AND (? IS NULL OR grp = ?) ORDER BY {order} LIMIT ?""",
+        (*[f"%{w}%" for w in words], site, site, grp, grp, limit)).fetchall()
     return [dict(r) for r in rows]
+
+
+def groups(conn: sqlite3.Connection) -> list[str]:
+    return [r[0] for r in conn.execute("SELECT DISTINCT grp FROM products WHERE grp IS NOT NULL ORDER BY grp")]
 
 
 def product(conn: sqlite3.Connection, product_id: int, now: datetime) -> dict | None:
@@ -80,8 +94,18 @@ def product(conn: sqlite3.Connection, product_id: int, now: datetime) -> dict | 
         "product": dict(row),
         "stats": {"typical_30d": s.typical_30d, "typical_90d": s.typical_90d, "low": s.low, "high": s.high,
                   "tracked_days": round(s.tracked_days, 1), "history_days": round(s.history_days, 1),
-                  "changes_90d": s.changes_90d},
+                  "changes_90d": s.changes_90d, "share_at_or_below": s.share_at_or_below,
+                  "drop_vs_typical": (round(1 - row["price"] / s.typical_90d, 4)
+                                      if row["price"] and s.typical_90d else None)},
         "history": [dict(h) for h in history],
+        "alerts": [dict(a) for a in conn.execute(
+            """SELECT id, created_at, kind, price, reference_price, drop_pct, score, error, confirm_until
+               FROM alerts WHERE product_id = ? ORDER BY created_at DESC LIMIT 20""", (product_id,))],
+        "other_sellers": [dict(o) for o in conn.execute(
+            """SELECT id, seller, price, in_stock FROM products WHERE site = ? AND sku >= ? AND sku < ? AND id != ?
+               ORDER BY price IS NULL, price""",
+            (row["site"], row["sku"].partition("@")[0] + "@", row["sku"].partition("@")[0] + "A", product_id))]
+        if "@" in row["sku"] else [],
     }
 
 
@@ -110,13 +134,20 @@ main{padding:16px 20px;max-width:1300px} .grow{flex:1}
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:18px}
 .card{border:1px solid var(--line);border-radius:10px;padding:10px 12px} .card .n{font-size:22px;font-weight:600}
 table{border-collapse:collapse;width:100%;margin:6px 0 20px} td,th{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}
-th{background:var(--soft);position:sticky;top:0} h3{margin:18px 0 6px}
+th{background:var(--soft);position:sticky;top:0;cursor:pointer;user-select:none} h3{margin:18px 0 6px}
 .b{border-radius:10px;padding:1px 8px;font-size:12px;color:#fff;white-space:nowrap}
 .ok{background:var(--ok)} .crawling{background:var(--info)} .idle{background:#6e7781} .warn,.blocked{background:var(--warn)} .fail,.failing,.offline{background:var(--bad)}
 tr.WARNING td{background:rgba(212,167,44,.15)} tr.ERROR td{background:rgba(248,81,73,.15)}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px} input,select{padding:6px;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px}
 .msg{white-space:pre-wrap;font-size:13px} .mono{font-family:ui-monospace,Menlo,monospace;font-size:12px}
 .clickable{cursor:pointer} .clickable:hover td{background:var(--soft)}
+th.sortable{cursor:pointer;user-select:none} th.sortable:hover{text-decoration:underline} th .dir{opacity:.6;font-size:11px}
+.chart{position:relative;margin:8px 0 16px} .chart svg{width:100%;height:260px;display:block}
+.chart .tip{position:absolute;pointer-events:none;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:4px 8px;font-size:12px;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.15);display:none}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--muted);margin:2px 0 8px} .legend i{display:inline-block;width:14px;height:0;border-top:2px solid;vertical-align:middle;margin-right:4px}
+.kv{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px;margin:10px 0}
+.kv div{border:1px solid var(--line);border-radius:8px;padding:8px 10px} .kv .v{font-size:18px;font-weight:600}
+.up{color:var(--bad)} .down{color:var(--ok)} .crumb{margin-bottom:10px}
 </style></head><body>
 <header><b>deals</b><nav id='tabs'></nav><span class='grow'></span><span id='stamp' class='muted'></span><a href='/ui/logout'>log out</a></header>
 <main id='view'>loading…</main>
@@ -180,10 +211,10 @@ const views = {
     const days = $('#days')?.value ?? '1';
     const d = await api('/api/alerts?days=' + days);
     return `<div class='row'>Last <select id='days' onchange='render()'>${['1', '3', '7', '30'].map(x => `<option ${x === days ? 'selected' : ''}>${x}</option>`).join('')}</select> days · ${d.alerts.length} alerts</div>
-      <table><tr><th>When (UTC)</th><th>Kind</th><th>Drop</th><th>Price</th><th>Reference</th><th>Product</th><th>Sent to</th></tr>
-      ${d.alerts.map(a => `<tr><td>${esc(a.created_at.slice(5, 16).replace('T', ' '))}</td><td>${esc(a.kind)}</td>
-        <td>${a.drop_pct == null ? '' : Math.round(a.drop_pct * 100) + '%'}</td><td>${egp(a.price)}</td><td>${egp(a.reference_price)}</td>
-        <td>${a.url ? `<a href='${esc(a.url)}' target='_blank'>${esc(a.title)}</a> <span class='muted'>${esc(a.site)} · ${esc(a.grp)}</span>` : `<span class='msg' dir='auto'>${esc(a.message.replace(/<[^>]+>/g, ''))}</span>`}</td>
+      <table><tr><th>When (UTC)</th><th>Kind</th><th>State</th><th>Drop</th><th>Score</th><th>Price</th><th>Reference</th><th>Product</th><th>Sent to</th></tr>
+      ${d.alerts.map(a => `<tr><td>${esc(a.created_at.slice(5, 16).replace('T', ' '))}</td><td>${esc(a.kind)}</td><td>${badge(a.state === 'sent' ? 'ok' : a.state === 'held' ? 'warn' : a.state === 'cancelled' ? 'fail' : 'idle')} ${esc(a.state)}</td>
+        <td>${a.drop_pct == null ? '' : Math.round(a.drop_pct * 100) + '%'}</td><td>${a.score ?? ''}</td><td>${egp(a.price)}</td><td>${egp(a.reference_price)}</td>
+        <td>${a.product_id ? `<a href='#Products:${a.product_id}' onclick='openProduct(${a.product_id});return false'>${esc(a.title)}</a> <a href='${esc(a.url)}' target='_blank' class='muted'>shop ↗</a><br><span class='muted'>${esc(a.site)} · ${esc(a.grp)}</span>` : `<span class='msg' dir='auto'>${esc(a.message.replace(/<[^>]+>/g, ''))}</span>`}</td>
         <td>${a.delivered}</td></tr>`).join('')}</table>`;
   },
   async Jobs() {
@@ -198,15 +229,22 @@ const views = {
         <td>${j.last_count ?? ''} products, ${j.last_changes ?? 0} changes</td><td>${esc(j.last_error || '')}</td></tr>`).join('')}</table>`;
   },
   async Products() {
-    const q = $('#q')?.value ?? '', site = $('#site')?.value ?? '';
-    const d = q ? await api('/api/products?limit=100&q=' + encodeURIComponent(q) + (site ? '&site=' + site : '')) : {products: []};
-    return `<div class='row'><input id='q' placeholder='search titles, e.g. samsung 55' value='${esc(q)}' onkeydown="if(event.key==='Enter')render()" size='34'>
-      <select id='site'><option value=''>both shops</option><option ${site === 'amazon_eg' ? 'selected' : ''}>amazon_eg</option><option ${site === 'noon_eg' ? 'selected' : ''}>noon_eg</option></select>
-      <button onclick='render()'>Search</button></div><div id='detail'></div>
-      <table><tr><th>Product</th><th>Shop</th><th>Group</th><th>Price</th><th>Crossed-out</th><th>Stock</th><th>Last change</th></tr>
-      ${d.products.map(p => `<tr class='clickable' onclick='detail(${p.id})'><td>${esc(p.title)}</td><td>${esc(p.site)}${p.seller ? ' · ' + esc(p.seller) : ''}</td>
+    const id = location.hash.split(':')[1];
+    if (id) return productPage(id);
+    const f = k => $('#' + k)?.value ?? '';
+    const q = f('q'), site = f('site'), grp = f('grp'), sort = f('sort') || 'recent', stock = $('#stock')?.checked ? 1 : 0;
+    const d = (q || grp) ? await api(`/api/products?limit=200&q=${encodeURIComponent(q)}&site=${site}&grp=${encodeURIComponent(grp)}&sort=${sort}&in_stock=${stock}`)
+                         : await api('/api/products?limit=0');
+    return `<div class='row'><input id='q' placeholder='search titles, e.g. samsung 55' value='${esc(q)}' onkeydown="if(event.key==='Enter')render()" size='30'>
+      <select id='site' onchange='render()'><option value=''>both shops</option><option ${site === 'amazon_eg' ? 'selected' : ''}>amazon_eg</option><option ${site === 'noon_eg' ? 'selected' : ''}>noon_eg</option></select>
+      <select id='grp' onchange='render()'><option value=''>all groups</option>${d.groups.map(g => `<option ${g === grp ? 'selected' : ''}>${esc(g)}</option>`).join('')}</select>
+      <select id='sort' onchange='render()'>${[['recent', 'latest change'], ['cheap', 'cheapest'], ['dear', 'dearest'], ['rating', 'best rated'], ['reviews', 'most reviews']].map(([v, l]) => `<option value='${v}' ${v === sort ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <label><input type='checkbox' id='stock' ${stock ? 'checked' : ''} onchange='render()'> in stock only</label>
+      <button onclick='render()'>Search</button> <span class='muted'>${d.products.length} shown · click a row for the price history</span></div>
+      <table><tr><th>Product</th><th>Shop</th><th>Group</th><th>Price</th><th>Crossed-out</th><th>Stock</th><th>Rating</th><th>Last change</th></tr>
+      ${d.products.map(p => `<tr class='clickable' onclick='openProduct(${p.id})'><td>${esc(p.title)}</td><td>${esc(p.site)}${p.seller ? ' · ' + esc(p.seller) : ''}</td>
         <td>${esc(p.grp)}</td><td>${egp(p.price)}</td><td>${egp(p.list_price)}</td><td>${p.in_stock ? (p.stock_left ? 'only ' + p.stock_left : 'yes') : 'no'}</td>
-        <td>${ago(p.last_change_at)}</td></tr>`).join('')}</table>`;
+        <td>${p.rating ? p.rating.toFixed(1) + ' (' + (p.reviews || 0).toLocaleString() + ')' : ''}</td><td>${ago(p.last_change_at)}</td></tr>`).join('')}</table>`;
   },
   async Queries() {
     const list = (await api('/api/queries')).queries;
@@ -214,9 +252,10 @@ const views = {
     location.hash = 'Queries:' + name;
     const d = await api(`/api/queries/${name}?hours=${hours}`);
     const money = c => /^(was|now|price|cheapest|dearest|lowest|highest|crossed_out|previous_low|highest_seen|alert_price|price_now|a|b)$/.test(c);
-    const hide = new Set(['url', 'seller']);
-    const cols = d.columns.filter(c => !hide.has(c)), iu = d.columns.indexOf('url'), it = d.columns.indexOf('title'), is = d.columns.indexOf('seller');
-    const cell = (v, c, row) => c === 'title' && iu >= 0 && row[iu] ? `<a href='${esc(row[iu])}' target='_blank'>${esc(v)}</a>${is >= 0 && row[is] ? ` <span class='muted'>· ${esc(row[is])}</span>` : ''}`
+    const hide = new Set(['url', 'seller', 'product_id']);
+    const cols = d.columns.filter(c => !hide.has(c)), iu = d.columns.indexOf('url'), ip = d.columns.indexOf('product_id'), is = d.columns.indexOf('seller');
+    const cell = (v, c, row) => c === 'title' && (iu >= 0 || ip >= 0) ? (ip >= 0 && row[ip] ? `<a href='#Products:${row[ip]}' onclick='openProduct(${row[ip]});return false'>${esc(v)}</a>` : `<a href='${esc(row[iu])}' target='_blank'>${esc(v)}</a>`)
+        + (iu >= 0 && row[iu] && ip >= 0 ? ` <a href='${esc(row[iu])}' target='_blank' class='muted'>↗</a>` : '') + (is >= 0 && row[is] ? ` <span class='muted'>· ${esc(row[is])}</span>` : '')
       : money(c) ? egp(v) : typeof v === 'string' && /^\d{4}-\d\d-\d\dT/.test(v) ? esc(v.slice(5, 16).replace('T', ' ')) : esc(v);
     return `<div class='row'><select id='qname' onchange='render()'>${list.map(q => `<option value='${q.name}' ${q.name === name ? 'selected' : ''}>${esc(q.title)}</option>`).join('')}</select>
       ${d.uses_window ? `last <select id='hours' onchange='render()'>${[['6', '6 h'], ['24', '24 h'], ['72', '3 days'], ['168', '7 days'], ['720', '30 days']].map(([v, l]) => `<option value='${v}' ${v === hours ? 'selected' : ''}>${l}</option>`).join('')}</select>` : ''}
@@ -245,14 +284,86 @@ async function pollLogs() {
   lastLog = d.events.reduce((m, e) => Math.max(m, e.id), lastLog);
   $('#logrows').insertAdjacentHTML('afterbegin', d.events.slice().reverse().map(logRow).join(''));
 }
-async function detail(id) {
+function openProduct(id) { tab = 'Products'; location.hash = 'Products:' + id; clearInterval(timer); nav(); render(); }
+async function productPage(id) {
   const d = await api('/api/products/' + id), p = d.product, s = d.stats;
-  $('#detail').innerHTML = `<div class='card' style='margin-bottom:14px'><b>${esc(p.title)}</b> · <a href='${esc(p.url)}' target='_blank'>open in shop</a>
-    <p>Now <b>${egp(p.price)}</b> · typical 90d ${egp(s.typical_90d)} · 30d ${egp(s.typical_30d)} · range ${egp(s.low)} – ${egp(s.high)} ·
-    tracked ${s.tracked_days} days · ${s.changes_90d} changes</p>
-    <table><tr><th>When (UTC)</th><th>Price</th><th>Crossed-out</th><th>In stock</th></tr>
-    ${d.history.slice().reverse().map(h => `<tr><td>${esc(h.observed_at.slice(0, 16).replace('T', ' '))}</td><td>${egp(h.price)}</td><td>${egp(h.list_price)}</td><td>${h.in_stock ? 'yes' : 'no'}</td></tr>`).join('')}</table></div>`;
+  const drop = s.drop_vs_typical, dropTxt = drop == null ? '' : `<span class='${drop > 0 ? 'down' : 'up'}'>${drop > 0 ? '−' : '+'}${Math.abs(Math.round(drop * 100))}% vs typical</span>`;
+  const badges = (p.badges || '').split(',').filter(Boolean).map(b => `<span class='b idle'>${esc(b)}</span>`).join(' ');
+  return `<div class='crumb'><a href='#Products' onclick="location.hash='Products';render();return false">← products</a></div>
+    <h3 style='margin-top:0'>${esc(p.title)}</h3>
+    <p class='muted'>${esc(p.site)} · ${esc(p.grp || '')}${p.seller ? ' · seller ' + esc(p.seller) : ''}${p.brand ? ' · ' + esc(p.brand) : ''} · <a href='${esc(p.url)}' target='_blank'>open in shop ↗</a>
+      ${p.rating ? ` · ★ ${p.rating.toFixed(1)} (${(p.reviews || 0).toLocaleString()})` : ''} ${badges}</p>
+    <div class='kv'>
+      <div><div class='muted'>price now</div><div class='v'>${egp(p.price)}</div><div class='muted'>${p.in_stock ? (p.stock_left ? 'only ' + p.stock_left + ' left' : 'in stock') : 'out of stock'}${p.list_price ? ' · crossed-out ' + egp(p.list_price) : ''}</div></div>
+      <div><div class='muted'>typical (90 d)</div><div class='v'>${egp(s.typical_90d)}</div><div class='muted'>${dropTxt}</div></div>
+      <div><div class='muted'>typical (30 d)</div><div class='v'>${egp(s.typical_30d)}</div></div>
+      <div><div class='muted'>range seen</div><div class='v'>${egp(s.low)}</div><div class='muted'>to ${egp(s.high)}</div></div>
+      <div><div class='muted'>this cheap or cheaper</div><div class='v'>${s.share_at_or_below == null ? '-' : Math.round(s.share_at_or_below * 100) + '%'}</div><div class='muted'>of the time (rarity)</div></div>
+      <div><div class='muted'>tracked</div><div class='v'>${s.tracked_days} d</div><div class='muted'>${s.history_days} d in-stock history · ${s.changes_90d} changes</div></div>
+    </div>
+    <h3>Price history</h3>${chart(d.history, s.typical_90d)}
+    ${d.other_sellers.length ? `<h3>Other sellers of this item</h3><table><tr><th>Seller</th><th>Price</th><th>In stock</th></tr>
+      ${d.other_sellers.map(o => `<tr class='clickable' onclick='openProduct(${o.id})'><td>${esc(o.seller || '?')}</td><td>${egp(o.price)}</td><td>${o.in_stock ? 'yes' : 'no'}</td></tr>`).join('')}</table>` : ''}
+    ${d.alerts.length ? `<h3>Alerts for this product</h3><table><tr><th>When (UTC)</th><th>Kind</th><th>Drop</th><th>Price</th><th>Reference</th><th>Score</th><th>State</th></tr>
+      ${d.alerts.map(a => `<tr><td>${esc(a.created_at.slice(0, 16).replace('T', ' '))}</td><td>${esc(a.kind)}</td><td>${Math.round(a.drop_pct * 100)}%</td><td>${egp(a.price)}</td><td>${egp(a.reference_price)}</td><td>${a.score}</td><td>${esc(a.confirm_until ? 'held' : a.error || 'sent')}</td></tr>`).join('')}</table>` : ''}
+    <h3>Recorded changes</h3><table><tr><th>When (UTC)</th><th>Price</th><th>Crossed-out</th><th>In stock</th><th>Change</th></tr>
+    ${d.history.slice().reverse().map((h, i, arr) => { const prev = arr[i + 1]; const ch = prev && prev.price && h.price ? (h.price - prev.price) / prev.price : null;
+      return `<tr><td>${esc(h.observed_at.slice(0, 16).replace('T', ' '))}</td><td>${egp(h.price)}</td><td>${egp(h.list_price)}</td><td>${h.in_stock ? 'yes' : 'no'}</td>
+      <td>${ch == null ? '' : `<span class='${ch < 0 ? 'down' : 'up'}'>${ch < 0 ? '' : '+'}${Math.round(ch * 100)}%</span>`}</td></tr>`; }).join('')}</table>`;
 }
+// Step chart of the recorded prices (a price holds until the next row), with the 90-day typical
+// price as a dashed reference and out-of-stock stretches left blank. Hover for the value.
+function chart(hist, typical) {
+  const pts = hist.map(h => ({t: Date.parse(h.observed_at), p: h.in_stock ? h.price : null, lp: h.list_price}));
+  if (!pts.length) return "<p class='muted'>no history yet</p>";
+  const now = Date.now(), t0 = pts[0].t, t1 = Math.max(now, pts[pts.length - 1].t + 1), W = 1000, H = 260, L = 70, R = 16, T = 14, B = 30;
+  const vals = pts.map(x => x.p).filter(v => v != null).concat(typical ? [typical] : []);
+  if (!vals.length) return "<p class='muted'>never in stock while tracked</p>";
+  let lo = Math.min(...vals), hi = Math.max(...vals); if (hi === lo) { lo *= 0.95; hi *= 1.05; } const pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
+  const X = t => L + (t - t0) / (t1 - t0) * (W - L - R), Y = v => T + (hi - v) / (hi - lo) * (H - T - B);
+  let path = '', prev = null;
+  pts.forEach((x, i) => { const tEnd = i + 1 < pts.length ? pts[i + 1].t : t1;
+    if (x.p == null) { prev = null; return; }
+    path += (prev == null ? `M${X(x.t).toFixed(1)},${Y(x.p).toFixed(1)}` : `L${X(x.t).toFixed(1)},${Y(x.p).toFixed(1)}`) + `L${X(tEnd).toFixed(1)},${Y(x.p).toFixed(1)}`; prev = x.p; });
+  const ticks = 4, yTicks = Array.from({length: ticks + 1}, (_, i) => lo + (hi - lo) * i / ticks);
+  const days = (t1 - t0) / 864e5, step = days > 60 ? 14 : days > 14 ? 7 : days > 3 ? 1 : 0.25, xt = [];
+  for (let t = t0; t <= t1; t += step * 864e5) xt.push(t);
+  const fmt = t => { const d = new Date(t); return step < 1 ? d.toISOString().slice(5, 16).replace('T', ' ') : d.toISOString().slice(5, 10); };
+  const dots = pts.filter(x => x.p != null).map(x => `<circle cx='${X(x.t).toFixed(1)}' cy='${Y(x.p).toFixed(1)}' r='3.5' fill='var(--bg)' stroke='var(--info)' stroke-width='2'/>`).join('');
+  const data = JSON.stringify(pts.map(x => [x.t, x.p]));
+  return `<div class='legend'><span><i style='border-color:var(--info)'></i>price</span>${typical ? `<span><i style='border-color:var(--muted);border-top-style:dashed'></i>typical 90 d</span>` : ''}<span class='muted'>gaps = out of stock · dots = recorded changes</span></div>
+    <div class='chart' onmousemove='chartHover(event,${data},${t0},${t1},${L},${R},${W})' onmouseleave="this.querySelector('.tip').style.display='none'">
+    <svg viewBox='0 0 ${W} ${H}' preserveAspectRatio='none'>
+      ${yTicks.map(v => `<line x1='${L}' x2='${W - R}' y1='${Y(v).toFixed(1)}' y2='${Y(v).toFixed(1)}' stroke='var(--line)' stroke-width='1'/><text x='${L - 6}' y='${(Y(v) + 4).toFixed(1)}' text-anchor='end' font-size='11' fill='var(--muted)'>${Math.round(v / 100).toLocaleString()}</text>`).join('')}
+      ${xt.map(t => `<text x='${X(t).toFixed(1)}' y='${H - 10}' text-anchor='middle' font-size='11' fill='var(--muted)'>${fmt(t)}</text>`).join('')}
+      ${typical ? `<line x1='${L}' x2='${W - R}' y1='${Y(typical).toFixed(1)}' y2='${Y(typical).toFixed(1)}' stroke='var(--muted)' stroke-width='1.5' stroke-dasharray='6 4'/>` : ''}
+      <path d='${path}' fill='none' stroke='var(--info)' stroke-width='2' vector-effect='non-scaling-stroke'/>${dots}
+      <line id='xhair' x1='0' x2='0' y1='${T}' y2='${H - B}' stroke='var(--muted)' stroke-width='1' style='display:none'/>
+    </svg><div class='tip'></div></div>`;
+}
+function chartHover(ev, pts, t0, t1, L, R, W) {
+  const box = ev.currentTarget, svg = box.querySelector('svg'), rect = svg.getBoundingClientRect();
+  const fx = (ev.clientX - rect.left) / rect.width * W; if (fx < L || fx > W - R) return;
+  const t = t0 + (fx - L) / (W - L - R) * (t1 - t0);
+  let cur = null; for (const [pt, pp] of pts) { if (pt <= t) cur = pp; else break; }
+  const tip = box.querySelector('.tip'), xh = svg.querySelector('#xhair');
+  xh.setAttribute('x1', fx); xh.setAttribute('x2', fx); xh.style.display = '';
+  tip.style.display = 'block'; tip.style.left = Math.min(ev.clientX - rect.left + 12, rect.width - 160) + 'px'; tip.style.top = (ev.clientY - rect.top - 36) + 'px';
+  tip.innerHTML = `${new Date(t).toISOString().slice(0, 16).replace('T', ' ')} UTC<br><b>${cur == null ? 'out of stock' : egp(cur)}</b>`;
+}
+// Click any table header to sort by that column (numbers, money and dates compare as numbers).
+document.addEventListener('click', ev => {
+  const th = ev.target.closest('th'); if (!th || !th.closest('#view')) return;
+  const table = th.closest('table'), tr = th.parentElement, idx = [...tr.children].indexOf(th);
+  const rows = [...table.querySelectorAll('tr')].filter(r => r !== tr && r.children.length === tr.children.length && !r.querySelector('th'));
+  if (!rows.length) return;
+  const dir = th.dataset.dir === 'asc' ? 'desc' : 'asc'; tr.querySelectorAll('th').forEach(h => { delete h.dataset.dir; h.querySelector('.dir')?.remove(); });
+  th.dataset.dir = dir; th.insertAdjacentHTML('beforeend', ` <span class='dir'>${dir === 'asc' ? '▲' : '▼'}</span>`);
+  const num = s => { const n = parseFloat(String(s).replace(/[^0-9.\-]/g, '')); return isNaN(n) ? null : n; };
+  rows.sort((a, b) => { const x = a.children[idx].textContent.trim(), y = b.children[idx].textContent.trim(), nx = num(x), ny = num(y);
+    const c = nx != null && ny != null && /\d/.test(x) && /\d/.test(y) ? nx - ny : x.localeCompare(y); return dir === 'asc' ? c : -c; });
+  const parent = rows[0].parentElement; rows.forEach(r => parent.appendChild(r));
+});
 async function render() {
   try { $('#view').innerHTML = await views[tab](); if (['Overview', 'Devices'].includes(tab)) every(15000, render); }
   catch (e) { $('#view').innerHTML = `<p style='color:var(--bad)'>${esc(e.message)}</p>`; }
@@ -267,7 +378,7 @@ nav(); render();
 # runs; the viewer can only pick a name and a time window.
 # ---------------------------------------------------------------------------
 
-_PRODUCT = "p.title, p.site, p.grp, p.url, p.seller"
+_PRODUCT = "p.id AS product_id, p.title, p.site, p.grp, p.url, p.seller"
 
 QUERIES: dict[str, dict] = {
     "biggest_drops": {

@@ -6,6 +6,10 @@ What the output means: [MONITORING.md](MONITORING.md). How it all works: [GUIDE.
 
 ## Web UI (the easiest way)
 
+Tabs: Overview, Devices, Logs (live), Alerts (with state: sent / held / cancelled), Jobs, Products (search,
+group, sort, in-stock filter; click a product for its price chart, typical price, rarity, other sellers and
+alerts), Queries (17 saved reports). Click any table header to sort by it.
+
 A small read-only website served by the coordinator itself: nothing to install or run.
 
 | What | How |

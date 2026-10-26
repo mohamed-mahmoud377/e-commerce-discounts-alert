@@ -67,3 +67,16 @@ def test_saved_queries_run_and_need_login(client):
     assert client.get("/api/queries/drop_table").status_code == 404
     rows = client.get("/api/queries/coverage").json()["rows"]
     assert rows and rows[0][0] == "TVs" and rows[0][2] == 1  # the one recorded product
+
+
+def test_product_page_data_and_filters(client):
+    client.post("/ui/login", data={"token": "admin-secret"}, follow_redirects=False)
+    pid = client.get("/api/products?q=samsung").json()["products"][0]["id"]
+    d = client.get(f"/api/products/{pid}").json()
+    assert set(d) == {"product", "stats", "history", "alerts", "other_sellers"}
+    assert "share_at_or_below" in d["stats"] and "drop_vs_typical" in d["stats"] and len(d["history"]) == 1
+    r = client.get("/api/products?limit=0").json()
+    assert r["products"] == [] and r["groups"] == ["TVs"]
+    assert client.get("/api/products?grp=TVs&sort=cheap&in_stock=1").json()["products"][0]["id"] == pid
+    assert client.get("/api/products?grp=Phones").json()["products"] == []
+    assert client.get("/api/products?q=samsung&sort=bogus").status_code == 200  # unknown sort falls back

@@ -351,8 +351,10 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
         return {"jobs": webui.jobs(conn, utcnow(), min(limit, 2000))}
 
     @app.get("/api/products", dependencies=[Depends(viewer)])
-    async def products_api(q: str = "", site: str | None = None, limit: int = 100):
-        return {"products": webui.products(conn, q, site, min(limit, 500))}
+    async def products_api(q: str = "", site: str | None = None, limit: int = 100, grp: str | None = None,
+                           sort: str = "recent", in_stock: int = 0):
+        return {"products": webui.products(conn, q, site or None, min(limit, 500), grp or None, sort, bool(in_stock)),
+                "groups": webui.groups(conn)}
 
     @app.get("/api/queries", dependencies=[Depends(viewer)])
     async def queries_api():
