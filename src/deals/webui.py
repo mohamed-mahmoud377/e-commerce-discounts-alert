@@ -271,7 +271,7 @@ const views = {
     const cols = d.columns.filter(c => !hide.has(c)), iu = d.columns.indexOf('url'), ip = d.columns.indexOf('product_id'), is = d.columns.indexOf('seller');
     const cell = (v, c, row) => c === 'title' && (iu >= 0 || ip >= 0) ? (ip >= 0 && row[ip] ? `<a href='#Products:${row[ip]}' onclick='openProduct(${row[ip]});return false'>${esc(v)}</a>` : `<a href='${esc(row[iu])}' target='_blank'>${esc(v)}</a>`)
         + (iu >= 0 && row[iu] && ip >= 0 ? ` <a href='${esc(row[iu])}' target='_blank' class='muted'>↗</a>` : '') + (is >= 0 && row[is] ? ` <span class='muted'>· ${esc(row[is])}</span>` : '')
-      : money(c) ? egp(v) : typeof v === 'string' && /^\d{4}-\d\d-\d\dT/.test(v) ? esc(v.slice(5, 16).replace('T', ' ')) : esc(v);
+      : money(c) ? egp(v) : typeof v === 'string' && /^\\d{4}-\\d\\d-\\d\\dT/.test(v) ? esc(v.slice(5, 16).replace('T', ' ')) : esc(v);
     return `<div class='row'><select id='qname' onchange='render()'>${list.map(q => `<option value='${q.name}' ${q.name === name ? 'selected' : ''}>${esc(q.title)}</option>`).join('')}</select>
       ${d.uses_window ? `last <select id='hours' onchange='render()'>${[['6', '6 h'], ['24', '24 h'], ['72', '3 days'], ['168', '7 days'], ['720', '30 days']].map(([v, l]) => `<option value='${v}' ${v === hours ? 'selected' : ''}>${l}</option>`).join('')}</select>` : ''}
       <select id='qgrp' onchange='render()' ${d.filters.grp ? '' : 'disabled'}><option value=''>all groups</option>${groups.map(g => `<option ${g === grp ? 'selected' : ''}>${esc(g)}</option>`).join('')}</select>
@@ -376,9 +376,9 @@ document.addEventListener('click', ev => {
   if (!rows.length) return;
   const dir = th.dataset.dir === 'asc' ? 'desc' : 'asc'; tr.querySelectorAll('th').forEach(h => { delete h.dataset.dir; h.querySelector('.dir')?.remove(); });
   th.dataset.dir = dir; th.insertAdjacentHTML('beforeend', ` <span class='dir'>${dir === 'asc' ? '▲' : '▼'}</span>`);
-  const num = s => { const n = parseFloat(String(s).replace(/[^0-9.\-]/g, '')); return isNaN(n) ? null : n; };
+  const num = s => { const n = parseFloat(String(s).replace(/[^0-9.\\-]/g, '')); return isNaN(n) ? null : n; };
   rows.sort((a, b) => { const x = a.children[idx].textContent.trim(), y = b.children[idx].textContent.trim(), nx = num(x), ny = num(y);
-    const c = nx != null && ny != null && /\d/.test(x) && /\d/.test(y) ? nx - ny : x.localeCompare(y); return dir === 'asc' ? c : -c; });
+    const c = nx != null && ny != null && /\\d/.test(x) && /\\d/.test(y) ? nx - ny : x.localeCompare(y); return dir === 'asc' ? c : -c; });
   const parent = rows[0].parentElement; rows.forEach(r => parent.appendChild(r));
 });
 let renderSeq = 0;
