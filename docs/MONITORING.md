@@ -138,7 +138,7 @@ Lines worth reacting to:
 
 ## Telegram warnings
 
-System messages start with ⚙️ and go only to you. Each kind is sent at most once per cooldown, so a lasting
+System messages start with ⚙️ and go to you and your helper admins (⭐ in `/subscribers`). Each kind is sent at most once per cooldown, so a lasting
 problem does not flood the chat.
 
 | Message starts with | Sent when | Cooldown | What to do |

@@ -218,6 +218,11 @@ MIGRATIONS = [
     -- Low-confidence alerts wait here until the price is seen again (or this time passes).
     ALTER TABLE alerts ADD COLUMN confirm_until TEXT;
     """,
+    """
+    -- Helper admins: chosen by the owner, they also get join requests (and may answer them),
+    -- system warnings and the daily report.
+    ALTER TABLE subscribers ADD COLUMN is_manager INTEGER NOT NULL DEFAULT 0;
+    """,
 ]
 
 # Price moves smaller than this are noise (amazon.eg prices creep by a piastre per

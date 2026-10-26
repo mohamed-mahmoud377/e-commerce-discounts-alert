@@ -118,7 +118,7 @@ The tables (full column list in [INTERNALS.md](INTERNALS.md)):
 | `jobs` | Category root to plan, or slice to crawl | kind, site, target, grp, interval_s, next_due_at, lease_*, failures, last_error, last_done_at |
 | `alerts` | Deal alert or system message | product_id, kind, price, reference_price, drop_pct, score, message, created_at |
 | `deliveries` | Alert sent to one person | alert_id, chat_id, sent_at, attempts, error |
-| `subscribers` | Telegram user | chat_id, name, status, is_admin, approved_at |
+| `subscribers` | Telegram user | chat_id, name, status, is_admin, is_manager (helper admin), approved_at |
 | `workers` | Crawling machine | name, last_seen_at, last_ip, sites, pages, jobs_done |
 | `worker_sites` | Machine and shop | last_ok_at, last_error_at, last_error, pages, products, blocks |
 | `blocks` | Shop that blocked an IP | site, ip, strikes, until, reason |
@@ -591,7 +591,7 @@ An alert is written to the `alerts` table first and sent afterwards, so a Telegr
 restart never loses one. A background loop in the coordinator runs every 3 seconds:
 
 1. **Hand out.** Each new alert gets one `deliveries` row per recipient: deal alerts go to every approved
-   subscriber, system messages only to you (the admin).
+   subscriber, system messages to you (the admin) and your helper admins.
 2. **Send.** Each delivery is sent on its own, one message per second. A failure is retried after 30
    seconds, then 1, 2, 4 minutes and so on up to an hour, at most 10 times. Telegram's own "retry after"
    hint is respected.
@@ -612,10 +612,22 @@ web address for it.
 2. You get their name with two buttons: approve or reject.
 3. Approve: they get a welcome message and every deal alert from then on. Reject: they are told politely.
 4. `/stop` pauses their alerts. `/start` later brings them back without a new approval.
-5. Send `/subscribers` to the bot to see everyone and their status.
+5. Send `/subscribers` to the bot to see everyone and their status. Under the list each person has buttons:
+   **❌ remove** (asks "are you sure?" first; they are told, stop getting alerts, and a later `/start` is a
+   new request) and **⭐ make helper** / **⬇️ unmake helper**.
 
 System messages (a shop is stalled, a worker went silent, an IP is blocked repeatedly, a page layout seems
-to have changed, low disk) and the daily report go only to you.
+to have changed, low disk) and the daily report go to you and to your helper admins.
+
+| Who | Deal alerts | Join requests | System warnings and daily report | Manage people |
+| --- | --- | --- | --- | --- |
+| You (the owner, `[telegram] chat_id`) | ✅ | ✅ approve/reject | ✅ | ✅ remove, make/unmake helpers |
+| Helper admin (⭐) | ✅ | ✅ approve/reject | ✅ | ❌ (sees `/subscribers`, no buttons) |
+| Subscriber | ✅ | ❌ | ❌ | ❌ |
+
+A join request goes to every admin; the first answer wins and every copy is updated with the decision (and
+who made it), so a later tap on an old copy just says it was handled. A helper who sends `/stop` gets
+nothing until `/start` again. `make report` (sending the report by hand) still goes only to you.
 
 ## Keeping it healthy
 

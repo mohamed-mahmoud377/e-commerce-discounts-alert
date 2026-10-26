@@ -120,6 +120,7 @@ many have run, and `db.connect()` runs the missing ones in a transaction on star
 | 6 | Indexes on `price_history(observed_at)`, `alerts(created_at)`, `products(grp, site)` |
 | 7 | `worker_sites`, `events` |
 | 8 | `alerts.confirm_until` (low-confidence alerts held until the price is seen again) |
+| 9 | `subscribers.is_manager` (helper admins) |
 
 **Tables and columns** (prices are integer piastres; times are UTC ISO text, which sorts correctly as text):
 
@@ -133,9 +134,9 @@ many have run, and `db.connect()` runs the missing ones in a transaction on star
 | `blocks` | `(site, ip)` | `strikes`, `until`, `reason`, `updated_at`; deleted on the IP's next successful page |
 | `alerts` | `id`; indexes on product, dedupe key, created | `product_id` (null for system), `kind`, `dedupe_key`, `price`, `reference_price`, `drop_pct`, `score`, `message` (final Arabic HTML), `created_at`, `sent_at` (= handed to recipients), `error` (`cancelled: price not confirmed` when a held alert's price reverted), `confirm_until` (held until then or until the product is seen again) |
 | `deliveries` | `id`; unique `(alert_id, chat_id)` | `sent_at`, `attempts`, `next_attempt_at`, `error` |
-| `subscribers` | `chat_id` | `name`, `username`, `status` (`pending`, `active`, `rejected`, `stopped`, `blocked`), `is_admin`, `approved_at` |
+| `subscribers` | `chat_id` | `name`, `username`, `status` (`pending`, `active`, `rejected`, `removed`, `stopped`, `blocked`), `is_admin` (the owner), `is_manager` (helper admin: join requests, system alerts, daily report), `approved_at` |
 | `events` | `id`; indexes on time and source | `at`, `source`, `level`, `message`; pruned after 7 days |
-| `kv` | `key` | `telegram_offset` (last Telegram update handled) |
+| `kv` | `key` | `telegram_offset` (last Telegram update handled); `request:<chat_id>` (the admins' copies of an open join request, so the first answer updates them all) |
 
 **Adding a migration:** append a new SQL string to `MIGRATIONS` (never edit an old one), use
 `ALTER TABLE ... ADD COLUMN` or new tables, rehearse it on a copy (`make db`, then `db.connect()` on a copy

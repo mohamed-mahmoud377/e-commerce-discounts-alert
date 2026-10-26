@@ -262,7 +262,8 @@ class Telegram:
 class AlertSender(threading.Thread):
     """Hands each alert to its recipients and delivers them, retrying per person.
 
-    Deal alerts go to every active subscriber; system alerts only to the admin.
+    Deal alerts go to every active subscriber; system alerts (and the daily report) to the admin and
+    the active helper admins.
     """
 
     def __init__(self, cfg: Config, stop: threading.Event, interval: float = 3.0, telegram: Telegram | None = None):
@@ -294,7 +295,8 @@ class AlertSender(threading.Thread):
                     conn.execute("UPDATE alerts SET sent_at = ?, error = 'telegram not configured' WHERE id = ?",
                                  (iso(now), a["id"]))
                     continue
-                who = "is_admin = 1" if a["kind"] == "system" else "status = 'active'"
+                who = ("is_admin = 1 OR (is_manager = 1 AND status = 'active')" if a["kind"] == "system"
+                       else "status = 'active'")
                 recipients = [r["chat_id"] for r in conn.execute(f"SELECT chat_id FROM subscribers WHERE {who}")]
                 for chat_id in recipients:
                     conn.execute("INSERT OR IGNORE INTO deliveries (alert_id, chat_id, next_attempt_at) VALUES (?, ?, ?)",

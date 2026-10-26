@@ -7,7 +7,7 @@ from deals import bot, db
 from deals.alerts import AlertSender, TelegramError, system_alert
 from deals.db import iso, utcnow
 
-ADMIN, FRIEND = 100, 200
+ADMIN, FRIEND, HELPER, NEWBIE = 100, 200, 300, 400
 
 
 class FakeTelegram:
@@ -45,10 +45,10 @@ def message(update_id, chat_id, text, first_name="Ahmed"):
                                                 "from": {"id": chat_id, "first_name": first_name}, "text": text}}
 
 
-def button(update_id, from_id, data):
+def button(update_id, from_id, data, chat=ADMIN, message_id=7):
     return {"update_id": update_id, "callback_query": {
         "id": "cb", "from": {"id": from_id}, "data": data,
-        "message": {"chat": {"id": ADMIN}, "message_id": 7, "text": "طلب اشتراك جديد"}}}
+        "message": {"chat": {"id": chat}, "message_id": message_id, "text": "طلب اشتراك جديد"}}}
 
 
 def status(conn, chat_id):
@@ -136,3 +136,78 @@ def test_listener_confirms_updates(env):
     assert listener.poll_once(conn) == 2
     assert conn.execute("SELECT value FROM kv WHERE key = 'telegram_offset'").fetchone()["value"] == "43"
     assert listener.poll_once(conn) == 0  # already handled updates are not processed again
+
+
+def subscribe(conn, cfg, tg, chat_id, update_id):
+    bot.handle_update(conn, cfg, tg, message(update_id, chat_id, "/start"))
+    bot.handle_update(conn, cfg, tg, button(update_id + 1, ADMIN, f"approve:{chat_id}"))
+
+
+def answers(tg):
+    return [p["text"] for m, p in tg.calls if m == "answerCallbackQuery"]
+
+
+def test_owner_removes_someone_after_confirming(env, monkeypatch):
+    cfg, conn, tg = env
+    monkeypatch.setattr("time.sleep", lambda _: None)
+    subscribe(conn, cfg, tg, FRIEND, 1)
+    bot.handle_update(conn, cfg, tg, message(3, ADMIN, "/subscribers"))
+    listing = [b for c, t, b in tg.sent if c == ADMIN and "المشتركون" in t][-1]
+    assert listing[0][0]["callback_data"] == f"remove:{FRIEND}"
+
+    bot.handle_update(conn, cfg, tg, button(4, FRIEND, f"remove_yes:{FRIEND}"))  # only the owner may
+    assert status(conn, FRIEND) == "active"
+    bot.handle_update(conn, cfg, tg, button(5, ADMIN, f"remove:{FRIEND}"))
+    assert status(conn, FRIEND) == "active"  # first tap only asks
+    confirm = [p for m, p in tg.calls if m == "editMessageText"][-1]
+    assert confirm["reply_markup"]["inline_keyboard"][0][0]["callback_data"] == f"remove_yes:{FRIEND}"
+    bot.handle_update(conn, cfg, tg, button(6, ADMIN, f"remove_yes:{FRIEND}"))
+    assert status(conn, FRIEND) == "removed" and "إلغاء اشتراكك" in tg.to(FRIEND)[-1]
+
+    queue_alert(conn, text="after removal")
+    send_all(cfg, conn, tg)
+    assert "after removal" not in tg.to(FRIEND)
+    # coming back needs a new approval
+    bot.handle_update(conn, cfg, tg, message(7, FRIEND, "/start"))
+    assert status(conn, FRIEND) == "pending"
+    assert [b for c, _, b in tg.sent if c == ADMIN][-1][0][0]["callback_data"] == f"approve:{FRIEND}"
+
+
+def test_helper_admin_gets_requests_warnings_and_report(env, monkeypatch):
+    cfg, conn, tg = env
+    monkeypatch.setattr("time.sleep", lambda _: None)
+    subscribe(conn, cfg, tg, FRIEND, 1)
+    subscribe(conn, cfg, tg, HELPER, 3)
+    bot.handle_update(conn, cfg, tg, button(5, FRIEND, f"promote:{HELPER}"))  # only the owner may
+    assert not bot.is_manager(conn, HELPER)
+    bot.handle_update(conn, cfg, tg, button(6, ADMIN, f"promote:{HELPER}"))
+    assert bot.is_manager(conn, HELPER) and "مساعدًا" in tg.to(HELPER)[-1]
+
+    queue_alert(conn, kind="system", text="noon stalled")
+    queue_alert(conn, text="tv deal")
+    send_all(cfg, conn, tg)
+    assert any("noon stalled" in t for t in tg.to(HELPER)) and any("noon stalled" in t for t in tg.to(ADMIN))
+    assert not any("noon stalled" in t for t in tg.to(FRIEND))
+    assert "tv deal" in tg.to(HELPER) and "tv deal" in tg.to(FRIEND)
+
+    # a join request reaches both admins; the helper answers, both copies show who decided
+    bot.handle_update(conn, cfg, tg, message(7, NEWBIE, "/start", first_name="Sara"))
+    owner_copy = [i + 1 for i, (c, _, b) in enumerate(tg.sent) if c == ADMIN and b][-1]
+    helper_copy = [i + 1 for i, (c, _, b) in enumerate(tg.sent) if c == HELPER and b][-1]
+    bot.handle_update(conn, cfg, tg, button(8, HELPER, f"approve:{NEWBIE}", chat=HELPER, message_id=helper_copy))
+    assert status(conn, NEWBIE) == "active"
+    edits = {(p["chat_id"], p["message_id"]): p["text"] for m, p in tg.calls if m == "editMessageText"}
+    assert "تمت الموافقة" in edits[(ADMIN, owner_copy)] and "تمت الموافقة" in edits[(HELPER, helper_copy)]
+    # the owner pressing the stale copy changes nothing and says it was handled
+    bot.handle_update(conn, cfg, tg, button(9, ADMIN, f"reject:{NEWBIE}", message_id=owner_copy))
+    assert status(conn, NEWBIE) == "active" and "بالفعل" in answers(tg)[-1]
+    # helpers can't remove people or name other helpers
+    bot.handle_update(conn, cfg, tg, button(10, HELPER, f"remove_yes:{FRIEND}", chat=HELPER))
+    bot.handle_update(conn, cfg, tg, button(11, HELPER, f"promote:{FRIEND}", chat=HELPER))
+    assert status(conn, FRIEND) == "active" and not bot.is_manager(conn, FRIEND)
+
+    bot.handle_update(conn, cfg, tg, button(12, ADMIN, f"demote:{HELPER}"))
+    assert not bot.is_manager(conn, HELPER)
+    queue_alert(conn, kind="system", text="disk low")
+    send_all(cfg, conn, tg)
+    assert not any("disk low" in t for t in tg.to(HELPER))
