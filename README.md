@@ -35,7 +35,7 @@ Each worker only takes jobs for the sites its internet connection can reach.
 ## What it tracks
 
 The groups live in `config.toml` (see [config.example.toml](config.example.toml)):
-TVs, refrigerators, air conditioners, phones, laptops, desktops, monitors, PC components,
+TVs, refrigerators, air conditioners, gaming consoles, phones, tablets, laptops, desktops, monitors, PC components,
 headphones, kitchen machines (fryers, coffee machines, blenders, microwaves), other kitchen
 appliances, and cooking & dishwashers, each on both sites, with a
 minimum price so cables and cases don't flood the crawl.

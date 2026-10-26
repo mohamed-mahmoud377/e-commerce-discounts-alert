@@ -8,9 +8,9 @@ Also kept as a shared doc with the same content. Companion docs: [MONITORING.md]
 
 The system crawls whole categories on amazon.eg and noon.com (Egypt), stores every product's price
 history, and sends an Arabic Telegram alert when a price is genuinely low compared with that product's
-own history. It tracks about 43,000 products in 12 groups: TVs, refrigerators, air conditioners, phones,
-laptops, desktops, monitors, PC components, headphones, kitchen machines (fryers, coffee machines,
-blenders, microwaves), other kitchen appliances, and cooking and dishwashers.
+own history. It tracks about 50,000 products in 14 groups: TVs, refrigerators, air conditioners, gaming consoles,
+phones, tablets, laptops, desktops, monitors, PC components, headphones, kitchen machines (fryers, coffee
+machines, blenders, microwaves), other kitchen appliances, and cooking and dishwashers.
 
 It has four parts. One coordinator owns the data and decides what to do; any number of workers do the
 crawling from their own internet connections.
@@ -324,8 +324,8 @@ after that day's change):
 
 | Group | `interval_minutes` | Current intervals | Typical time to alert | Worst case |
 | --- | --- | --- | --- | --- |
-| Air conditioners (top priority since 26 Oct) | 10 | 10 to 30 min | ~10 min | ~30 min |
-| Phones, Monitors | 20 | 10 min | ~7 min | ~13 min |
+| Air conditioners, Gaming consoles, Phones, Tablets (top priority since 26 Oct) | 10 | 10 to 30 min | ~10 min | ~30 min |
+| Monitors | 20 | 10 min | ~7 min | ~13 min |
 | Laptops | 20 | 10 to 16 min | ~8 min | ~18 min |
 | Refrigerators, TVs | 20 | 10 to 29 min | ~12 min | ~30 min |
 | Headphones | 60 | 10 to 88 min | ~15 min | ~1.5 h |

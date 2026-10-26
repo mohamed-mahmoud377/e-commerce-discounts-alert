@@ -85,12 +85,34 @@ amazon_eg = "category:21863915031"
 noon_eg = "category:home-and-kitchen/home-appliances-31235/large-appliances/heating-cooling-and-air-quality/air-conditioners"
 
 [[watch]]
+name = "Gaming consoles"
+label = "أجهزة ألعاب (بلايستيشن، إكس بوكس، سويتش)"
+interval_minutes = 10   # top priority
+min_price = 8000        # consoles and bundles; games and controllers are cheaper
+amazon_eg = [
+    "category:21868828031",   # PlayStation 5
+    "category:21868824031",   # Xbox Series X & S
+    "category:21868826031",   # Nintendo Switch
+    "category:206233785031",  # Nintendo Switch 2
+    "category:92555823031",   # handheld game systems
+]
+noon_eg = "category:electronics-and-mobiles/video-games-10181/gaming-console"
+
+[[watch]]
 name = "Phones"
 label = "موبايلات"
-interval_minutes = 20
+interval_minutes = 10   # top priority (iPhone, Samsung...)
 min_price = 2500
 amazon_eg = "category:21832883031"
 noon_eg = "category:electronics-and-mobiles/mobiles-and-accessories/mobiles-20905/smartphones"
+
+[[watch]]
+name = "Tablets"
+label = "تابلت وآيباد"
+interval_minutes = 10   # top priority
+min_price = 5000
+amazon_eg = "category:21832915031"
+noon_eg = "category:electronics-and-mobiles/tablets-and-accessories/tablets"
 
 [[watch]]
 name = "Laptops"
