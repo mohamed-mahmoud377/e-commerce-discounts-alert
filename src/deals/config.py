@@ -20,6 +20,7 @@ class AlertRules:
     new_product_min_drop: float = 0.30  # site-claimed discount needed for new products
     list_max_claimed_drop: float = 0.60  # a bigger claim against an RRP ("list") price is rejected
     confirm_low_confidence: bool = True  # hold low-confidence alerts until the price is seen again
+    confirm_early_drops: bool = False  # ...early drops (backed by 1-3 days of our history) go out at once
     confirm_minutes: int = 90  # ...but send anyway after this long (worker asleep, slice slow)
     realert_after_days: float = 7
     realert_extra_drop: float = 0.05  # re-alert sooner if the price falls this much further

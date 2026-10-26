@@ -73,7 +73,11 @@ def check_product(conn: sqlite3.Connection, cfg: Config, product_id: int, *, boo
     # Hold low-confidence alerts until the next crawl can confirm the price. Slices revisit
     # at up to 3x the group's interval, so the hold must cover that or it is pure delay.
     hold = max(cfg.alerts.confirm_minutes, (watch.interval_minutes * 3 + 10) if watch else 0)
-    confirm = iso(now + timedelta(minutes=hold)) if deal.confidence == "low" and cfg.alerts.confirm_low_confidence else None
+    # Early drops are sent at once by default (they rest on our own history, and speed matters);
+    # new listings, which rest on the shop's claim, wait for a second sighting.
+    wait = (deal.confidence == "low" and cfg.alerts.confirm_low_confidence
+            and (deal.kind != "early_drop" or cfg.alerts.confirm_early_drops))
+    confirm = iso(now + timedelta(minutes=hold)) if wait else None
     past = conn.execute("SELECT COUNT(*) FROM alerts WHERE product_id = ? AND (error IS NULL OR error NOT LIKE 'cancelled%')",
                         (product_id,)).fetchone()[0]
     conn.execute(

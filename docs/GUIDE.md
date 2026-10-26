@@ -494,7 +494,7 @@ flowchart TB
     e --> n
     b --> n
     n --> r["No repeat within 7 days<br/>unless 5% cheaper than the last alert"]
-    r --> c{"Confidence low?"}
+    r --> c{"New listing<br/>(low confidence)?"}
     c -- "yes" --> w["Held until the next crawl sees<br/>the same price (cancelled if it reverted;<br/>sent anyway after 90 min)"]
     c -- "no" --> s["Arabic alert to every subscriber<br/>with confidence and score"]
     w --> s
@@ -533,12 +533,15 @@ another seller has had it at 3,000 all along, so no alert goes out while a cheap
 same item exists. Only offers seen in the last 24 hours count: a seller that stops selling simply
 disappears from the pages, so its last price must not block alerts forever.
 
-**Confirmation.** Low-confidence alerts (early drops, new listings) are held until the next crawl sees the
+**Confirmation.** New-listing alerts (they rest on the shop's own crossed-out price) are held until the next crawl sees the
 product again: if it is still at that price (or cheaper) the alert goes out, if the price went back up it is
 cancelled (it was a glitch, a seller switch or a one-crawl mistake). The hold lasts long enough for the
 slowest revisit of the group (3x its interval plus 10 minutes, at least `confirm_minutes` = 90); if nobody
 rechecks the product in that time (e.g. the Mac is asleep) it goes out anyway: nothing disproved it. For
-top groups this adds 10 to 30 minutes. `confirm_low_confidence = false` turns it off.
+top groups this adds 10 to 30 minutes. `confirm_low_confidence = false` turns it off. Early drops are low
+confidence too but are sent at once (since 27 October 2026, at the user's request: they rest on our own
+history and speed matters for them; in the first day of holding, all 85 held alerts were confirmed and none
+cancelled). `confirm_early_drops = true` holds them again.
 
 **Path B: less than a day of history (a new listing).** We have no reference of our own, so the shop's
 claim is used but must be backed by evidence:

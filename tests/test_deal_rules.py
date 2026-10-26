@@ -124,6 +124,19 @@ def test_held_alert_goes_out_when_nobody_rechecks_in_time(cfg, conn):
     assert held(conn)[0]["confirm_until"] is None
 
 
+def test_early_drop_is_sent_at_once_unless_configured(cfg, conn):
+    t = utcnow()
+    for sku, rules in [("N8@shop-a", cfg.alerts), ("N9@shop-a", replace(cfg.alerts, confirm_early_drops=True))]:
+        with conn:
+            p = db.record(conn, listing(sku=sku, price_egp=5000), grp="TVs", now=t - timedelta(days=2))
+            db.record(conn, listing(sku=sku, price_egp=3000), grp="TVs", now=t)
+            deal = check_product(conn, replace(cfg, alerts=rules), p.product_id, bootstrap=False, now=t)
+        assert deal.kind == "early_drop" and deal.confidence == "low"
+    rows = held(conn)
+    assert rows[0]["confirm_until"] is None  # default: no hold
+    assert rows[1]["confirm_until"] is not None  # confirm_early_drops = true: held like a new listing
+
+
 def test_high_confidence_alert_is_not_held(cfg, conn):
     t = utcnow()
     with conn:

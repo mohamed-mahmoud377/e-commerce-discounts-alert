@@ -247,6 +247,7 @@ commented template.
 | `[alerts] new_product_min_drop` | 0.30 | Claimed discount needed for new listings |
 | `[alerts] list_max_claimed_drop` | 0.60 | A bigger claim against an RRP ("list") price is rejected |
 | `[alerts] confirm_low_confidence` | true | Hold low-confidence alerts until the product is seen again at that price |
+| `[alerts] confirm_early_drops` | false | Also hold early drops (by default they are sent at once; only new listings wait) |
 | `[alerts] confirm_minutes` | 90 | ...but send anyway after this long if nobody rechecked it (the hold is at least 3x the group's interval + 10 min, so a slow group can actually be rechecked) |
 | `[alerts] realert_after_days` | 7 | No repeat alert within this many days... |
 | `[alerts] realert_extra_drop` | 0.05 | ...unless the price fell this much more |
