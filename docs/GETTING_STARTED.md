@@ -83,6 +83,40 @@ To update later: `git pull`, then restart the worker (`make restart-mac-worker` 
 `systemctl --user restart deals-worker` on Linux). To stop for good: `make uninstall-mac-worker` /
 `systemctl --user disable --now deals-worker`.
 
+### What your device actually does
+
+- **It shares the work, never doubles it.** The server keeps one queue of jobs (one job = one slice of a
+  category). Your worker asks for a job, gets it reserved for 5 minutes (extended with every page), and no
+  other device can take it meanwhile. Two devices simply pull different jobs from the same queue. If your
+  device goes to sleep mid-job, the reservation expires and another device finishes it; nothing is lost.
+- **One job per shop per internet connection.** Two devices on the same Wi-Fi share one public IP, so they
+  take turns on each shop (one crawls Amazon while the other crawls noon). A device on a *different*
+  connection (another home or office) adds a full extra share for both shops. Hitting a shop twice as hard
+  from one IP only gets that IP blocked, so this is on purpose.
+- **Blocks are per connection.** If Amazon starts refusing your connection, only your device pauses that
+  shop (15 minutes, doubling on repeats, up to a day) and retries by itself; other devices carry on. noon
+  refuses cloud servers, so home connections like yours are the only way noon gets crawled.
+- **Load on your side:** roughly one page every 2 to 4 seconds on Amazon and every 1 to 2 seconds on noon,
+  about 2 to 5 MB per minute, and one Chrome window started invisibly now and then to pass Amazon's bot
+  check. Nothing is stored on your device except a cookie file and the log.
+- **Sleep:** the worker stops while the device sleeps and resumes when it wakes. On macOS `make keep-awake`
+  stops it sleeping while plugged in (`make allow-sleep` undoes it); on Linux use your power settings.
+
+### What your token can and cannot do
+
+The token identifies your device and lets it ask for jobs and send back the products it found. It cannot
+send Telegram messages, change settings, or read the database. Treat it like a password anyway: don't
+paste it in chats or commit it to git (`worker.env` is gitignored). If it leaks, tell the owner; they delete
+one line and your device is cut off within a minute. The owner can see what your device is doing
+(`make devices`: pages fetched, jobs, blocks), not what else your computer does.
+
+### For the owner: adding a device
+
+On the server: `deals token`, add the result under `[workers]` in `/etc/deals/config.toml` as
+`ahmed = "..."` (the name shows in `make devices`, the web UI and the logs), then `make restart-server`.
+Send the person the server address and their token privately. To remove a device, delete its line and
+restart again.
+
 ## B. Everything on one computer
 
 No server: the coordinator (database, scheduler, alerts) and a worker run in one process on your machine.
