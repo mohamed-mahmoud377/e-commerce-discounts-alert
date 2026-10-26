@@ -87,3 +87,24 @@ def test_product_page_data_and_filters(client):
     assert client.get("/api/products?grp=TVs&sort=cheap&in_stock=1").json()["products"][0]["id"] == pid
     assert client.get("/api/products?grp=Phones").json()["products"] == []
     assert client.get("/api/products?q=samsung&sort=bogus").status_code == 200  # unknown sort falls back
+
+
+def test_products_are_paged_with_a_total(client):
+    client.post("/ui/login", data={"token": "admin-secret"}, follow_redirects=False)
+    conn = client.app.state.conn
+    with conn:
+        for i in range(250):
+            db.record(conn, Listing("noon_eg", f"N{i}@s", f"Phone model {i}", f"https://x/N{i}", 100_000 + i * 100, None, "EGP", True),
+                      grp="Phones", now=utcnow())
+    first = client.get("/api/products?limit=100&offset=0&grp=Phones&sort=cheap").json()
+    assert first["total"] == 250 and len(first["products"]) == 100 and first["products"][0]["title"] == "Phone model 0"
+    second = client.get("/api/products?limit=100&offset=100&grp=Phones&sort=cheap").json()
+    assert second["products"][0]["title"] == "Phone model 100" and second["offset"] == 100
+    last = client.get("/api/products?limit=100&offset=200&grp=Phones&sort=cheap").json()
+    assert len(last["products"]) == 50
+    assert client.get("/api/products?limit=100&offset=300&grp=Phones").json()["products"] == []
+    # pages never overlap or skip under a stable sort
+    ids = [p["id"] for page in (first, second, last) for p in page["products"]]
+    assert len(ids) == 250 == len(set(ids))
+    # the whole catalogue is browsable without a search term
+    assert client.get("/api/products?limit=10").json()["total"] == 251

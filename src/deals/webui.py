@@ -65,19 +65,28 @@ PRODUCT_SORTS = {"recent": "last_change_at DESC", "cheap": "price IS NULL, price
                  "rating": "rating IS NULL, rating DESC, reviews DESC", "reviews": "reviews IS NULL, reviews DESC"}
 
 
-def products(conn: sqlite3.Connection, q: str, site: str | None, limit: int, grp: str | None = None,
-             sort: str = "recent", in_stock_only: bool = False) -> list[dict]:
+def _product_filter(q: str, site: str | None, grp: str | None, in_stock_only: bool) -> tuple[str, list]:
     words = [w for w in q.split() if w][:6]
     where = " AND ".join("title LIKE ?" for _ in words) or "1"
     if in_stock_only:
         where += " AND in_stock = 1"
+    where += " AND (? IS NULL OR site = ?) AND (? IS NULL OR grp = ?)"
+    return where, [*[f"%{w}%" for w in words], site, site, grp, grp]
+
+
+def products(conn: sqlite3.Connection, q: str, site: str | None, limit: int, grp: str | None = None,
+             sort: str = "recent", in_stock_only: bool = False, offset: int = 0) -> dict:
+    """One page of the product list plus the total match count (for 'showing N of M' and
+    endless scrolling: the client asks for the next `offset` as it nears the bottom)."""
+    where, params = _product_filter(q, site, grp, in_stock_only)
     order = PRODUCT_SORTS.get(sort, PRODUCT_SORTS["recent"])
+    total = conn.execute(f"SELECT COUNT(*) FROM products WHERE {where}", params).fetchone()[0]
     rows = conn.execute(
         f"""SELECT id, site, sku, title, url, grp, price, list_price, in_stock, stock_left, seller, rating, reviews,
                    badges, last_seen_at, last_change_at, first_seen_at
-            FROM products WHERE {where} AND (? IS NULL OR site = ?) AND (? IS NULL OR grp = ?) ORDER BY {order} LIMIT ?""",
-        (*[f"%{w}%" for w in words], site, site, grp, grp, limit)).fetchall()
-    return [dict(r) for r in rows]
+            FROM products WHERE {where} ORDER BY {order}, id LIMIT ? OFFSET ?""",
+        (*params, limit, offset)).fetchall()
+    return {"products": [dict(r) for r in rows], "total": total, "offset": offset, "limit": limit}
 
 
 def groups(conn: sqlite3.Connection) -> list[str]:
@@ -247,18 +256,19 @@ const views = {
     if (id) return productPage(id);
     const f = k => $('#' + k)?.value ?? '';
     const q = f('q'), site = f('site'), grp = f('grp'), sort = f('sort') || 'recent', stock = $('#stock')?.checked ? 1 : 0;
-    const d = (q || grp) ? await api(`/api/products?limit=200&q=${encodeURIComponent(q)}&site=${site}&grp=${encodeURIComponent(grp)}&sort=${sort}&in_stock=${stock}`)
-                         : await api('/api/products?limit=0');
+    const query = `q=${encodeURIComponent(q)}&site=${site}&grp=${encodeURIComponent(grp)}&sort=${sort}&in_stock=${stock}`;
+    const d = await api(`/api/products?limit=${PAGE}&offset=0&` + query);
+    productFeed = {query, next: d.products.length, total: d.total, busy: false};
+    setTimeout(watchScroll, 0);
     return `<div class='row'><input id='q' placeholder='search titles, e.g. samsung 55' value='${esc(q)}' onkeydown="if(event.key==='Enter')render()" size='30'>
       <select id='site' onchange='render()'><option value=''>both shops</option><option ${site === 'amazon_eg' ? 'selected' : ''}>amazon_eg</option><option ${site === 'noon_eg' ? 'selected' : ''}>noon_eg</option></select>
       <select id='grp' onchange='render()'><option value=''>all groups</option>${d.groups.map(g => `<option ${g === grp ? 'selected' : ''}>${esc(g)}</option>`).join('')}</select>
       <select id='sort' onchange='render()'>${[['recent', 'latest change'], ['cheap', 'cheapest'], ['dear', 'dearest'], ['rating', 'best rated'], ['reviews', 'most reviews']].map(([v, l]) => `<option value='${v}' ${v === sort ? 'selected' : ''}>${l}</option>`).join('')}</select>
       <label><input type='checkbox' id='stock' ${stock ? 'checked' : ''} onchange='render()'> in stock only</label>
-      <button onclick='render()'>Search</button> <span class='muted'>${d.products.length} shown · click a row for the price history</span></div>
-      <table><tr><th>Product</th><th>Shop</th><th>Group</th><th>Price</th><th>Crossed-out</th><th>Stock</th><th>Rating</th><th>Last change</th></tr>
-      ${d.products.map(p => `<tr class='clickable' onclick='openProduct(${p.id})'><td>${esc(p.title)}</td><td>${esc(p.site)}${p.seller ? ' · ' + esc(p.seller) : ''}</td>
-        <td>${esc(p.grp)}</td><td>${egp(p.price)}</td><td>${egp(p.list_price)}</td><td>${p.in_stock ? (p.stock_left ? 'only ' + p.stock_left : 'yes') : 'no'}</td>
-        <td>${p.rating ? p.rating.toFixed(1) + ' (' + (p.reviews || 0).toLocaleString() + ')' : ''}</td><td>${ago(p.last_change_at)}</td></tr>`).join('')}</table>`;
+      <button onclick='render()'>Search</button> <span class='muted' id='pcount'>${d.products.length.toLocaleString()} of ${d.total.toLocaleString()} · click a row for the price history</span></div>
+      <table><thead><tr><th>Product</th><th>Shop</th><th>Group</th><th>Price</th><th>Crossed-out</th><th>Stock</th><th>Rating</th><th>Last change</th></tr></thead>
+      <tbody id='prows'>${d.products.map(productRow).join('')}</tbody></table>
+      <div id='more' class='muted' style='padding:10px 0 30px'>${d.products.length < d.total ? "<span class='spinner'></span>loading more as you scroll…" : d.total ? 'end of list' : 'nothing matches'}</div>`;
   },
   async Queries() {
     const list = (await api('/api/queries')).queries;
@@ -282,6 +292,29 @@ const views = {
       ${d.rows.map(r => `<tr>${d.columns.map((c, i) => hide.has(c) ? '' : `<td>${cell(r[i], c, r)}</td>`).join('')}</tr>`).join('')}</table>`;
   },
 };
+const PAGE = 100;
+let productFeed = null;
+const productRow = p => `<tr class='clickable' onclick='openProduct(${p.id})'><td>${esc(p.title)}</td><td>${esc(p.site)}${p.seller ? ' · ' + esc(p.seller) : ''}</td>
+  <td>${esc(p.grp)}</td><td>${egp(p.price)}</td><td>${egp(p.list_price)}</td><td>${p.in_stock ? (p.stock_left ? 'only ' + p.stock_left : 'yes') : 'no'}</td>
+  <td>${p.rating ? p.rating.toFixed(1) + ' (' + (p.reviews || 0).toLocaleString() + ')' : ''}</td><td>${ago(p.last_change_at)}</td></tr>`;
+// Endless scrolling for the product list: when the marker under the table comes into view,
+// fetch the next page for the same filters and append it. Stops at the total.
+function watchScroll() {
+  const more = $('#more'); if (!more || !productFeed) return;
+  const io = new IntersectionObserver(async entries => {
+    if (!entries.some(e => e.isIntersecting) || !productFeed || productFeed.busy || productFeed.next >= productFeed.total) return;
+    const feed = productFeed; feed.busy = true;
+    try {
+      const d = await api(`/api/products?limit=${PAGE}&offset=${feed.next}&` + feed.query);
+      if (feed !== productFeed || tab !== 'Products') return;  // filters changed meanwhile
+      $('#prows').insertAdjacentHTML('beforeend', d.products.map(productRow).join(''));
+      feed.next += d.products.length; feed.total = d.total;
+      $('#pcount').textContent = `${feed.next.toLocaleString()} of ${feed.total.toLocaleString()} · click a row for the price history`;
+      if (feed.next >= feed.total || !d.products.length) { more.textContent = 'end of list'; io.disconnect(); }
+    } finally { feed.busy = false; }
+  }, {rootMargin: '400px'});
+  io.observe(more);
+}
 function devicesTable(devs) {
   return `<h3>Devices</h3><table><tr><th>Device</th><th>Shop</th><th>State</th><th>Detail</th><th>Pages</th><th>Products</th><th>Blocks</th></tr>
     ${devs.map(d => d.sites.map((s, i) => `<tr>${i ? '' : `<td rowspan='${d.sites.length}'><b>${esc(d.name)}</b><br><span class='muted'>${esc(d.ip)} · v${esc(d.version)}<br>seen ${d.last_seen_seconds}s ago</span></td>`}

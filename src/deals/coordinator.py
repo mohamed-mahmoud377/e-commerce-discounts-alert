@@ -381,10 +381,11 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
 
     @app.get("/api/products", dependencies=[Depends(viewer)])
     def products_api(q: str = "", site: str | None = None, limit: int = 100, grp: str | None = None,
-                     sort: str = "recent", in_stock: int = 0):
+                     sort: str = "recent", in_stock: int = 0, offset: int = 0):
         with closing(read_conn()) as rc:
-            return {"products": webui.products(rc, q, site or None, min(limit, 500), grp or None, sort, bool(in_stock)),
-                    "groups": webui.groups(rc)}
+            page = webui.products(rc, q, site or None, max(0, min(limit, 500)), grp or None, sort, bool(in_stock),
+                                  max(0, offset))
+            return {**page, "groups": webui.groups(rc)}
 
     @app.get("/api/queries", dependencies=[Depends(viewer)])
     def queries_api():
