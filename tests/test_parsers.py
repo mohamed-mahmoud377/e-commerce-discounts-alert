@@ -1,4 +1,5 @@
 from conftest import fixture_json, fixture_text
+import pytest
 
 from deals.models import LIMITED_DEAL, LOWEST_30D, MEGA_DEAL, Slice
 from deals.planner import split_price
@@ -58,3 +59,24 @@ def test_noon_catalog():
     assert result.subcategories[0].id == "electronics-and-mobiles/mobiles-and-accessories"
     # tracked per seller offer, so different sellers' prices never mix in one history
     assert all("@" in x.sku and x.seller for x in result.listings)
+
+
+def test_amazon_decoy_page_is_flagged():
+    page = fixture_text("amazon_search.html.gz")
+    assert parse_search_page(page).decoy is False
+    # amazon.eg's soft block: a listing of random products with no result-count bar
+    decoy = page.replace('data-component-type="s-result-info-bar"', 'data-component-type="x-gone"')
+    result = parse_search_page(decoy)
+    assert result.decoy is True and result.total is None and result.listings
+    # a genuinely empty page (no cards) is not a decoy
+    assert parse_search_page("<html><body></body></html>").decoy is False
+
+
+def test_amazon_site_treats_decoy_as_block(tmp_path, monkeypatch):
+    from deals.models import Blocked, Slice
+    from deals.sites.amazon_eg import AmazonEG
+    site = AmazonEG(tmp_path)
+    decoy = fixture_text("amazon_search.html.gz").replace('data-component-type="s-result-info-bar"', 'x')
+    monkeypatch.setattr(site, "_get", lambda url: decoy)
+    with pytest.raises(Blocked, match="decoy"):
+        site.fetch_page(Slice("search:playstation 5 console", 8000, None), 1)

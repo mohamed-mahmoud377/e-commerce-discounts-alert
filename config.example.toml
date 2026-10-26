@@ -89,12 +89,16 @@ name = "Gaming consoles"
 label = "أجهزة ألعاب (بلايستيشن، إكس بوكس، سويتش)"
 interval_minutes = 10   # top priority
 min_price = 8000        # consoles and bundles; games and controllers are cheaper
+# amazon.eg: the platform nodes (PlayStation 5 21868828031, Xbox Series 21868824031...) mix
+# consoles with games and accessories and the planner recurses into their Games children,
+# so only console-only nodes and console searches are used.
 amazon_eg = [
-    "category:21868828031",   # PlayStation 5
-    "category:21868824031",   # Xbox Series X & S
-    "category:21868826031",   # Nintendo Switch
-    "category:206233785031",  # Nintendo Switch 2
-    "category:92555823031",   # handheld game systems
+    "category:21868896031",   # Nintendo Switch > Consoles
+    "category:206233788031",  # Nintendo Switch 2 > Consoles
+    "category:92555823031",   # handheld game systems (Steam Deck, Switch Lite...)
+    "search:playstation 5 console",
+    "search:xbox series x console",
+    "search:xbox series s console",
 ]
 noon_eg = "category:electronics-and-mobiles/video-games-10181/gaming-console"
 

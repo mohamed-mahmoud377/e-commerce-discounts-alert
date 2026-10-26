@@ -70,7 +70,13 @@ class AmazonEG:
             if html is None:
                 raise Blocked(f"{self.name}: still challenged after refreshing cookies")
         current_node = slice.value if slice.kind == "category" else None
-        return parse_search_page(html, current_node)
+        result = parse_search_page(html, current_node)
+        if result.decoy:
+            # A soft block: the page is a random listing with no result count. Counting it
+            # would make the planner split forever and crawling it would record junk, so
+            # treat it like a challenge: the coordinator pauses this IP on amazon for a while.
+            raise Blocked(f"{self.name}: decoy page (no result bar) for {slice.key()}")
+        return result
 
     def _get(self, url: str) -> str | None:
         r = self._session.get(url, timeout=30)
@@ -126,6 +132,7 @@ def parse_search_page(html: str, current_node: str | None = None) -> PageResult:
         has_next=has_next,
         total=_parse_total(tree),
         subcategories=_child_nodes(tree, current_node) if current_node else [],
+        decoy=bool(listings) and tree.css_first('[data-component-type="s-result-info-bar"]') is None,
     )
 
 
