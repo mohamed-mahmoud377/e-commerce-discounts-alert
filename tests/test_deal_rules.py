@@ -117,7 +117,10 @@ def test_held_alert_goes_out_when_nobody_rechecks_in_time(cfg, conn):
         p = db.record(conn, listing(sku="N4@shop-a", price_egp=1500, list_price=250000, badges=(LIMITED_DEAL,),
                                     list_price_kind="list"), grp="TVs", now=t)
         check_product(conn, cfg, p.product_id, bootstrap=False, now=t)
-    sender.confirm(conn, t + timedelta(minutes=cfg.alerts.confirm_minutes + 1))
+    hold = max(cfg.alerts.confirm_minutes, cfg.watches[0].interval_minutes * 3 + 10)  # covers the slowest revisit
+    sender.confirm(conn, t + timedelta(minutes=hold - 1))
+    assert held(conn)[0]["confirm_until"] is not None  # still waiting for a recrawl
+    sender.confirm(conn, t + timedelta(minutes=hold + 1))
     assert held(conn)[0]["confirm_until"] is None
 
 
@@ -129,3 +132,27 @@ def test_high_confidence_alert_is_not_held(cfg, conn):
         deal = check_product(conn, cfg, p.product_id, bootstrap=False, now=t)
     assert deal.kind == "price_drop" and deal.confidence == "high"
     assert held(conn)[0]["confirm_until"] is None
+
+
+def test_vanished_seller_no_longer_counts_as_a_cheaper_offer(cfg, conn):
+    cfg = replace(cfg, alerts=AlertRules(confirm_low_confidence=False))
+    t = utcnow()
+    with conn:
+        db.record(conn, listing(sku="N7@shop-b", price_egp=3000), grp="TVs", now=t - timedelta(days=3))  # seen 3 days ago, then gone
+        a = db.record(conn, listing(sku="N7@shop-a", price_egp=5000), grp="TVs", now=t - timedelta(days=10))
+        db.record(conn, listing(sku="N7@shop-a", price_egp=3500), grp="TVs", now=t)
+        assert db.best_other_offer(conn, "noon_eg", "N7@shop-a", t) is None
+        assert check_product(conn, cfg, a.product_id, bootstrap=False, now=t).kind == "price_drop"
+        db.record(conn, listing(sku="N7@shop-b", price_egp=3000), grp="TVs", now=t)  # back on the page today
+        assert db.best_other_offer(conn, "noon_eg", "N7@shop-a", t) == 300000
+
+
+def test_list_price_change_does_not_move_the_recorded_price(conn):
+    t = utcnow()
+    with conn:
+        p = db.record(conn, listing("amazon_eg", "A9", 100, list_price=1200000), now=t)
+        rec = db.record(conn, listing("amazon_eg", "A9", 100.5, list_price=1300000), now=t + timedelta(hours=1))  # +0.5% price, new list price
+        assert rec.status == "same"  # a list-price-only change never triggers a deal check
+        row = conn.execute("SELECT price, list_price, last_change_at FROM products WHERE sku = 'A9'").fetchone()
+        assert row["price"] == 10000 and row["list_price"] == 1300000 and row["last_change_at"] == db.iso(t)
+        assert [h["price"] for h in db.history(conn, p.product_id)] == [10000, 10000]

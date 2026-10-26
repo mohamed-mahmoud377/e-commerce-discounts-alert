@@ -10,7 +10,7 @@ import gzip
 import shutil
 import sqlite3
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from deals.models import Listing
@@ -299,7 +299,10 @@ def record(conn: sqlite3.Connection, listing: Listing, grp: str | None = None,
         product_id = row["id"]
         price_changed = bool(row["in_stock"]) != listing.in_stock or moved(row["price"], listing.price)
         changed = price_changed or moved(row["list_price"], listing.list_price)
-        price, list_price = (listing.price, listing.list_price) if changed else (row["price"], row["list_price"])
+        # Each stored value only moves when it moved beyond noise, so products.price is always
+        # the price at last_change_at and the history row repeats the unchanged one.
+        price = listing.price if price_changed else row["price"]
+        list_price = listing.list_price if changed else row["list_price"]
         conn.execute(
             f"""UPDATE products SET title = ?, url = ?, price = ?, list_price = ?, in_stock = ?,
                                     list_price_kind = ?, brand = ?, stock_left = ?, recent_sales = ?,
@@ -314,10 +317,11 @@ def record(conn: sqlite3.Connection, listing: Listing, grp: str | None = None,
         result = Recorded(product_id, "changed" if price_changed else "same",
                           row["price"], bool(row["in_stock"]))
 
+    stored = (listing.price, listing.list_price) if row is None else (price, list_price)
     conn.execute(
         """INSERT INTO price_history (product_id, price, list_price, in_stock, observed_at)
            VALUES (?, ?, ?, ?, ?)""",
-        (product_id, listing.price, listing.list_price, listing.in_stock, now_s),
+        (product_id, *stored, listing.in_stock, now_s),
     )
     return result
 
@@ -329,17 +333,30 @@ def moved(old: int | None, new: int | None) -> bool:
     return abs(new - old) >= old * PRICE_NOISE
 
 
-def best_other_offer(conn: sqlite3.Connection, site: str, sku: str) -> int | None:
-    """Lowest in-stock price from other sellers of the same item (noon keys listings SKU@seller)."""
+OFFER_FRESH = timedelta(hours=24)
+
+
+def sibling_offers(conn: sqlite3.Connection, site: str, sku: str, now: datetime | None = None) -> list[sqlite3.Row]:
+    """Other sellers' listings of the same item (noon keys listings SKU@seller), cheapest first.
+
+    Only listings seen in the last day count: a seller that stopped selling simply vanishes
+    from the pages, so its row would otherwise stay "in stock" at its last price forever.
+    """
     base, sep, _ = sku.partition("@")
     if not sep:
-        return None
-    row = conn.execute(
-        """SELECT MIN(price) FROM products WHERE site = ? AND sku >= ? AND sku < ? AND sku != ?
-           AND in_stock = 1 AND price IS NOT NULL""",
-        (site, base + "@", base + "A", sku),
-    ).fetchone()
-    return row[0]
+        return []
+    return conn.execute(
+        """SELECT id, seller, price, in_stock, last_seen_at FROM products
+           WHERE site = ? AND sku >= ? AND sku < ? AND sku != ? AND last_seen_at >= ?
+           ORDER BY in_stock DESC, price IS NULL, price""",
+        (site, base + "@", base + "A", sku, iso((now or utcnow()) - OFFER_FRESH)),
+    ).fetchall()
+
+
+def best_other_offer(conn: sqlite3.Connection, site: str, sku: str, now: datetime | None = None) -> int | None:
+    """Lowest price another seller currently has the same item in stock at (None if nobody)."""
+    prices = [o["price"] for o in sibling_offers(conn, site, sku, now) if o["in_stock"] and o["price"] is not None]
+    return min(prices) if prices else None
 
 
 def history(conn: sqlite3.Connection, product_id: int) -> list[sqlite3.Row]:

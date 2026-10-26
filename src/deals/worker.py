@@ -191,6 +191,7 @@ class Worker:
             reply = self.api.call(path + "/page", {
                 "lease_token": job["lease_token"], "page": page,
                 "listings": [_listing_json(x) for x in result.listings], "done": not result.has_next,
+                "no_results": result.total == 0 and not result.listings,
             })
             products += len(result.listings)
             changes += reply.get("changes", 0)

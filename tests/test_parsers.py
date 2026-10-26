@@ -78,8 +78,15 @@ def test_amazon_site_treats_decoy_as_block(tmp_path, monkeypatch):
     site = AmazonEG(tmp_path)
     decoy = fixture_text("amazon_search.html.gz").replace('data-component-type="s-result-info-bar"', 'x')
     monkeypatch.setattr(site, "_get", lambda url: decoy)
+    refreshed = []
+    monkeypatch.setattr(site, "_bootstrap_cookies", lambda: refreshed.append(1))
     with pytest.raises(Blocked, match="decoy"):
         site.fetch_page(Slice("search:playstation 5 console", 8000, None), 1)
+    assert refreshed == [1]  # a fresh cookie session was tried once before giving up
+    # ...and if the fresh session gets a real page, that page is used
+    pages = iter([decoy, fixture_text("amazon_search.html.gz")])
+    monkeypatch.setattr(site, "_get", lambda url: next(pages))
+    assert len(site.fetch_page(Slice("search:playstation 5 console", 8000, None), 1).listings) >= 40
 
 
 def test_amazon_no_results_page_is_empty_not_a_failure():

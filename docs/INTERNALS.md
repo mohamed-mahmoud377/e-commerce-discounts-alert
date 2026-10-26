@@ -125,7 +125,7 @@ many have run, and `db.connect()` runs the missing ones in a transaction on star
 | Table | Key | Columns and meaning |
 | --- | --- | --- |
 | `products` | `id`; unique `(site, sku)` | `title`, `url`, `currency`; `price` (None when no price shown), `list_price` (crossed-out), `list_price_kind` (`was` = Amazon's recent price, `list` = RRP or noon seller price), `in_stock`; `brand`, `seller`, `stock_left`, `recent_sales`, `rating`, `reviews`, `badges` (comma list: `limited_deal`, `mega_deal`, `selling_fast`, `lowest_30d`, `lowest_365d`, `bestseller`); `grp` (watch group); `first_seen_at`, `last_seen_at`, `last_change_at` |
-| `price_history` | `id`; index `(product_id, observed_at)` and `(observed_at)` | `product_id`, `price`, `list_price`, `in_stock`, `observed_at`. One row per change; the row's values hold until the next row. Moves under 1% (`db.PRICE_NOISE`) are not changes: `products.price` keeps the last recorded value so a slow creep is recorded once it adds up |
+| `price_history` | `id`; index `(product_id, observed_at)` and `(observed_at)` | `product_id`, `price`, `list_price`, `in_stock`, `observed_at`. One row per change; the row's values hold until the next row. Moves under 1% (`db.PRICE_NOISE`) are not changes: `products.price` keeps the last recorded value so a slow creep is recorded once it adds up, and it only moves when the price itself moved (a list-price-only change writes a row repeating the stored price), so `products.price` is always the price at `last_change_at` |
 | `jobs` | `id`; unique `(kind, site, target)`; index `(site, next_due_at)` | `kind` (`plan`/`crawl`), `target` (slice key), `root`, `grp`, `expected_total`, `oversized`; `base_interval_s` (from the watch), `interval_s` (adaptive), `next_due_at`; lease: `lease_worker`, `lease_ip`, `lease_token`, `lease_expires_at`; current run: `run_count`, `run_changes`; history: `failures`, `last_error`, `last_done_at`, `last_count`, `last_changes` |
 | `workers` | `name` | `last_seen_at`, `last_ip`, `sites`, `version`, `pages`, `jobs_done` |
 | `worker_sites` | `(worker, site)` | `last_ok_at`, `last_error_at`, `last_error`, `pages`, `products`, `blocks` |
@@ -245,7 +245,7 @@ commented template.
 | `[alerts] new_product_min_drop` | 0.30 | Claimed discount needed for new listings |
 | `[alerts] list_max_claimed_drop` | 0.60 | A bigger claim against an RRP ("list") price is rejected |
 | `[alerts] confirm_low_confidence` | true | Hold low-confidence alerts until the product is seen again at that price |
-| `[alerts] confirm_minutes` | 90 | ...but send anyway after this long if nobody rechecked it |
+| `[alerts] confirm_minutes` | 90 | ...but send anyway after this long if nobody rechecked it (the hold is at least 3x the group's interval + 10 min, so a slow group can actually be rechecked) |
 | `[alerts] realert_after_days` | 7 | No repeat alert within this many days... |
 | `[alerts] realert_extra_drop` | 0.05 | ...unless the price fell this much more |
 | `[schedule] min_interval_minutes` | 10 | Fastest revisit of a busy slice |

@@ -199,7 +199,14 @@ def test_tiny_slice_that_emptied_is_not_a_failure(client):
     with conn:
         conn.execute("UPDATE jobs SET expected_total = 2 WHERE kind = 'crawl'")
     job = lease(client)
-    client.post(f"/api/jobs/{job['id']}/page", headers=W1,
+    client.post(f"/api/jobs/{job['id']}/page", headers=W1,  # the worker says the site answered "no results"
+                json={"lease_token": job["lease_token"], "page": 1, "listings": [], "done": True, "no_results": True})
+    row = conn.execute("SELECT failures, last_error, last_done_at, expected_total FROM jobs WHERE kind = 'crawl'").fetchone()
+    assert row["failures"] == 0 and row["last_error"] is None and row["last_done_at"] is not None and row["expected_total"] == 0
+    # without that signal, zero products from a slice that had some is still treated as a parser problem
+    with conn:
+        conn.execute("UPDATE jobs SET expected_total = 2, next_due_at = ? WHERE kind = 'crawl'", (iso(utcnow() - timedelta(seconds=1)),))
+    job = lease(client, headers=W2)
+    client.post(f"/api/jobs/{job['id']}/page", headers=W2,
                 json={"lease_token": job["lease_token"], "page": 1, "listings": [], "done": True})
-    row = conn.execute("SELECT failures, last_error, last_done_at FROM jobs WHERE kind = 'crawl'").fetchone()
-    assert row["failures"] == 0 and row["last_error"] is None and row["last_done_at"] is not None
+    assert conn.execute("SELECT failures FROM jobs WHERE kind = 'crawl'").fetchone()["failures"] == 1

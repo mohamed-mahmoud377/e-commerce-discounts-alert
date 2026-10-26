@@ -65,13 +65,15 @@ def check_product(conn: sqlite3.Connection, cfg: Config, product_id: int, *, boo
                     min_drop=watch.min_drop if watch else None)
     if deal is None or _recently_alerted(conn, cfg, product_id, deal.price, now):
         return None
-    other = db.best_other_offer(conn, p["site"], p["sku"])
+    other = db.best_other_offer(conn, p["site"], p["sku"], now)
     if other is not None and other < deal.price:
         log.info("no alert for %s: another seller has it at %s", p["sku"], other)
         return None  # a cheaper way to buy the same item already existed
     group = (watch.label or watch.name) if watch else (p["grp"] or "")
-    confirm = (iso(now + timedelta(minutes=cfg.alerts.confirm_minutes))
-               if deal.confidence == "low" and cfg.alerts.confirm_low_confidence else None)
+    # Hold low-confidence alerts until the next crawl can confirm the price. Slices revisit
+    # at up to 3x the group's interval, so the hold must cover that or it is pure delay.
+    hold = max(cfg.alerts.confirm_minutes, (watch.interval_minutes * 3 + 10) if watch else 0)
+    confirm = iso(now + timedelta(minutes=hold)) if deal.confidence == "low" and cfg.alerts.confirm_low_confidence else None
     past = conn.execute("SELECT COUNT(*) FROM alerts WHERE product_id = ? AND (error IS NULL OR error NOT LIKE 'cancelled%')",
                         (product_id,)).fetchone()[0]
     conn.execute(

@@ -9,7 +9,7 @@ import re
 import sqlite3
 from datetime import datetime, timedelta
 
-from deals import health, monitor
+from deals import db, health, monitor
 from deals.alerts import product_stats
 from deals.config import Config
 from deals.db import iso
@@ -121,11 +121,7 @@ def product(conn: sqlite3.Connection, product_id: int, now: datetime) -> dict | 
         "alerts": [dict(a) for a in conn.execute(
             """SELECT id, created_at, kind, price, reference_price, drop_pct, score, error, confirm_until
                FROM alerts WHERE product_id = ? ORDER BY created_at DESC LIMIT 20""", (product_id,))],
-        "other_sellers": [dict(o) for o in conn.execute(
-            """SELECT id, seller, price, in_stock FROM products WHERE site = ? AND sku >= ? AND sku < ? AND id != ?
-               ORDER BY price IS NULL, price""",
-            (row["site"], row["sku"].partition("@")[0] + "@", row["sku"].partition("@")[0] + "A", product_id))]
-        if "@" in row["sku"] else [],
+        "other_sellers": [dict(o) for o in db.sibling_offers(conn, row["site"], row["sku"], now)],
     }
 
 
@@ -268,10 +264,9 @@ const views = {
     const q = f('q'), site = f('site'), grp = f('grp'), sort = f('sort') || 'recent', stock = $('#stock')?.checked ? 1 : 0;
     const query = `q=${encodeURIComponent(q)}&site=${site}&grp=${encodeURIComponent(grp)}&sort=${sort}&in_stock=${stock}`;
     const d = await api(`/api/products?limit=${PAGE}&offset=0&` + query);
-    feed = {url: o => `/api/products?limit=${PAGE}&offset=${o}&` + query, row: productRow, rows: '#prows', count: '#pcount', more: '#more',
-            next: d.products.length, total: d.total, busy: false};
-    setTimeout(watchScroll, 0);
-    return `<div class='row'><input id='q' placeholder='search titles, e.g. samsung 55' value='${esc(q)}' onkeydown="if(event.key==='Enter')render()" size='30'>
+    const nextFeed = {url: o => `/api/products?limit=${PAGE}&offset=${o}&` + query, row: productRow, rows: '#prows', count: '#pcount', more: '#more',
+                      next: d.products.length, total: d.total, busy: false};
+    return {feed: nextFeed, html: `<div class='row'><input id='q' placeholder='search titles, e.g. samsung 55' value='${esc(q)}' onkeydown="if(event.key==='Enter')render()" size='30'>
       <select id='site' onchange='render()'><option value=''>both shops</option><option ${site === 'amazon_eg' ? 'selected' : ''}>amazon_eg</option><option ${site === 'noon_eg' ? 'selected' : ''}>noon_eg</option></select>
       <select id='grp' onchange='render()'><option value=''>all groups</option>${d.groups.map(g => `<option ${g === grp ? 'selected' : ''}>${esc(g)}</option>`).join('')}</select>
       <select id='sort' onchange='render()'>${PRODUCT_SORT_NAMES.map(([v, l]) => `<option value='${v}' ${v === sort ? 'selected' : ''}>${l}</option>`).join('')}</select>
@@ -279,7 +274,7 @@ const views = {
       <button onclick='render()'>Search</button> <span class='muted' id='pcount'>${d.products.length.toLocaleString()} of ${d.total.toLocaleString()} · click a row for the price history</span></div>
       <table><thead><tr>${PRODUCT_COLS.map(([label, asc, desc]) => `<th class='sortable' data-asc='${asc}' data-desc='${desc}' title='sort all pages by ${label.toLowerCase()}'>${label}${sort === asc ? " <span class='dir'>▲</span>" : sort === desc ? " <span class='dir'>▼</span>" : ''}</th>`).join('')}</tr></thead>
       <tbody id='prows'>${d.products.map(productRow).join('')}</tbody></table>
-      <div id='more' class='muted' style='padding:10px 0 30px'>${d.products.length < d.total ? "<span class='spinner'></span>loading more as you scroll…" : d.total ? 'end of list' : 'nothing matches'}</div>`;
+      <div id='more' class='muted' style='padding:10px 0 30px'>${d.products.length < d.total ? "<span class='spinner'></span>loading more as you scroll…" : d.total ? 'end of list' : 'nothing matches'}</div>`};
   },
   async Queries() {
     const list = (await api('/api/queries')).queries;
@@ -288,7 +283,7 @@ const views = {
     if (qsort.name !== name) qsort = {name, col: null, desc: false};  // a new report starts in its own order
     location.hash = 'Queries:' + name;
     const query = `hours=${hours}&grp=${encodeURIComponent(grp)}&site=${site}` + (qsort.col ? `&sort=${encodeURIComponent(qsort.col)}&desc=${qsort.desc ? 1 : 0}` : '');
-    const [d, groups] = await Promise.all([api(`/api/queries/${name}?limit=${PAGE}&offset=0&` + query), api('/api/products?limit=0').then(r => r.groups)]);
+    const [d, groups] = await Promise.all([api(`/api/queries/${name}?limit=${PAGE}&offset=0&` + query), api('/api/groups').then(r => r.groups)]);
     const money = c => /^(was|now|price|cheapest|dearest|lowest|highest|crossed_out|previous_low|highest_seen|alert_price|price_now|a|b)$/.test(c);
     const hide = new Set(['url', 'seller', 'product_id']);
     const cols = d.columns.filter(c => !hide.has(c)), iu = d.columns.indexOf('url'), ip = d.columns.indexOf('product_id'), is = d.columns.indexOf('seller');
@@ -296,10 +291,9 @@ const views = {
         + (iu >= 0 && row[iu] && ip >= 0 ? ` <a href='${esc(row[iu])}' target='_blank' class='muted'>↗</a>` : '') + (is >= 0 && row[is] ? ` <span class='muted'>· ${esc(row[is])}</span>` : '')
       : money(c) ? egp(v) : typeof v === 'string' && /^\\d{4}-\\d\\d-\\d\\dT/.test(v) ? esc(v.slice(5, 16).replace('T', ' ')) : esc(v);
     const qrow = r => `<tr>${d.columns.map((c, i) => hide.has(c) ? '' : `<td>${cell(r[i], c, r)}</td>`).join('')}</tr>`;
-    feed = {url: o => `/api/queries/${name}?limit=${PAGE}&offset=${o}&` + query, row: qrow, rows: '#qrows', count: '#qcount', more: '#qmore',
-            next: d.rows.length, total: d.total, busy: false};
-    setTimeout(watchScroll, 0);
-    return `<div class='row'><select id='qname' onchange='render()'>${list.map(q => `<option value='${q.name}' ${q.name === name ? 'selected' : ''}>${esc(q.title)}</option>`).join('')}</select>
+    const nextFeed = {url: o => `/api/queries/${name}?limit=${PAGE}&offset=${o}&total=${d.total}&` + query, row: qrow, rows: '#qrows', count: '#qcount', more: '#qmore',
+                      next: d.rows.length, total: d.total, busy: false};
+    return {feed: nextFeed, html: `<div class='row'><select id='qname' onchange='render()'>${list.map(q => `<option value='${q.name}' ${q.name === name ? 'selected' : ''}>${esc(q.title)}</option>`).join('')}</select>
       ${d.uses_window ? `last <select id='hours' onchange='render()'>${[['6', '6 h'], ['24', '24 h'], ['72', '3 days'], ['168', '7 days'], ['720', '30 days']].map(([v, l]) => `<option value='${v}' ${v === hours ? 'selected' : ''}>${l}</option>`).join('')}</select>` : ''}
       <select id='qgrp' onchange='render()' ${d.filters.grp ? '' : 'disabled'}><option value=''>all groups</option>${groups.map(g => `<option ${g === grp ? 'selected' : ''}>${esc(g)}</option>`).join('')}</select>
       <select id='qsite' onchange='render()' ${d.filters.site ? '' : 'disabled'}><option value=''>both shops</option><option ${site === 'amazon_eg' ? 'selected' : ''}>amazon_eg</option><option ${site === 'noon_eg' ? 'selected' : ''}>noon_eg</option></select>
@@ -307,7 +301,7 @@ const views = {
       <p class='muted'>${esc(d.about)}</p>
       <table><thead><tr>${cols.map(c => `<th class='sortable' data-qcol='${esc(c)}' title='sort all rows by ${esc(c.replace(/_/g, ' '))}'>${esc(c.replace(/_/g, ' '))}${qsort.col === c ? (qsort.desc ? " <span class='dir'>▼</span>" : " <span class='dir'>▲</span>") : ''}</th>`).join('')}</tr></thead>
       <tbody id='qrows'>${d.rows.map(qrow).join('')}</tbody></table>
-      <div id='qmore' class='muted' style='padding:10px 0 30px'>${d.rows.length < d.total ? "<span class='spinner'></span>loading more as you scroll…" : d.total ? 'end of list' : 'nothing matches'}</div>`;
+      <div id='qmore' class='muted' style='padding:10px 0 30px'>${d.rows.length < d.total ? "<span class='spinner'></span>loading more as you scroll…" : d.total ? 'end of list' : 'nothing matches'}</div>`};
   },
 };
 const PAGE = 100;
@@ -450,8 +444,10 @@ document.addEventListener('click', ev => {
 let renderSeq = 0;
 async function render() {
   const seq = ++renderSeq;  // a slower, older render must not overwrite a newer one
-  try { const html = await views[tab](); if (seq !== renderSeq) return;
-    $('#view').innerHTML = html; if (['Overview', 'Devices'].includes(tab)) every(15000, render); }
+  try { const out = await views[tab](); if (seq !== renderSeq) return;  // a slower, older render is dropped whole
+    const page = typeof out === 'string' ? {html: out, feed: null} : out;
+    $('#view').innerHTML = page.html; feed = page.feed; if (feed) setTimeout(watchScroll, 0);
+    if (['Overview', 'Devices'].includes(tab)) every(15000, render); }
   catch (e) { if (seq === renderSeq) $('#view').innerHTML = `<p style='color:var(--bad)'>${esc(e.message)}</p>`; }
 }
 nav(); render();
@@ -473,25 +469,27 @@ QUERIES: dict[str, dict] = {
                  "Sorted by the size of the fall. Click a title to open the shop page.",
         "sql": f"""WITH h AS (SELECT product_id, price, observed_at, in_stock,
                                    LAG(price) OVER (PARTITION BY product_id ORDER BY observed_at, id) prev
-                              FROM price_history)
+                              FROM price_history WHERE product_id IN (SELECT product_id FROM price_history WHERE observed_at >= ?))
                    SELECT {_PRODUCT}, h.prev AS was, h.price AS now, ROUND(100.0 * (h.prev - h.price) / h.prev, 1) AS drop_pct,
                           h.observed_at AS changed_at
                    FROM h JOIN products p ON p.id = h.product_id
                    WHERE h.observed_at >= ? AND h.in_stock = 1 AND h.price IS NOT NULL AND h.prev IS NOT NULL
                      AND h.price < h.prev AND h.price = p.price
                    ORDER BY drop_pct DESC LIMIT 200""",
+        "cutoff_twice": True,
     },
     "biggest_rises": {
         "title": "Biggest price rises",
         "about": "The opposite of the drops: where a shop raised a price in the window (a rise followed by a 'cut' is the classic fake discount).",
         "sql": f"""WITH h AS (SELECT product_id, price, observed_at, in_stock,
                                    LAG(price) OVER (PARTITION BY product_id ORDER BY observed_at, id) prev
-                              FROM price_history)
+                              FROM price_history WHERE product_id IN (SELECT product_id FROM price_history WHERE observed_at >= ?))
                    SELECT {_PRODUCT}, h.prev AS was, h.price AS now, ROUND(100.0 * (h.price - h.prev) / h.prev, 1) AS rise_pct,
                           h.observed_at AS changed_at
                    FROM h JOIN products p ON p.id = h.product_id
                    WHERE h.observed_at >= ? AND h.price IS NOT NULL AND h.prev IS NOT NULL AND h.price > h.prev AND h.price = p.price
                    ORDER BY rise_pct DESC LIMIT 200""",
+        "cutoff_twice": True,
     },
     "all_time_lows": {
         "title": "At their lowest price ever",
@@ -579,11 +577,13 @@ QUERIES: dict[str, dict] = {
                  "switching; on noon, the same seller flipping. The rarity rule keeps these from alerting repeatedly.",
         "sql": f"""WITH h AS (SELECT product_id, price, observed_at,
                                    LAG(price) OVER w AS p1, LAG(price, 2) OVER w AS p2
-                              FROM price_history WINDOW w AS (PARTITION BY product_id ORDER BY observed_at, id))
+                              FROM price_history WHERE product_id IN (SELECT product_id FROM price_history WHERE observed_at >= ?)
+                              WINDOW w AS (PARTITION BY product_id ORDER BY observed_at, id))
                    SELECT {_PRODUCT}, h.p2 AS a, h.p1 AS b, ROUND(100.0 * ABS(h.p1 - h.p2) / h.p2, 1) AS swing_pct, h.observed_at AS back_at
                    FROM h JOIN products p ON p.id = h.product_id
                    WHERE h.observed_at >= ? AND h.price = h.p2 AND h.p1 IS NOT NULL AND ABS(h.p1 - h.p2) >= h.p2 * 0.05
                    ORDER BY swing_pct DESC LIMIT 200""",
+        "cutoff_twice": True,
     },
     "noon_sellers": {
         "title": "noon: same item, several sellers",
@@ -620,11 +620,13 @@ QUERIES: dict[str, dict] = {
                  "versus the price before they went out.",
         "sql": f"""WITH h AS (SELECT product_id, price, in_stock, observed_at,
                                    LAG(in_stock) OVER w AS prev_stock, LAG(price) OVER w AS prev_price
-                              FROM price_history WINDOW w AS (PARTITION BY product_id ORDER BY observed_at, id))
+                              FROM price_history WHERE product_id IN (SELECT product_id FROM price_history WHERE observed_at >= ?)
+                              WINDOW w AS (PARTITION BY product_id ORDER BY observed_at, id))
                    SELECT h.observed_at AS back_at, {_PRODUCT}, h.price AS now, p.price AS price_now
                    FROM h JOIN products p ON p.id = h.product_id
                    WHERE h.observed_at >= ? AND h.in_stock = 1 AND h.prev_stock = 0
                    ORDER BY h.observed_at DESC LIMIT 200""",
+        "cutoff_twice": True,
     },
     "deliveries": {
         "title": "Telegram deliveries per person",
@@ -660,11 +662,12 @@ QUERIES: dict[str, dict] = {
 
 
 _LIMIT = re.compile(r"\s+LIMIT\s+(\d+)\s*$", re.I)
+_COLUMNS: dict[str, list[str]] = {}
 
 
 def run_query(conn: sqlite3.Connection, name: str, now: datetime, hours: float,
               grp: str | None = None, site: str | None = None, *, sort: str | None = None,
-              desc: bool = False, limit: int = 100, offset: int = 0) -> dict:
+              desc: bool = False, limit: int = 100, offset: int = 0, known_total: int | None = None) -> dict:
     """One page of a saved query plus the total row count; `hours` is the look-back window
     where the query has one.
 
@@ -679,17 +682,20 @@ def run_query(conn: sqlite3.Connection, name: str, now: datetime, hours: float,
         cutoff = iso(now - timedelta(hours=q["cutoff_hours_fixed"]))
     else:
         cutoff = iso(now - timedelta(hours=hours))
-    params: list = [cutoff, iso(now)] if q.get("now_twice") else [cutoff]
+    params: list = [cutoff, iso(now)] if q.get("now_twice") else [cutoff, cutoff] if q.get("cutoff_twice") else [cutoff]
     m = _LIMIT.search(q["sql"])
     inner = q["sql"][:m.start()] if m else q["sql"]  # the report's own LIMIT is replaced by paging
-    columns = [c[0] for c in conn.execute(f"SELECT * FROM ({inner}) LIMIT 0", params).description]
+    if name not in _COLUMNS:  # the column list never changes: probe once
+        _COLUMNS[name] = [c[0] for c in conn.execute(f"SELECT * FROM ({inner}) LIMIT 0", params).description]
+    columns = _COLUMNS[name]
     where = []
     if grp and "grp" in columns:
         where.append("grp = ?"); params.append(grp)
     if site and "site" in columns:
         where.append("site = ?"); params.append(site)
     filtered = f"SELECT * FROM ({inner}) {'WHERE ' + ' AND '.join(where) if where else ''}"
-    total = conn.execute(f"SELECT COUNT(*) FROM ({filtered})", params).fetchone()[0]
+    # the count is only needed for the first page; later pages carry it from the client
+    total = known_total if offset and known_total is not None else conn.execute(f"SELECT COUNT(*) FROM ({filtered})", params).fetchone()[0]
     order = ""
     if sort in columns:
         # the other columns break ties so paging is stable

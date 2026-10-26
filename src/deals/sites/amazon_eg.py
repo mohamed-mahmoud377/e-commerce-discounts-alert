@@ -72,10 +72,14 @@ class AmazonEG:
         current_node = slice.value if slice.kind == "category" else None
         result = parse_search_page(html, current_node)
         if result.decoy:
-            # A soft block: the page is a random listing with no result count. Counting it
-            # would make the planner split forever and crawling it would record junk, so
-            # treat it like a challenge: the coordinator pauses this IP on amazon for a while.
-            raise Blocked(f"{self.name}: decoy page (no result bar) for {slice.key()}")
+            # A soft block: the page is a random listing with no result count. Amazon
+            # distrusts this cookie session, so get a fresh one (as for a challenge) and try
+            # once more; if it is still a decoy the coordinator pauses this IP for a while.
+            self._bootstrap_cookies()
+            html = self._get(url)
+            result = parse_search_page(html, current_node) if html else result
+            if html is None or result.decoy:
+                raise Blocked(f"{self.name}: decoy page (no result bar) for {slice.key()}")
         return result
 
     def _get(self, url: str) -> str | None:

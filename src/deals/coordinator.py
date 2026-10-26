@@ -66,6 +66,7 @@ class PageIn(BaseModel):
     page: int
     listings: list[ListingIn]
     done: bool = False
+    no_results: bool = False  # the site said the slice is empty now (not a parse failure)
 
 
 class PlannedIn(BaseModel):
@@ -219,6 +220,10 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
                     deal = alerts.check_product(conn, cfg, rec.product_id, bootstrap=bootstrap, now=now)
                     deals += deal is not None
             scheduler.extend(conn, cfg, job_id, len(body.listings), changes, now)
+            if body.no_results and not body.listings:
+                # The slice genuinely emptied (amazon: "No results for your search query"),
+                # so finding nothing is not a parser failure.
+                conn.execute("UPDATE jobs SET expected_total = 0 WHERE id = ?", (job_id,))
             scheduler.unblock(conn, job["site"], ip)
             scheduler.worker_site_ok(conn, worker, job["site"], now, len(body.listings))
             scheduler.worker_seen(conn, worker, ip, now, pages=1, jobs_done=int(body.done))
@@ -228,10 +233,9 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
 
     def _finish_crawl(job_id: int, now: datetime) -> None:
         job = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
-        if job["run_count"] == 0 and (job["expected_total"] or 0) >= 10:
-            # The slice had products when planned but the parser found none: most likely
-            # the site changed its page layout. (A handful of products can genuinely vanish
-            # from a tiny slice; amazon then answers "No results".)
+        if job["run_count"] == 0 and (job["expected_total"] or 0) > 0:
+            # The slice had products when planned but the parser found none:
+            # most likely the site changed its page layout.
             reason = f"0 products parsed, slice had {job['expected_total']} (site layout changed?)"
             failures = scheduler.fail(conn, job, reason, now)
             if failures >= 3:
@@ -394,12 +398,18 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
 
     @app.get("/api/queries/{name}", dependencies=[Depends(viewer)])
     def query_api(name: str, hours: float = 24, grp: str | None = None, site: str | None = None,
-                  sort: str | None = None, desc: int = 0, limit: int = 100, offset: int = 0):
+                  sort: str | None = None, desc: int = 0, limit: int = 100, offset: int = 0, total: int | None = None):
         if name not in webui.QUERIES:
             raise HTTPException(404, "no such query")
         with closing(read_conn()) as rc:
             return webui.run_query(rc, name, utcnow(), max(1.0, min(hours, 24 * 90)), grp or None, site or None,
-                                   sort=sort or None, desc=bool(desc), limit=max(1, min(limit, 500)), offset=max(0, offset))
+                                   sort=sort or None, desc=bool(desc), limit=max(1, min(limit, 500)), offset=max(0, offset),
+                                   known_total=total)
+
+    @app.get("/api/groups", dependencies=[Depends(viewer)])
+    def groups_api():
+        with closing(read_conn()) as rc:
+            return {"groups": webui.groups(rc)}
 
     @app.get("/api/products/{product_id}", dependencies=[Depends(viewer)])
     def product_api(product_id: int):

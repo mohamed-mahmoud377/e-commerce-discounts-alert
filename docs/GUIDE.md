@@ -506,13 +506,15 @@ all, because history only counts the time before the current price.
 
 **Cheapest offer (noon).** noon lists each item once per seller. A seller's drop to 3,200 is not a deal when
 another seller has had it at 3,000 all along, so no alert goes out while a cheaper in-stock offer of the
-same item exists.
+same item exists. Only offers seen in the last 24 hours count: a seller that stops selling simply
+disappears from the pages, so its last price must not block alerts forever.
 
 **Confirmation.** Low-confidence alerts (early drops, new listings) are held until the next crawl sees the
 product again: if it is still at that price (or cheaper) the alert goes out, if the price went back up it is
-cancelled (it was a glitch, a seller switch or a one-crawl mistake). If nobody rechecks the product within
-90 minutes (`confirm_minutes`, e.g. the Mac is asleep) it goes out anyway: nothing disproved it. For top
-groups this adds 10 to 30 minutes. `confirm_low_confidence = false` turns it off.
+cancelled (it was a glitch, a seller switch or a one-crawl mistake). The hold lasts long enough for the
+slowest revisit of the group (3x its interval plus 10 minutes, at least `confirm_minutes` = 90); if nobody
+rechecks the product in that time (e.g. the Mac is asleep) it goes out anyway: nothing disproved it. For
+top groups this adds 10 to 30 minutes. `confirm_low_confidence = false` turns it off.
 
 **Path B: less than a day of history (a new listing).** We have no reference of our own, so the shop's
 claim is used but must be backed by evidence:
