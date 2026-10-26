@@ -354,6 +354,16 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
     async def products_api(q: str = "", site: str | None = None, limit: int = 100):
         return {"products": webui.products(conn, q, site, min(limit, 500))}
 
+    @app.get("/api/queries", dependencies=[Depends(viewer)])
+    async def queries_api():
+        return {"queries": webui.query_list()}
+
+    @app.get("/api/queries/{name}", dependencies=[Depends(viewer)])
+    async def query_api(name: str, hours: float = 24):
+        if name not in webui.QUERIES:
+            raise HTTPException(404, "no such query")
+        return webui.run_query(conn, name, utcnow(), max(1.0, min(hours, 24 * 90)))
+
     @app.get("/api/products/{product_id}", dependencies=[Depends(viewer)])
     async def product_api(product_id: int):
         found = webui.product(conn, product_id, utcnow())

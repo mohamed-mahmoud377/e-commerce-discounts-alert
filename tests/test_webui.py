@@ -52,3 +52,18 @@ def test_one_click_link_and_worker_tokens(client):
     r = client.get("/ui/login", params={"token": "admin-secret"}, follow_redirects=False)
     assert r.status_code == 303 and "deals_ui" in r.cookies
     assert client.get("/api/overview", params={"token": "token-1"}).status_code == 200  # worker tokens still read
+
+
+def test_saved_queries_run_and_need_login(client):
+    assert client.get("/api/queries").status_code == 401
+    client.post("/ui/login", data={"token": "admin-secret"}, follow_redirects=False)
+    names = [q["name"] for q in client.get("/api/queries").json()["queries"]]
+    assert "biggest_drops" in names and "schedule" in names
+    for name in names:  # every saved query must at least run on an almost-empty database
+        r = client.get(f"/api/queries/{name}?hours=24")
+        assert r.status_code == 200, name
+        body = r.json()
+        assert body["columns"] and isinstance(body["rows"], list) and body["title"], name
+    assert client.get("/api/queries/drop_table").status_code == 404
+    rows = client.get("/api/queries/coverage").json()["rows"]
+    assert rows and rows[0][0] == "TVs" and rows[0][2] == 1  # the one recorded product

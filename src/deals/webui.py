@@ -121,8 +121,8 @@ tr.WARNING td{background:rgba(212,167,44,.15)} tr.ERROR td{background:rgba(248,8
 <header><b>deals</b><nav id='tabs'></nav><span class='grow'></span><span id='stamp' class='muted'></span><a href='/ui/logout'>log out</a></header>
 <main id='view'>loading…</main>
 <script>
-const tabs = ['Overview', 'Devices', 'Logs', 'Alerts', 'Jobs', 'Products'];
-let tab = location.hash.slice(1) || 'Overview', timer = null, lastLog = 0;
+const tabs = ['Overview', 'Devices', 'Logs', 'Alerts', 'Jobs', 'Products', 'Queries'];
+let tab = (location.hash.slice(1).split(':')[0]) || 'Overview', timer = null, lastLog = 0;
 const $ = s => document.querySelector(s);
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const egp = p => p == null ? '-' : (p / 100).toLocaleString('en', {maximumFractionDigits: 0}) + ' EGP';
@@ -139,6 +139,7 @@ function nav() {
   $('#tabs').innerHTML = tabs.map(t => `<button class='${t === tab ? 'on' : ''}' onclick="go('${t}')">${t}</button>`).join('');
 }
 function go(t) { tab = t; location.hash = t; lastLog = 0; clearInterval(timer); nav(); render(); }
+// (the Queries tab keeps its chosen query in the hash as Queries:<name>)
 function every(ms, fn) { clearInterval(timer); timer = setInterval(fn, ms); }
 
 const views = {
@@ -207,6 +208,23 @@ const views = {
         <td>${esc(p.grp)}</td><td>${egp(p.price)}</td><td>${egp(p.list_price)}</td><td>${p.in_stock ? (p.stock_left ? 'only ' + p.stock_left : 'yes') : 'no'}</td>
         <td>${ago(p.last_change_at)}</td></tr>`).join('')}</table>`;
   },
+  async Queries() {
+    const list = (await api('/api/queries')).queries;
+    const name = $('#qname')?.value ?? (location.hash.split(':')[1] || list[0].name), hours = $('#hours')?.value ?? '24';
+    location.hash = 'Queries:' + name;
+    const d = await api(`/api/queries/${name}?hours=${hours}`);
+    const money = c => /^(was|now|price|cheapest|dearest|lowest|highest|crossed_out|previous_low|highest_seen|alert_price|price_now|a|b)$/.test(c);
+    const hide = new Set(['url', 'seller']);
+    const cols = d.columns.filter(c => !hide.has(c)), iu = d.columns.indexOf('url'), it = d.columns.indexOf('title'), is = d.columns.indexOf('seller');
+    const cell = (v, c, row) => c === 'title' && iu >= 0 && row[iu] ? `<a href='${esc(row[iu])}' target='_blank'>${esc(v)}</a>${is >= 0 && row[is] ? ` <span class='muted'>· ${esc(row[is])}</span>` : ''}`
+      : money(c) ? egp(v) : typeof v === 'string' && /^\d{4}-\d\d-\d\dT/.test(v) ? esc(v.slice(5, 16).replace('T', ' ')) : esc(v);
+    return `<div class='row'><select id='qname' onchange='render()'>${list.map(q => `<option value='${q.name}' ${q.name === name ? 'selected' : ''}>${esc(q.title)}</option>`).join('')}</select>
+      ${d.uses_window ? `last <select id='hours' onchange='render()'>${[['6', '6 h'], ['24', '24 h'], ['72', '3 days'], ['168', '7 days'], ['720', '30 days']].map(([v, l]) => `<option value='${v}' ${v === hours ? 'selected' : ''}>${l}</option>`).join('')}</select>` : ''}
+      <span class='muted'>${d.rows.length} rows</span></div>
+      <p class='muted'>${esc(d.about)}</p>
+      <table><tr>${cols.map(c => `<th>${esc(c.replace(/_/g, ' '))}</th>`).join('')}</tr>
+      ${d.rows.map(r => `<tr>${d.columns.map((c, i) => hide.has(c) ? '' : `<td>${cell(r[i], c, r)}</td>`).join('')}</tr>`).join('')}</table>`;
+  },
 };
 function devicesTable(devs) {
   return `<h3>Devices</h3><table><tr><th>Device</th><th>Shop</th><th>State</th><th>Detail</th><th>Pages</th><th>Products</th><th>Blocks</th></tr>
@@ -241,3 +259,225 @@ async function render() {
 }
 nav(); render();
 </script></body></html>""".replace("__CSS__", CSS)
+
+
+# ---------------------------------------------------------------------------
+# Saved queries (the "Queries" tab): fixed read-only SQL, chosen by name. `?`
+# placeholders receive the cutoff time computed from `hours`. No user SQL ever
+# runs; the viewer can only pick a name and a time window.
+# ---------------------------------------------------------------------------
+
+_PRODUCT = "p.title, p.site, p.grp, p.url, p.seller"
+
+QUERIES: dict[str, dict] = {
+    "biggest_drops": {
+        "title": "Biggest price drops",
+        "about": "Products whose last recorded change in the window was a fall: previous recorded price versus now. "
+                 "Sorted by the size of the fall. Click a title to open the shop page.",
+        "sql": f"""WITH h AS (SELECT product_id, price, observed_at, in_stock,
+                                   LAG(price) OVER (PARTITION BY product_id ORDER BY observed_at, id) prev
+                              FROM price_history)
+                   SELECT {_PRODUCT}, h.prev AS was, h.price AS now, ROUND(100.0 * (h.prev - h.price) / h.prev, 1) AS drop_pct,
+                          h.observed_at AS changed_at
+                   FROM h JOIN products p ON p.id = h.product_id
+                   WHERE h.observed_at >= ? AND h.in_stock = 1 AND h.price IS NOT NULL AND h.prev IS NOT NULL
+                     AND h.price < h.prev AND h.price = p.price
+                   ORDER BY drop_pct DESC LIMIT 200""",
+    },
+    "biggest_rises": {
+        "title": "Biggest price rises",
+        "about": "The opposite of the drops: where a shop raised a price in the window (a rise followed by a 'cut' is the classic fake discount).",
+        "sql": f"""WITH h AS (SELECT product_id, price, observed_at, in_stock,
+                                   LAG(price) OVER (PARTITION BY product_id ORDER BY observed_at, id) prev
+                              FROM price_history)
+                   SELECT {_PRODUCT}, h.prev AS was, h.price AS now, ROUND(100.0 * (h.price - h.prev) / h.prev, 1) AS rise_pct,
+                          h.observed_at AS changed_at
+                   FROM h JOIN products p ON p.id = h.product_id
+                   WHERE h.observed_at >= ? AND h.price IS NOT NULL AND h.prev IS NOT NULL AND h.price > h.prev AND h.price = p.price
+                   ORDER BY rise_pct DESC LIMIT 200""",
+    },
+    "all_time_lows": {
+        "title": "At their lowest price ever",
+        "about": "In-stock products whose current price is below every earlier recorded price, tracked for at least 3 days. "
+                 "'below_pct' is how far below the previous low. These are the candidates for real deals.",
+        "sql": f"""SELECT {_PRODUCT}, p.price AS now, MIN(h.price) AS previous_low,
+                          ROUND(100.0 * (MIN(h.price) - p.price) / MIN(h.price), 1) AS below_pct,
+                          ROUND(JULIANDAY('now') - JULIANDAY(p.first_seen_at), 1) AS tracked_days
+                   FROM products p JOIN price_history h ON h.product_id = p.id
+                   WHERE p.in_stock = 1 AND p.price IS NOT NULL AND h.price IS NOT NULL AND h.observed_at < p.last_change_at
+                     AND p.first_seen_at <= ?
+                   GROUP BY p.id HAVING p.price < MIN(h.price)
+                   ORDER BY below_pct DESC LIMIT 200""",
+        "cutoff_days": 3,
+    },
+    "shop_claims": {
+        "title": "What the shops claim right now",
+        "about": "Biggest discounts the shops themselves advertise (crossed-out price versus price), with their badges. "
+                 "Useful to see claims we did NOT alert on, and why (no evidence, inflated RRP, a cheaper seller).",
+        "sql": f"""SELECT {_PRODUCT}, p.price AS now, p.list_price AS crossed_out, p.list_price_kind AS kind,
+                          ROUND(100.0 * (p.list_price - p.price) / p.list_price, 1) AS claimed_pct, p.badges, p.stock_left,
+                          (SELECT COUNT(*) FROM alerts a WHERE a.product_id = p.id) AS alerts
+                   FROM products p
+                   WHERE p.in_stock = 1 AND p.price IS NOT NULL AND p.list_price > p.price AND p.last_seen_at >= ?
+                   ORDER BY claimed_pct DESC LIMIT 300""",
+    },
+    "alerts_by_day": {
+        "title": "Alerts per day",
+        "about": "How many deal alerts were created each day by kind, and how many were held for confirmation or cancelled "
+                 "because the price went back up before the next crawl.",
+        "sql": """SELECT SUBSTR(created_at, 1, 10) AS day, kind, COUNT(*) AS created,
+                         SUM(confirm_until IS NOT NULL) AS still_held,
+                         SUM(error IS NOT NULL AND error LIKE 'cancelled%') AS cancelled,
+                         SUM(sent_at IS NOT NULL AND (error IS NULL OR error NOT LIKE 'cancelled%')) AS sent,
+                         ROUND(AVG(drop_pct) * 100) AS avg_drop_pct, ROUND(AVG(score)) AS avg_score
+                  FROM alerts WHERE kind != 'system' AND created_at >= ?
+                  GROUP BY day, kind ORDER BY day DESC, created DESC""",
+    },
+    "held_and_cancelled": {
+        "title": "Alerts held or cancelled",
+        "about": "Low-confidence alerts waiting for the next crawl to confirm the price, and those cancelled because the price "
+                 "reverted. A high cancel rate means the shop (or a seller) flips prices.",
+        "sql": f"""SELECT a.created_at, a.kind, a.price AS alert_price, p.price AS price_now, p.in_stock,
+                          CASE WHEN a.confirm_until IS NOT NULL THEN 'held until ' || SUBSTR(a.confirm_until, 12, 5) ELSE a.error END AS state,
+                          {_PRODUCT}
+                   FROM alerts a JOIN products p ON p.id = a.product_id
+                   WHERE a.created_at >= ? AND (a.confirm_until IS NOT NULL OR a.error LIKE 'cancelled%')
+                   ORDER BY a.created_at DESC LIMIT 200""",
+    },
+    "coverage": {
+        "title": "Coverage per group and shop",
+        "about": "How many products each group holds per shop, how many are in stock, how many show a crossed-out price, "
+                 "and how fresh they are (not seen for 3 h means the slice is behind).",
+        "sql": """SELECT grp, site, COUNT(*) AS products, SUM(in_stock) AS in_stock, SUM(list_price IS NOT NULL) AS with_crossed_out,
+                         SUM(last_seen_at < ?) AS not_seen_3h, MIN(price) / 100 AS cheapest_egp,
+                         ROUND(AVG(price) / 100) AS average_egp
+                  FROM products GROUP BY grp, site ORDER BY grp, site""",
+        "cutoff_hours_fixed": 3,
+    },
+    "schedule": {
+        "title": "Crawl schedule per group",
+        "about": "How often each group is being revisited right now (adaptive: busy slices speed up to 10 min, quiet ones slow "
+                 "down to 3x the configured interval), and how far behind the queue is.",
+        "sql": """SELECT grp, site, COUNT(*) AS slices, SUM(last_count) AS products,
+                         ROUND(MIN(interval_s) / 60.0) AS fastest_min, ROUND(AVG(interval_s) / 60.0) AS average_min,
+                         ROUND(MAX(interval_s) / 60.0) AS slowest_min,
+                         SUM(next_due_at <= ?) AS due_now,
+                         ROUND(MAX((JULIANDAY(?) - JULIANDAY(next_due_at)) * 1440)) AS most_overdue_min,
+                         SUM(failures > 0) AS failing
+                  FROM jobs WHERE kind = 'crawl' GROUP BY grp, site ORDER BY average_min""",
+        "now_twice": True,
+    },
+    "volatile": {
+        "title": "Most volatile products",
+        "about": "Products with the most recorded price changes in the window (moves under 1% are not recorded). "
+                 "Seller switching and A/B pricing show up here.",
+        "sql": f"""SELECT {_PRODUCT}, COUNT(*) AS changes, MIN(h.price) AS lowest, MAX(h.price) AS highest, p.price AS now
+                   FROM price_history h JOIN products p ON p.id = h.product_id
+                   WHERE h.observed_at >= ? AND h.price IS NOT NULL
+                   GROUP BY p.id HAVING changes >= 3 ORDER BY changes DESC LIMIT 200""",
+    },
+    "flipflops": {
+        "title": "Price flip-flops (A → B → A)",
+        "about": "Products that went to a price and straight back (5% or more). On Amazon this is usually the featured seller "
+                 "switching; on noon, the same seller flipping. The rarity rule keeps these from alerting repeatedly.",
+        "sql": f"""WITH h AS (SELECT product_id, price, observed_at,
+                                   LAG(price) OVER w AS p1, LAG(price, 2) OVER w AS p2
+                              FROM price_history WINDOW w AS (PARTITION BY product_id ORDER BY observed_at, id))
+                   SELECT {_PRODUCT}, h.p2 AS a, h.p1 AS b, ROUND(100.0 * ABS(h.p1 - h.p2) / h.p2, 1) AS swing_pct, h.observed_at AS back_at
+                   FROM h JOIN products p ON p.id = h.product_id
+                   WHERE h.observed_at >= ? AND h.price = h.p2 AND h.p1 IS NOT NULL AND ABS(h.p1 - h.p2) >= h.p2 * 0.05
+                   ORDER BY swing_pct DESC LIMIT 200""",
+    },
+    "noon_sellers": {
+        "title": "noon: same item, several sellers",
+        "about": "Items noon lists under more than one seller, with the gap between the cheapest and dearest in-stock offer. "
+                 "A 'drop' by the dear seller is not a deal while the cheap one exists (the rules check this).",
+        "sql": """SELECT SUBSTR(p.sku, 1, INSTR(p.sku, '@') - 1) AS item, MIN(p.title) AS title, COUNT(*) AS sellers,
+                         MIN(p.price) AS cheapest, MAX(p.price) AS dearest,
+                         ROUND(100.0 * (MAX(p.price) - MIN(p.price)) / MAX(p.price), 1) AS gap_pct,
+                         MIN(p.url) AS url, MIN(p.grp) AS grp
+                  FROM products p WHERE p.site = 'noon_eg' AND p.in_stock = 1 AND p.price IS NOT NULL AND p.last_seen_at >= ?
+                  GROUP BY item HAVING sellers > 1 ORDER BY gap_pct DESC LIMIT 200""",
+    },
+    "inflated_crossed_out": {
+        "title": "Inflated crossed-out prices",
+        "about": "Products whose crossed-out price is more than 15% above anything we ever recorded for them (after 3 days of "
+                 "tracking): the shop's 'was' price is not a price it ever had while we watched.",
+        "sql": f"""SELECT {_PRODUCT}, p.price AS now, p.list_price AS crossed_out, MAX(h.price) AS highest_seen,
+                          ROUND(100.0 * (p.list_price - MAX(h.price)) / MAX(h.price)) AS above_pct
+                   FROM products p JOIN price_history h ON h.product_id = p.id
+                   WHERE p.list_price IS NOT NULL AND h.price IS NOT NULL AND p.first_seen_at <= ?
+                   GROUP BY p.id HAVING p.list_price > MAX(h.price) * 1.15 ORDER BY above_pct DESC LIMIT 200""",
+        "cutoff_days": 3,
+    },
+    "new_products": {
+        "title": "New products",
+        "about": "Products first seen in the window, newest first. Many at once in one group usually means a re-plan or a "
+                 "new sub-category, not a launch.",
+        "sql": f"""SELECT p.first_seen_at, {_PRODUCT}, p.price AS now, p.list_price AS crossed_out, p.badges
+                   FROM products p WHERE p.first_seen_at >= ? ORDER BY p.first_seen_at DESC LIMIT 300""",
+    },
+    "back_in_stock": {
+        "title": "Back in stock",
+        "about": "Products whose latest change in the window was out-of-stock to in-stock, with the price they came back at "
+                 "versus the price before they went out.",
+        "sql": f"""WITH h AS (SELECT product_id, price, in_stock, observed_at,
+                                   LAG(in_stock) OVER w AS prev_stock, LAG(price) OVER w AS prev_price
+                              FROM price_history WINDOW w AS (PARTITION BY product_id ORDER BY observed_at, id))
+                   SELECT h.observed_at AS back_at, {_PRODUCT}, h.price AS now, p.price AS price_now
+                   FROM h JOIN products p ON p.id = h.product_id
+                   WHERE h.observed_at >= ? AND h.in_stock = 1 AND h.prev_stock = 0
+                   ORDER BY h.observed_at DESC LIMIT 200""",
+    },
+    "deliveries": {
+        "title": "Telegram deliveries per person",
+        "about": "Messages handed to each subscriber in the window: sent, still pending, and given up after 10 attempts.",
+        "sql": """SELECT s.chat_id, s.name, s.status, COUNT(d.id) AS messages, SUM(d.sent_at IS NOT NULL) AS sent,
+                         SUM(d.sent_at IS NULL AND d.attempts < 10) AS pending, SUM(d.sent_at IS NULL AND d.attempts >= 10) AS gave_up,
+                         MAX(d.error) AS last_error
+                  FROM subscribers s LEFT JOIN deliveries d ON d.chat_id = s.chat_id
+                       AND d.alert_id IN (SELECT id FROM alerts WHERE created_at >= ?)
+                  GROUP BY s.chat_id ORDER BY messages DESC""",
+    },
+    "device_hours": {
+        "title": "Work per device per hour",
+        "about": "Jobs finished by each device in each hour of the window (from the shipped logs). Gaps are sleep, "
+                 "blocks or outages.",
+        "sql": """SELECT SUBSTR(at, 1, 13) || ':00' AS hour, source, COUNT(*) AS jobs_done
+                  FROM events WHERE at >= ? AND message LIKE '[%] done %' GROUP BY hour, source ORDER BY hour DESC, source""",
+    },
+    "tables": {
+        "title": "Database size",
+        "about": "Row counts per table and the file size. History grows with price changes only (not with crawls).",
+        "sql": """SELECT 'products' AS tbl, COUNT(*) AS rows FROM products
+                  UNION ALL SELECT 'price_history', COUNT(*) FROM price_history
+                  UNION ALL SELECT 'alerts', COUNT(*) FROM alerts
+                  UNION ALL SELECT 'deliveries', COUNT(*) FROM deliveries
+                  UNION ALL SELECT 'jobs', COUNT(*) FROM jobs
+                  UNION ALL SELECT 'events', COUNT(*) FROM events
+                  UNION ALL SELECT 'subscribers', COUNT(*) FROM subscribers
+                  UNION ALL SELECT 'file size (MB)', (SELECT page_count * page_size / 1048576 FROM pragma_page_count(), pragma_page_size())
+                  WHERE ? IS NOT NULL""",
+    },
+}
+
+
+def run_query(conn: sqlite3.Connection, name: str, now: datetime, hours: float) -> dict:
+    """Rows of one saved query; `hours` is the look-back window where the query has one."""
+    q = QUERIES[name]
+    if "cutoff_days" in q:
+        cutoff = iso(now - timedelta(days=q["cutoff_days"]))
+    elif "cutoff_hours_fixed" in q:
+        cutoff = iso(now - timedelta(hours=q["cutoff_hours_fixed"]))
+    else:
+        cutoff = iso(now - timedelta(hours=hours))
+    params = (cutoff, iso(now)) if q.get("now_twice") else (cutoff,)
+    cur = conn.execute(q["sql"], params)
+    columns = [c[0] for c in cur.description]
+    rows = [list(r) for r in cur.fetchall()]
+    return {"name": name, "title": q["title"], "about": q["about"], "columns": columns, "rows": rows,
+            "uses_window": not ("cutoff_days" in q or "cutoff_hours_fixed" in q)}
+
+
+def query_list() -> list[dict]:
+    return [{"name": k, "title": v["title"]} for k, v in QUERIES.items()]
