@@ -50,7 +50,8 @@ class Watch:
     label: str | None = None  # display name in alerts (e.g. Arabic); defaults to name
     # Title filters for groups whose sources are noisy (searches, mixed nodes). A new
     # product is only recorded if its title contains one of require_words (when set) and
-    # none of exclude_words; a title containing "console" is never excluded.
+    # none of exclude_words. A title containing "console" is not excluded (bundles: "PS5
+    # Console + extra controller") unless it is an accessory *for* one ("Stand for PS5 Console").
     require_words: tuple[str, ...] = ()
     exclude_words: tuple[str, ...] = ()
 
@@ -58,7 +59,8 @@ class Watch:
         t = title.lower()
         if self.require_words and not any(w in t for w in self.require_words):
             return False
-        if self.exclude_words and "console" not in t and any(w in t for w in self.exclude_words):
+        bundle = "console" in t and " for " not in t
+        if self.exclude_words and not bundle and any(w in t for w in self.exclude_words):
             return False
         return True
 

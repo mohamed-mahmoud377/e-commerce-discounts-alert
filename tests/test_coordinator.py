@@ -137,7 +137,7 @@ def test_new_products_must_pass_price_floor_and_title_words(cfg):
     from dataclasses import replace
     from deals.config import Watch
     consoles = Watch(name="TVs", targets={"amazon_eg": ["category:111"]}, interval_minutes=30, min_price=1000,
-                     require_words=("console", "playstation 5"), exclude_words=("controller", "headset"))
+                     require_words=("console", "playstation 5"), exclude_words=("controller", "headset", "mount"))
     cfg = replace(cfg, watches=[consoles])
     app = create_app(cfg, background=False)
     with TestClient(app) as client:
@@ -148,12 +148,13 @@ def test_new_products_must_pass_price_floor_and_title_words(cfg):
             "lease_token": job["lease_token"], "page": 1, "done": True, "listings": [
                 listing("PS5", 25000, title="PlayStation 5 Slim Console"),               # kept
                 listing("BUNDLE", 27000, title="PlayStation 5 Console + extra controller"),  # "console" beats exclusions
+                listing("MOUNT", 10000, title="Wall Mount Kit for PS5 Slim Console"),      # ...unless it is *for* a console
                 listing("PAD", 4000, title="PlayStation 5 DualSense Controller"),        # excluded word
                 listing("WHEEL", 14000, title="Logitech G29 Racing Wheel for PS5"),      # no required word
                 listing("CHEAP", 500, title="PlayStation 5 Console (used)"),             # under the group minimum
                 listing("NOPRICE", 25000, title="PlayStation 5 Console", price=None),   # unknown price
             ]})
-        assert r.json()["skipped"] == 4
+        assert r.json()["skipped"] == 5
         kept = sorted(p["sku"] for p in client.conn.execute("SELECT sku FROM products"))
         assert kept == ["BUNDLE", "PS5"]
         # a product we already know keeps being updated even when it drops below the floor / goes unpriced
@@ -163,3 +164,14 @@ def test_new_products_must_pass_price_floor_and_title_words(cfg):
             "listings": [listing("PS5", 25000, title="PlayStation 5 Slim Console", price=None, in_stock=False)]})
         row = client.conn.execute("SELECT in_stock FROM products WHERE sku = 'PS5'").fetchone()
         assert row["in_stock"] == 0
+        # a product known from another group is updated but not re-labelled by a group that rejects it
+        with client.conn:
+            db.record(client.conn, Listing("amazon_eg", "HS1", "Pulse Elite Headset", "https://x/HS1", 1_100_000, None, "EGP", True),
+                      grp="Headphones", now=utcnow())
+            client.conn.execute("UPDATE jobs SET next_due_at = ?", (iso(utcnow() - timedelta(seconds=1)),))
+        job = lease(client)
+        client.post(f"/api/jobs/{job['id']}/page", headers=W1, json={
+            "lease_token": job["lease_token"], "page": 1, "done": True,
+            "listings": [listing("HS1", 9000, title="Pulse Elite Headset")]})
+        row = client.conn.execute("SELECT grp, price FROM products WHERE sku = 'HS1'").fetchone()
+        assert row["grp"] == "Headphones" and row["price"] == 900_000

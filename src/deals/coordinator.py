@@ -208,7 +208,9 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
                 if unwanted and db.find_product(conn, listing.site, listing.sku) is None:
                     skipped += 1
                     continue
-                rec = db.record(conn, listing, grp=job["grp"], now=now)
+                # A known product that this group would not accept (a headset the console search
+                # also returns) keeps the group that accepted it first.
+                rec = db.record(conn, listing, grp=None if unwanted else job["grp"], now=now)
                 if rec.status == "changed" or (rec.status == "new" and not bootstrap):
                     changes += 1
                 dropped = (rec.status == "new" or (listing.price is not None and (

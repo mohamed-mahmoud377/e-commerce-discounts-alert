@@ -110,7 +110,11 @@ require_words = ["console", "playstation 5", "ps5", "playstation 4", "ps4", "xbo
 exclude_words = ["controller", "gamepad", "joystick", "headset", "wheel", "pedal", "case", "cover", "skin",
                  "stand", "dock", "cable", "charger", "charging", "bag", "grip", "mount", "sticker",
                  "protector", "thumb", "strap", "card", "game ", "edition game", "mouse", "keyboard",
-                 "chair", "monitor", "camera", "microphone", "fan ", "cooling"]
+                 "chair", "monitor", "camera", "microphone", "fan ", "cooling", "manette", "arcade",
+                 "amplifier", "dac", "fight stick", "fightstick", "remote control", "for ps5", "for ps4",
+                 "for xbox", "for nintendo", "for switch", "for steam deck", "for playstation", "pour ps",
+                 "dualsense", "joy-con", "joy con", "pro controller", "portable ssd", "storage expansion",
+                 "expansion card", "earbuds", "earphones", "speaker"]
 
 [[watch]]
 name = "Phones"
