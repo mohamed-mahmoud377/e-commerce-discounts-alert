@@ -118,6 +118,11 @@ class AmazonEG:
 
 def parse_search_page(html: str, current_node: str | None = None) -> PageResult:
     tree = LexborHTMLParser(html)
+    # "No results for your search query" lives in a MESSAGING widget (the result-info bar
+    # is empty on that page) and the grid may still show unrelated recommendations.
+    message = tree.css_first('[cel_widget_id*="MESSAGING"]')
+    if message is not None and "no results" in message.text(strip=True).lower():
+        return PageResult(listings=[], has_next=False, total=0)  # the slice is empty now
     listings: dict[str, Listing] = {}  # sponsored cards repeat organic ones
     for card in tree.css('div[data-component-type="s-search-result"]'):
         asin = card.attributes.get("data-asin")

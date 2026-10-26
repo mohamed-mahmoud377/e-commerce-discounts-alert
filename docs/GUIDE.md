@@ -463,7 +463,7 @@ depending on how much history we have.
 ```mermaid
 flowchart TB
     t["A product is new or got cheaper<br/>(in stock, at or above the group minimum)"] --> h{"How much history?"}
-    h -- "3+ days: Path A, our own history" --> a["Compare with its own typical price<br/>60%+ below: possible price error<br/>30%+ below: real price drop<br/>new low, 20%+ below: all-time low<br/>was this cheap over 15% of the time: no alert"]
+    h -- "3+ days: Path A, our own history" --> a["Compare with its own typical price<br/>60%+ below: possible price error<br/>20%+ below: real price drop<br/>new low, 15%+ below: all-time low<br/>was this cheap over 15% of the time: no alert"]
     h -- "1 to 3 days: early drop" --> e["30%+ below typical AND below<br/>every price seen: early alert, low confidence"]
     h -- "under 1 day: Path B, new listing" --> b["Check the shop's claimed discount<br/>crossed-out price 30%+ higher<br/>not 60%+ off an RRP<br/>1 real signal (2 on a first crawl)<br/>any check fails: no alert"]
     a --> n["noon: no alert if another seller<br/>of the same item is already cheaper"]
@@ -485,8 +485,8 @@ product is compared with its own typical price.
 | Kind | Rule (defaults, in the config) | Arabic title |
 | --- | --- | --- |
 | Possible price error | 60% or more below typical | خطأ محتمل في السعر |
-| Real price drop | 30% or more below typical (a group can set its own threshold) | انخفاض حقيقي في السعر |
-| All-time low | Below every earlier price, at least 20% below typical, with at least 14 days of history | أقل سعر على الإطلاق |
+| Real price drop | 20% or more below typical (a group can set its own threshold) | انخفاض حقيقي في السعر |
+| All-time low | Below every earlier price, at least 15% below typical, with at least 14 days of history | أقل سعر على الإطلاق |
 
 **Rarity.** Being below the median is not enough: a product that is at 3,400 forty percent of the time and
 5,000 the rest (noon's alternate-week promos, an Amazon seller that keeps winning the listing back) is simply

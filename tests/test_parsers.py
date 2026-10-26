@@ -80,3 +80,8 @@ def test_amazon_site_treats_decoy_as_block(tmp_path, monkeypatch):
     monkeypatch.setattr(site, "_get", lambda url: decoy)
     with pytest.raises(Blocked, match="decoy"):
         site.fetch_page(Slice("search:playstation 5 console", 8000, None), 1)
+
+
+def test_amazon_no_results_page_is_empty_not_a_failure():
+    result = parse_search_page(fixture_text("amazon_no_results.html.gz"), "21833039031")
+    assert result.listings == [] and result.total == 0 and not result.has_next and not result.decoy

@@ -234,12 +234,13 @@ commented template.
 | `[server] admin_token` | empty | Secret for the web UI login (`deals token` makes one) |
 | `[workers] NAME = "token"` | | One line per device; the name shows in devices and logs. `deals token` makes one |
 | `[telegram] bot_token`, `chat_id` | empty | The bot and the admin chat (`make telegram TOKEN=...` fills both) |
-| `[alerts] min_drop` | 0.30 | Real price drop threshold versus typical |
-| `[alerts] atl_min_drop` | 0.20 | All-time-low threshold |
+| `[alerts] min_drop` | 0.20 | Real price drop threshold versus typical (3+ days of history) |
+| `[alerts] early_min_drop` | 0.30 | Threshold for early drops (1 to 3 days of history) |
+| `[alerts] atl_min_drop` | 0.15 | All-time-low threshold (14+ days of history) |
 | `[alerts] atl_min_history_days` | 14 | History needed for all-time-low alerts |
 | `[alerts] price_error_drop` | 0.60 | Labelled possible price error above this |
 | `[alerts] min_history_days` | 3 | Below this, the early-drop or new-listing path is used |
-| `[alerts] early_min_history_days` | 1 | From this much history, a 30% drop below everything seen alerts early (low confidence) |
+| `[alerts] early_min_history_days` | 1 | From this much history, a drop of `early_min_drop` below everything seen alerts early (low confidence) |
 | `[alerts] max_share_at_or_below` | 0.15 | No alert when the product was at or below this price more than 15% of the time |
 | `[alerts] new_product_min_drop` | 0.30 | Claimed discount needed for new listings |
 | `[alerts] list_max_claimed_drop` | 0.60 | A bigger claim against an RRP ("list") price is rejected |

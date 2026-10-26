@@ -19,12 +19,13 @@ bot_token = ""          # from @BotFather
 chat_id = ""            # run 'deals telegram' after sending your bot a message
 
 [alerts]
-min_drop = 0.30               # alert when >= 30% below the product's typical (90-day) price
-atl_min_drop = 0.20           # ...or a new all-time low at least 20% below typical
+min_drop = 0.20               # alert when >= 20% below the product's typical (90-day) price (3+ days of history)
+early_min_drop = 0.30         # with only 1 to 3 days of history, a drop must be >= 30% (and below everything seen)
+atl_min_drop = 0.15           # ...or a new all-time low at least 15% below typical (14+ days of history)
 atl_min_history_days = 14     # (only once we have 2 weeks of history)
 price_error_drop = 0.60       # >= 60% below typical is flagged as a possible pricing error
 min_history_days = 3          # with less history than this a product counts as "new"
-early_min_history_days = 1    # from 1 day: a 30% drop below everything seen alerts early (low confidence)
+early_min_history_days = 1    # from 1 day: a drop of early_min_drop below everything seen alerts early (low confidence)
 max_share_at_or_below = 0.15  # no alert if the product was this cheap more than 15% of the time (recurring promos)
 new_product_min_drop = 0.30   # new products: site-claimed discount needed (plus a scarcity/deal signal)
 list_max_claimed_drop = 0.60  # a claim of 60%+ off an RRP ("list") price is rejected as fake

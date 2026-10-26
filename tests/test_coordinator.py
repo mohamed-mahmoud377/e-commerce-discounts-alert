@@ -191,3 +191,15 @@ def test_lease_prefers_the_job_latest_relative_to_its_interval(cfg):
         job = scheduler.lease(conn, cfg, f"w{len(order)}", f"ip{len(order)}", ["amazon_eg"], now)
         order.append(job["target"])
     assert order == ["fast", "mid", "slow"]  # 60% late, 33% late, 8% late
+
+
+def test_tiny_slice_that_emptied_is_not_a_failure(client):
+    plan_amazon(client, slices=("category:111|price:1000-5000",))
+    conn = client.conn
+    with conn:
+        conn.execute("UPDATE jobs SET expected_total = 2 WHERE kind = 'crawl'")
+    job = lease(client)
+    client.post(f"/api/jobs/{job['id']}/page", headers=W1,
+                json={"lease_token": job["lease_token"], "page": 1, "listings": [], "done": True})
+    row = conn.execute("SELECT failures, last_error, last_done_at FROM jobs WHERE kind = 'crawl'").fetchone()
+    assert row["failures"] == 0 and row["last_error"] is None and row["last_done_at"] is not None

@@ -173,7 +173,7 @@ def evaluate(product: ProductView, stats: PriceStats, rules: AlertRules, *,
         if early:
             # Short history (1 to 3 days): only a clear drop below everything seen so far,
             # flagged as early so the reader knows the reference is thin.
-            if not (all_time_low and drop >= min_drop):
+            if not (all_time_low and drop >= max(min_drop, rules.early_min_drop)):
                 return None
             kind, confidence = "early_drop", "low"
         else:

@@ -52,11 +52,22 @@ def test_fake_discount_inflate_then_cut_is_ignored():
 
 
 def test_small_drop_is_ignored_but_all_time_low_counts():
-    s = compute_stats(series((0, 1000), (50, 950), (60, 780)), now=days(60.01))
-    deal = evaluate(view(780), s, RULES)  # -22% vs typical 1000, below every earlier price
+    s = compute_stats(series((0, 1000), (50, 950), (60, 830)), now=days(60.01))
+    deal = evaluate(view(830), s, RULES)  # -17% vs typical 1000, below every earlier price
     assert deal.kind == "all_time_low" and deal.all_time_low and deal.previous_low == 950 * EGP
-    s = compute_stats(series((0, 1000), (50, 700), (52, 1000), (60, 780)), now=days(60.01))
-    assert evaluate(view(780), s, RULES) is None  # -22% but it was 700 before: not an all-time low
+    s = compute_stats(series((0, 1000), (50, 700), (52, 1000), (60, 830)), now=days(60.01))
+    assert evaluate(view(830), s, RULES) is None  # -17% but it was 700 before: not an all-time low
+    s = compute_stats(series((0, 1000), (60, 880)), now=days(60.01))
+    assert evaluate(view(880), s, RULES) is None  # -12%: too small even as a new low
+    s = compute_stats(series((0, 1000), (50, 950), (60, 780)), now=days(60.01))
+    assert evaluate(view(780), s, RULES).kind == "price_drop"  # -22%: a real drop with 3+ days of history
+
+
+def test_early_drops_keep_the_higher_threshold():
+    s = compute_stats(series((0, 1000), (1.5, 780)), now=days(1.51))
+    assert evaluate(view(780), s, RULES) is None  # -22% but only 1.5 days of history: not enough for an early alert
+    s = compute_stats(series((0, 1000), (1.5, 690)), now=days(1.51))
+    assert evaluate(view(690), s, RULES).kind == "early_drop"
 
 
 def test_price_error_flagged():

@@ -228,9 +228,10 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
 
     def _finish_crawl(job_id: int, now: datetime) -> None:
         job = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
-        if job["run_count"] == 0 and (job["expected_total"] or 0) > 0:
-            # The slice had products when planned but the parser found none:
-            # most likely the site changed its page layout.
+        if job["run_count"] == 0 and (job["expected_total"] or 0) >= 10:
+            # The slice had products when planned but the parser found none: most likely
+            # the site changed its page layout. (A handful of products can genuinely vanish
+            # from a tiny slice; amazon then answers "No results".)
             reason = f"0 products parsed, slice had {job['expected_total']} (site layout changed?)"
             failures = scheduler.fail(conn, job, reason, now)
             if failures >= 3:

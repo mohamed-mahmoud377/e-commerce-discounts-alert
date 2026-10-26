@@ -39,6 +39,10 @@ Facts that shaped the crawler:
 - "Only N left" is shown on 45% of listings (49% say 10 or fewer): not evidence of anything.
 - 8% of listings show a crossed-out price; "Was:" (a past price) is rarer than "List:" (an RRP).
 - Datacenter IPs are challenged often; the droplet manages Amazon with pauses, never noon.
+- **"No results" pages.** A tiny node whose last products disappeared (PC components child 21833039031 had
+  2) answers with "No results for your search query" and sometimes a grid of 48 unrelated recommendations.
+  The parser returns an empty page for it (not a decoy, not a failure), and a crawl that finds 0 products
+  only counts as a failure when the slice was expected to hold 10 or more.
 - **Decoy pages.** A session Amazon distrusts (seen on 26 Oct after a burst of test fetches from the Mac,
   which shares the worker's IP) gets a plausible-looking listing of random groceries (milk, tissues, rice;
   48 cards, no result-count bar, "over N results" missing) instead of the requested page. Counting it

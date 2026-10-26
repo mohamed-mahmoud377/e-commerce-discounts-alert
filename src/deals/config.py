@@ -9,8 +9,9 @@ from deals.models import Slice
 
 @dataclass(frozen=True)
 class AlertRules:
-    min_drop: float = 0.30  # below the product's typical price (time-weighted 90-day median)
-    atl_min_drop: float = 0.20  # a new all-time low only needs this much
+    min_drop: float = 0.20  # below the product's typical price (time-weighted 90-day median)
+    early_min_drop: float = 0.30  # an early drop (1 to 3 days of history) needs this much
+    atl_min_drop: float = 0.15  # a new all-time low (14+ days of history) only needs this much
     atl_min_history_days: float = 14
     price_error_drop: float = 0.60  # flagged as a possible pricing mistake
     min_history_days: float = 3  # less in-stock history than this = "new product" rules
