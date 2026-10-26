@@ -108,3 +108,23 @@ def test_products_are_paged_with_a_total(client):
     assert len(ids) == 250 == len(set(ids))
     # the whole catalogue is browsable without a search term
     assert client.get("/api/products?limit=10").json()["total"] == 251
+
+
+def test_every_product_sort_holds_across_pages(client):
+    from deals.webui import PRODUCT_SORTS
+    client.post("/ui/login", data={"token": "admin-secret"}, follow_redirects=False)
+    conn = client.app.state.conn
+    with conn:
+        for i in range(120):
+            db.record(conn, Listing("noon_eg" if i % 2 else "amazon_eg", f"S{i}", f"Item {i:03d}", f"https://x/S{i}",
+                                    (500_000 - i * 1000) if i % 7 else None, 600_000 - i * 500 if i % 4 else None, "EGP",
+                                    bool(i % 3), rating=(i % 5) + 0.5, reviews=i), grp="TVs", now=utcnow())
+    for sort in PRODUCT_SORTS:
+        pages = [client.get(f"/api/products?limit=50&offset={o}&sort={sort}").json()["products"] for o in (0, 50, 100)]
+        rows = [p for page in pages for p in page]
+        assert len(rows) == 121 and len({p["id"] for p in rows}) == 121, sort  # no gaps, no repeats
+    cheap = [p["price"] for p in client.get("/api/products?limit=500&sort=cheap").json()["products"] if p["price"]]
+    assert cheap == sorted(cheap)
+    titles = [p["title"] for p in client.get("/api/products?limit=500&sort=title_desc").json()["products"]]
+    assert titles == sorted(titles, key=str.lower, reverse=True)
+    assert client.get("/api/products?limit=5&sort=nonsense").status_code == 200

@@ -61,8 +61,18 @@ def jobs(conn: sqlite3.Connection, now: datetime, limit: int) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-PRODUCT_SORTS = {"recent": "last_change_at DESC", "cheap": "price IS NULL, price", "dear": "price DESC",
-                 "rating": "rating IS NULL, rating DESC, reviews DESC", "reviews": "reviews IS NULL, reviews DESC"}
+# Every product sort is done by the database, so it holds across all pages of the list.
+PRODUCT_SORTS = {
+    "recent": "last_change_at DESC", "oldest": "last_change_at",
+    "cheap": "price IS NULL, price", "dear": "price IS NULL, price DESC",
+    "rating": "rating IS NULL, rating DESC, reviews DESC", "rating_low": "rating IS NULL, rating, reviews",
+    "reviews": "reviews IS NULL, reviews DESC", "reviews_few": "reviews IS NULL, reviews",
+    "title": "title COLLATE NOCASE", "title_desc": "title COLLATE NOCASE DESC",
+    "site": "site, title COLLATE NOCASE", "site_desc": "site DESC, title COLLATE NOCASE",
+    "grp": "grp, title COLLATE NOCASE", "grp_desc": "grp DESC, title COLLATE NOCASE",
+    "crossed": "list_price IS NULL, list_price", "crossed_desc": "list_price IS NULL, list_price DESC",
+    "stock": "in_stock DESC, stock_left IS NULL, stock_left", "stock_desc": "in_stock, stock_left IS NULL, stock_left DESC",
+}
 
 
 def _product_filter(q: str, site: str | None, grp: str | None, in_stock_only: bool) -> tuple[str, list]:
@@ -263,10 +273,10 @@ const views = {
     return `<div class='row'><input id='q' placeholder='search titles, e.g. samsung 55' value='${esc(q)}' onkeydown="if(event.key==='Enter')render()" size='30'>
       <select id='site' onchange='render()'><option value=''>both shops</option><option ${site === 'amazon_eg' ? 'selected' : ''}>amazon_eg</option><option ${site === 'noon_eg' ? 'selected' : ''}>noon_eg</option></select>
       <select id='grp' onchange='render()'><option value=''>all groups</option>${d.groups.map(g => `<option ${g === grp ? 'selected' : ''}>${esc(g)}</option>`).join('')}</select>
-      <select id='sort' onchange='render()'>${[['recent', 'latest change'], ['cheap', 'cheapest'], ['dear', 'dearest'], ['rating', 'best rated'], ['reviews', 'most reviews']].map(([v, l]) => `<option value='${v}' ${v === sort ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <select id='sort' onchange='render()'>${PRODUCT_SORT_NAMES.map(([v, l]) => `<option value='${v}' ${v === sort ? 'selected' : ''}>${l}</option>`).join('')}</select>
       <label><input type='checkbox' id='stock' ${stock ? 'checked' : ''} onchange='render()'> in stock only</label>
       <button onclick='render()'>Search</button> <span class='muted' id='pcount'>${d.products.length.toLocaleString()} of ${d.total.toLocaleString()} · click a row for the price history</span></div>
-      <table><thead><tr><th>Product</th><th>Shop</th><th>Group</th><th>Price</th><th>Crossed-out</th><th>Stock</th><th>Rating</th><th>Last change</th></tr></thead>
+      <table><thead><tr>${PRODUCT_COLS.map(([label, asc, desc]) => `<th class='sortable' data-asc='${asc}' data-desc='${desc}' title='sort all pages by ${label.toLowerCase()}'>${label}${sort === asc ? " <span class='dir'>▲</span>" : sort === desc ? " <span class='dir'>▼</span>" : ''}</th>`).join('')}</tr></thead>
       <tbody id='prows'>${d.products.map(productRow).join('')}</tbody></table>
       <div id='more' class='muted' style='padding:10px 0 30px'>${d.products.length < d.total ? "<span class='spinner'></span>loading more as you scroll…" : d.total ? 'end of list' : 'nothing matches'}</div>`;
   },
@@ -294,6 +304,11 @@ const views = {
 };
 const PAGE = 100;
 let productFeed = null;
+const PRODUCT_COLS = [['Product', 'title', 'title_desc'], ['Shop', 'site', 'site_desc'], ['Group', 'grp', 'grp_desc'], ['Price', 'cheap', 'dear'],
+  ['Crossed-out', 'crossed', 'crossed_desc'], ['Stock', 'stock', 'stock_desc'], ['Rating', 'rating_low', 'rating'], ['Last change', 'oldest', 'recent']];
+const PRODUCT_SORT_NAMES = [['recent', 'latest change'], ['oldest', 'oldest change'], ['cheap', 'cheapest'], ['dear', 'dearest'], ['rating', 'best rated'],
+  ['rating_low', 'worst rated'], ['reviews', 'most reviews'], ['reviews_few', 'fewest reviews'], ['title', 'title A→Z'], ['title_desc', 'title Z→A'],
+  ['site', 'shop'], ['grp', 'group'], ['crossed', 'crossed-out price ↑'], ['crossed_desc', 'crossed-out price ↓'], ['stock', 'in stock first'], ['stock_desc', 'out of stock first']];
 const productRow = p => `<tr class='clickable' onclick='openProduct(${p.id})'><td>${esc(p.title)}</td><td>${esc(p.site)}${p.seller ? ' · ' + esc(p.seller) : ''}</td>
   <td>${esc(p.grp)}</td><td>${egp(p.price)}</td><td>${egp(p.list_price)}</td><td>${p.in_stock ? (p.stock_left ? 'only ' + p.stock_left : 'yes') : 'no'}</td>
   <td>${p.rating ? p.rating.toFixed(1) + ' (' + (p.reviews || 0).toLocaleString() + ')' : ''}</td><td>${ago(p.last_change_at)}</td></tr>`;
@@ -404,6 +419,12 @@ function chartHover(ev, pts, t0, t1, L, R, W) {
 // Click any table header to sort by that column (numbers, money and dates compare as numbers).
 document.addEventListener('click', ev => {
   const th = ev.target.closest('th'); if (!th || !th.closest('#view')) return;
+  if (th.dataset.asc) {  // product list: sort on the server so it holds across every page
+    const sel = $('#sort'); if (!sel) return;
+    const next = sel.value === th.dataset.desc ? th.dataset.asc : sel.value === th.dataset.asc ? th.dataset.desc : th.dataset.desc;
+    if (![...sel.options].some(o => o.value === next)) sel.add(new Option(next, next));
+    sel.value = next; render(); return;
+  }
   const table = th.closest('table'), tr = th.parentElement, idx = [...tr.children].indexOf(th);
   const rows = [...table.querySelectorAll('tr')].filter(r => r !== tr && r.children.length === tr.children.length && !r.querySelector('th'));
   if (!rows.length) return;
