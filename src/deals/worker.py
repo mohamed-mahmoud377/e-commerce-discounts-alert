@@ -263,7 +263,6 @@ class _RetryingSite:
         self.site, self.worker, self.job = site, worker, job
         self.name = site.name
         self.max_slice_total = site.max_slice_total
-        self.split_by_subcategory = getattr(site, "split_by_subcategory", True)
 
     def fetch_page(self, target: Slice, page: int) -> PageResult:
         return self.worker._fetch(self.site, target, page, self.job)

@@ -14,9 +14,9 @@ owns one job.
 | `config.py` | 126 | Reading `config.toml` into `Config`, `AlertRules`, `Schedule`, `SiteSettings`, `Watch` | models |
 | `sites/amazon_eg.py` | 198 | Fetching and parsing amazon.eg listing pages; cookies from headless Chromium | models, base |
 | `sites/noon_eg.py` | 139 | Fetching and parsing noon's catalog JSON; per-seller keys | models |
-| `sites/jumia_eg.py` | 195 | Fetching Jumia category pages with Safari's TLS fingerprint (Cloudflare), reading the embedded `__STORE__` JSON, detecting redirects to the parent category | models, base |
+| `sites/jumia_eg.py` | 191 | Fetching Jumia category pages with Safari's TLS fingerprint (Cloudflare), reading the embedded `__STORE__` JSON, detecting redirects to the parent category | models, base |
 | `sites/base.py` | 35 | The `Site` interface every shop implements; money and count parsing | models |
-| `planner.py` | 95 | Splitting a root into slices under the shop's limit (by price only for shops with `split_by_subcategory = False`) | models |
+| `planner.py` | 93 | Splitting a root into slices under the shop's limit, by price ranges only | models |
 | `db.py` | 349 | Schema and migrations; `record()` (upsert a product, append history on change); backups | models |
 | `scheduler.py` | 241 | The job queue: leases, intervals, blocks, failures, worker bookkeeping, events | db, planner |
 | `pricing.py` | 222 | Price statistics and the deal rules; pure functions, no database | config, models |
@@ -277,10 +277,10 @@ to do first: access, URL scheme, page caps, empty-result behaviour, category tre
 
 1. Create `src/deals/sites/<shop>.py` with a class having `name`, `max_slice_total` (the most products the
    shop lets you page through) and `fetch_page(slice, page) -> PageResult`. Return `total` when the shop
-   shows an exact count, `subcategories` for category slices, and raise `Blocked` on a captcha. Set
-   `split_by_subcategory = False` if a category's children don't add up to the category (check a few
-   counts), so the planner splits by price only. Make sure an empty slice comes back as an empty page and
-   not as some other listing the shop redirects to.
+   shows an exact count, `subcategories` for category slices (for `deals categories`), and raise `Blocked` on
+   a captcha. The planner splits by price, so the price filter must be exact (check that its ends are
+   inclusive). Make sure an empty slice comes back as an empty page and not as some other listing the shop
+   redirects to.
 2. Register it in `sites/__init__.py` (`SITES`); add its Arabic name to `alerts.SITE_NAME`, its roots to
    `cli.cmd_categories`, and an option to the two shop selects in `webui.py`.
 3. Save one real listing page as `tests/fixtures/<shop>_category.html.gz` and add a parser test next to the

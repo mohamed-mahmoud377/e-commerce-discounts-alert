@@ -21,9 +21,6 @@ class Site(Protocol):
     # Largest slice the site lets us page through completely; the planner
     # splits anything bigger.
     max_slice_total: int
-    # Optional, default True: may the planner split by sub-category? Only if every
-    # product of a category sits in one of its children (not so on Jumia).
-    split_by_subcategory: bool
 
     def fetch_page(self, slice: Slice, page: int) -> PageResult:
         """Fetch one listing page. Raises Blocked if the site challenges us."""

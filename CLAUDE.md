@@ -45,8 +45,9 @@ write down anything new you learn about the shops or the operations there (the u
   (`deals backup --config /etc/deals/config.toml`).
 - Prices are integers in piastres. Times are UTC ISO strings. The daily report uses Cairo time.
 - noon products are keyed `SKU@seller` (one product has several sellers at very different prices).
-- Jumia is split by price only (`split_by_subcategory = False`): its categories hold products that are in
-  none of their children. Empty filtered Jumia pages redirect to the parent category (see docs/JUMIA.md).
+- The planner splits by price only, never by sub-category: on every shop a category holds products that are
+  in none of its children (GUIDE.md, Algorithm 2). Empty filtered Jumia pages redirect to the parent
+  category (see docs/JUMIA.md).
 - Alert and bot texts are Arabic (`alerts.py`, `bot.py`, `health.py`); CLI output is English.
 - Parser tests use saved real pages in `tests/fixtures/*.gz`. When a site changes its layout,
   save a new page there and fix the parser against it.

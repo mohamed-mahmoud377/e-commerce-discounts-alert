@@ -101,9 +101,9 @@ A Jumia category holds products that sit on the category itself and in none of i
 | Air Conditioners (8,000+) | 1,274 | 1,139 (Evaporative, Portable, Split, Wall) | 135 (11%) |
 | Smartphones (2,500+) | 2,041 | 2,015 (Android, iOS, Other) | 26 (1%) |
 
-The planner normally splits an oversized category into its children first, which would silently drop
-these. `JumiaEG.split_by_subcategory = False` makes the planner split Jumia by price only (price ranges
-cover everything, and the slices still keep the group's minimum price). Smartphones (2,041 > 2,000) plans
+A sub-category split would silently drop these, so the planner splits by price only (price ranges cover
+everything, and the slices still keep the group's minimum price). Checking the same on Amazon and noon
+showed the gap there too, so since 26 October every shop is planned this way (GUIDE.md, Algorithm 2). Smartphones (2,041 > 2,000) plans
 into 6 price slices covering 2,049 products (a few sit on shared edges).
 
 ## What a listing page contains

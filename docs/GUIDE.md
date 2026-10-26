@@ -183,7 +183,7 @@ then `.venv/bin/deals local` starts a coordinator and a worker in one process wi
 ## Algorithm 1: fetching the shops
 
 Each shop has an adapter with one job: given a slice (a category, optionally with a price range) and a page
-number, return the products on that page, the total count, and the sub-categories. Neither adapter opens
+number, return the products on that page, the total count, and the sub-categories (used by `deals categories`). No adapter opens
 product pages; everything comes from listing pages, which hold 24 to 50 products per request.
 
 **amazon.eg.** Amazon sits behind an AWS WAF JavaScript challenge, so a plain request gets a 202 or 503
@@ -212,7 +212,7 @@ Safari (no browser needed). Category pages (`/<slug>/?price=<min>-<max>&page=N`)
 as JSON, with an exact "N products found" count. Two traps shape the adapter: an empty price range (or a page
 past the end) silently redirects to the *parent* category, so every page's served URL is compared with the
 one asked for; and a category holds products that are in none of its children, so Jumia is split by price
-only. Details, numbers and the category map: [JUMIA.md](JUMIA.md).
+only (now true of every shop, see Algorithm 2). Details, numbers and the category map: [JUMIA.md](JUMIA.md).
 
 **Which machine can reach which shop** (tested 25 October 2026):
 
@@ -258,19 +258,28 @@ It works through a queue, starting with the group's root category and its minimu
 
 ```mermaid
 flowchart TB
-    q["Take the next slice<br/>(starts with root + minimum price)"] --> p["Fetch page 1, read the count<br/>limit: Amazon 1,000 · noon 2,500"]
+    q["Take the next slice<br/>(starts with root + minimum price)"] --> p["Fetch page 1, read the count<br/>limit: Amazon 1,000 · noon 2,500 · Jumia 2,000"]
     p --> d1{"Under the limit?"}
     d1 -- yes --> keep["Keep as a crawl slice"]
-    d1 -- no --> d2{"Sub-categories left?<br/>(not yet split by price)"}
-    d2 -- yes --> sub["Queue its sub-categories<br/>(they keep the minimum price)"] --> q
-    d2 -- no --> d3{"Wider than 1 EGP?"}
+    d1 -- no --> d3{"Wider than 1 EGP?"}
     d3 -- yes --> price["Queue its price ranges<br/>(fixed bands first, then halves)"] --> q
     d3 -- no --> over["Mark oversized and warn"]
 ```
 
-On Jumia the "sub-categories left?" step is skipped: its categories hold products that sit in none of their
-children (11% of air conditioners, 4% of TVs), so a split into children would lose them. Jumia slices are
-split by price only (`split_by_subcategory = False` on the adapter).
+**Why never by sub-category.** Until 26 October 2026 the planner split an oversized category into its
+sub-categories first. Measurements that day showed that on every shop a category holds products that sit
+in none of its children, and a sub-category split silently never crawls them:
+
+| Shop and category (group minimum price) | Products | In its children | Never crawled |
+| --- | --- | --- | --- |
+| amazon.eg Headphones, 5,000 EGP and up | 688 | 659 | 29 (4%), e.g. JBL Tour One M3, Bowers & Wilkins Px8, Dyson OnTrac |
+| amazon.eg PC components / ranges & ovens / blenders, 20,000 EGP and up | 143 / 300 / 86 | 142 / 298 / 86 | 1 / 2 / 0 |
+| noon PC components, 1,500 EGP and up | 4,356 | 2,696 | 1,660 (38%): mostly monitor arms, stands and UPS units, but also about 43 real parts (27 RAM sticks, 6 graphics cards, 4 motherboards) |
+| Jumia air conditioners / TVs / smartphones | 1,274 / 454 / 2,041 | 1,139 / 434 / 2,015 | 135 / 20 / 26 |
+
+Price ranges always cover everything, so every shop is now split by price only. Where a parent category also
+collects accessories (noon's PC components: monitor arms, UPS units), the group's `exclude_words` keep them
+out.
 
 Price splits start with fixed bands (0, 50, 100, 200, 500, 1k, 2k, 5k, 10k, 20k, 50k, 100k EGP and above,
 from the group's minimum price); any range still too big is halved, down to 1 EGP wide. Empty slices are
@@ -280,7 +289,7 @@ Neighbouring ranges share their edge (1,000 to 2,000, then 2,000 to 5,000), so a
 never fall between two slices. The few products sitting exactly on an edge are seen twice, which is harmless.
 
 Every probed page is real data, so planning already fills the database. Each root is planned again every 7
-days to pick up new sub-categories and changed sizes; slices that survive keep their schedule.
+days to pick up changed sizes; slices that survive keep their schedule.
 
 Two checks show nothing is missed. On real data, noon Wearables (24,787 products) became 27 slices in 44
 requests covering 26,179 products, slightly more than the total because of shared edges. An automated test

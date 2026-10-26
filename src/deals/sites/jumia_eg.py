@@ -34,10 +34,6 @@ INDENT = re.compile(r"-ph(x+)l\b")
 class JumiaEG:
     name = "jumia_eg"
     max_slice_total = 2000  # 50 pages x 40 products
-    # Many products sit on a category itself and in none of its children (Air
-    # Conditioners: 135 of 1,274), so a sub-category split would lose them; price
-    # ranges cover everything.
-    split_by_subcategory = False
 
     def __init__(self, state_dir=None):
         self._session = requests.Session(impersonate=IMPERSONATE)

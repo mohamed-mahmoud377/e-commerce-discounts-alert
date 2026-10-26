@@ -92,7 +92,7 @@ class PageResult:
     listings: list[Listing]
     has_next: bool
     total: int | None = None  # exact result count for the slice, None if the site only says "over N"
-    subcategories: list[Category] = field(default_factory=list)  # children, for category slices
+    subcategories: list[Category] = field(default_factory=list)  # children (for `deals categories`)
     # True when the page has product cards but no result-count bar: amazon.eg serves
     # such decoy listings (random groceries) to sessions it distrusts.
     decoy: bool = False

@@ -1,10 +1,15 @@
 """Split a root category (or search) into slices small enough to crawl completely.
 
 Sites stop paging long before the end of a big category (amazon.eg: exact
-counts only up to 1,000; noon: 50 pages). The planner probes page 1 of a slice
-and, if it is too big, splits it: into sub-categories first, then into price
-ranges, halving ranges until every piece fits. Sites whose categories hold
-products that are in none of their children (Jumia) are split by price only.
+counts only up to 1,000; noon: 50 pages; Jumia: 50 pages). The planner probes
+page 1 of a slice and, if it is too big, splits it into price ranges, halving
+ranges until every piece fits.
+
+It never splits into sub-categories: on every shop a category holds products
+that are in none of its children (measured 26 Oct 2026: amazon.eg Headphones
+29 of 688 above 5,000 EGP, noon PC components 1,660 of 4,356, Jumia air
+conditioners 135 of 1,274), and a sub-category split silently drops them.
+Price ranges cover everything.
 """
 
 import random
@@ -39,7 +44,6 @@ def plan(
     leaves: list[PlannedSlice] = []
     queue = deque([root])
     probes = 0
-    by_subcategory = getattr(site, "split_by_subcategory", True)
 
     while queue:
         current = queue.popleft()
@@ -58,12 +62,6 @@ def plan(
             if total:
                 leaves.append(PlannedSlice(current, total))
             report(f"  ok      {current}  ({total} products)")
-        elif (current.kind == "category" and result.subcategories and by_subcategory
-              and (current.price_min, current.price_max) == (root.price_min, root.price_max)):
-            # Sub-categories keep the root's price floor (e.g. TVs >= 3000 EGP).
-            report(f"  split   {current}  ({_size(total)}) into {len(result.subcategories)} sub-categories")
-            queue.extend(Slice("category", child.id, root.price_min, root.price_max)
-                         for child in result.subcategories)
         elif children := split_price(current):
             report(f"  split   {current}  ({_size(total)}) into {len(children)} price ranges")
             queue.extend(children)

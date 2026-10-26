@@ -191,6 +191,15 @@ min_price = 1500
 amazon_eg = "category:21832913031"
 noon_eg = "category:electronics-and-mobiles/computers-and-accessories/computer-accessories/computer-components-15997"
 jumia_eg = "category:computer-components"
+# noon lists monitor arms, laptop stands and UPS units under PC components (outside every child
+# category), so new products with these words are skipped (checked against every tracked title).
+exclude_words = ["monitor arm", "monitor mount", "monitor stand", "monitor holder", "monitor desk", "monitor light",
+                 "screenbar", "desk mount", "desk stand", "desktop stand", "tabletop stand", "tablet stand",
+                 "stand holder", "dual arm", "desk arm", "laptop arm", "movable arm", "gas arm", "gas spring",
+                 "arm for", "arms for", "adjustable arms", "laptop stand", "laptop holder", "laptop mount",
+                 "wall mount", " mount ", "tv stand", "ups ", " ups", "-ups", "uninterrupt", "stabilizer",
+                 "stabiliser", "battery backup", "battery 12v", "12v battery", "ultracell", "csb battery",
+                 "dvd", "blu ray", "blu-ray", "cd-rw", "حامل", "ذراع"]
 
 [[watch]]
 name = "Headphones"
