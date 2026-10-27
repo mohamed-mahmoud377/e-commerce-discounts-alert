@@ -50,7 +50,7 @@ class Slice:
     database: 'category:21832868031' or 'search:laptop|price:1000-2000'.
     """
 
-    kind: str  # "search" or "category"
+    kind: str  # "search", "category", or "deals" (the shop's own deals feed for a category)
     value: str  # keywords, or the site's category id/path
     price_min: int | None = None
     price_max: int | None = None
@@ -74,8 +74,8 @@ class Slice:
     def from_key(cls, key: str) -> "Slice":
         target, _, price = key.partition("|price:")
         kind, sep, value = target.partition(":")
-        if not sep or kind not in ("search", "category") or not value:
-            raise ValueError(f"expected 'search:<keywords>' or 'category:<id>', got {key!r}")
+        if not sep or kind not in ("search", "category", "deals") or not value:
+            raise ValueError(f"expected 'search:<keywords>', 'category:<id>' or 'deals:<id>', got {key!r}")
         low = high = None
         if price:
             low_s, _, high_s = price.partition("-")

@@ -476,3 +476,25 @@ def test_jumia_flash_sale_listings_carry_the_deal_badge():
     flash = _parse_product(card, flash=True)
     assert flash.badges == (LIMITED_DEAL,) and flash.stock_left == 3 and flash.list_price == 299_900
     assert _parse_product(card).badges == ()
+
+
+def test_amazon_deals_api_page():
+    from deals.sites.amazon_eg import deals_api_url, parse_deals_api
+    result = parse_deals_api(fixture_text("amazon_deals_api.json.gz"))
+    assert not result.has_next and result.total is None  # 40 products: a short page is the last
+    by_sku = {l.sku: l for l in result.listings}
+    tv = by_sku["B0H17ZVHBY"]  # LG 55" on a 26% "List:" deal
+    assert tv.price == 2119900 and tv.list_price == 2859900 and tv.list_price_kind == "list"
+    assert tv.url.endswith("/dp/B0H17ZVHBY") and tv.in_stock
+    assert any(l.list_price_kind == "was" for l in result.listings)
+    assert any(LIMITED_DEAL in l.badges for l in result.listings)
+    assert all(l.price for l in result.listings)  # products without a deal price are skipped
+
+    url = deals_api_url(Slice.from_key("deals:21832982031|price:3000-"), 2)
+    assert url.startswith("https://www.amazon.eg/d2b/api/v1/products/search?")
+    assert "startIndex=200" in url and "%2221832982031%22" in url
+    assert "rangeRefinementFilters=%5B%7B%22id%22%3A%22price%22%2C%22min%22%3A3000%2C%22max%22%3A10000000%7D%5D" in url
+    assert "rangeRefinementFilters" not in deals_api_url(Slice.from_key("deals:1"), 1)
+    assert Slice.from_key("deals:1|price:10-20").key() == "deals:1|price:10-20"
+    with pytest.raises(ValueError):
+        Slice.from_key("deal:1")

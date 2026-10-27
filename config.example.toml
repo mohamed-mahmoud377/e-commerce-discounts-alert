@@ -102,6 +102,7 @@ min_price = 3000
 amazon_eg = [
     "category:21832982031",
     "category:21832982031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
+    "deals:21832982031",  # fast lane: Amazon's Today's Deals API for this node (finds products the search listing omits)
 ]
 noon_eg = [
     "category:electronics-and-mobiles/television-and-video/televisions",
@@ -122,6 +123,7 @@ min_price = 5000
 amazon_eg = [
     "category:21863822031",
     "category:21863822031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
+    "deals:21863822031",  # fast lane: Amazon's Today's Deals API for this node (finds products the search listing omits)
 ]
 noon_eg = [
     "category:home-and-kitchen/home-appliances-31235/large-appliances/refrigerators-and-freezers",
@@ -145,6 +147,7 @@ min_price = 8000
 amazon_eg = [
     "category:21863915031",
     "category:21863915031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
+    "deals:21863915031",  # fast lane: Amazon's Today's Deals API for this node (finds products the search listing omits)
 ]
 noon_eg = [
     "category:home-and-kitchen/home-appliances-31235/large-appliances/heating-cooling-and-air-quality/air-conditioners",
@@ -222,6 +225,7 @@ min_price = 2500
 amazon_eg = [
     "category:21832883031",
     "category:21832883031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
+    "deals:21832883031",  # fast lane: Amazon's Today's Deals API for this node (finds products the search listing omits)
 ]
 noon_eg = [
     "category:electronics-and-mobiles/mobiles-and-accessories/mobiles-20905/smartphones",
@@ -242,6 +246,7 @@ min_price = 5000
 amazon_eg = [
     "category:21832915031",
     "category:21832915031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
+    "deals:21832915031",  # fast lane: Amazon's Today's Deals API for this node (finds products the search listing omits)
 ]
 noon_eg = [
     "category:electronics-and-mobiles/tablets-and-accessories/tablets",
@@ -262,6 +267,7 @@ min_price = 8000
 amazon_eg = [
     "category:21832907031",
     "category:21832907031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
+    "deals:21832907031",  # fast lane: Amazon's Today's Deals API for this node (finds products the search listing omits)
 ]
 noon_eg = [
     "category:electronics-and-mobiles/computers-and-accessories/computers-new/laptops",
@@ -295,6 +301,7 @@ min_price = 2500
 amazon_eg = [
     "category:21832909031",
     "category:21832909031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
+    "deals:21832909031",  # fast lane: Amazon's Today's Deals API for this node (finds products the search listing omits)
 ]
 noon_eg = [
     "category:electronics-and-mobiles/computers-and-accessories/computer-accessories/monitor-accessories/monitors-17248",
@@ -335,6 +342,7 @@ min_price = 800
 amazon_eg = [
     "category:21832887031",
     "category:21832887031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
+    "deals:21832887031",  # fast lane: Amazon's Today's Deals API for this node (finds products the search listing omits)
 ]
 noon_eg = [
     "category:electronics-and-mobiles/portable-audio-and-video/headphones-24056",

@@ -22,6 +22,15 @@ from deals.sites.base import parse_count, parse_money
 log = logging.getLogger(__name__)
 
 BASE = "https://www.amazon.eg"
+# The "Today's Deals" page (/-/en/deals) is a JavaScript widget fed by this JSON API, which
+# answers plain GETs with the same WAF cookies as the search pages (no CSRF token). It lists
+# only products enrolled in Amazon's deals programme (a smaller set than the search facet
+# "All discounts"), but it is one request per browse node and it returns products the
+# node's search listing leaves out (each search query omits a different few percent of a
+# node). Up to 200 per page, at most 500 per query. See docs/CATEGORIES.md.
+DEALS_API = f"{BASE}/d2b/api/v1/products/search"
+DEALS_PAGE_SIZE = 200
+DEALS_MAX_PRICE = 10_000_000  # EGP; the API wants both ends of a price range
 BLOCK_MARKERS = ("challenge.js", "automated access", "validateCaptcha")
 # "1–24 of 775 results" / "25 results" are exact; "1–24 of over 1,000 results" is not.
 RESULT_COUNT = re.compile(r"(?:of\s+)?(over\s+)?([\d,]+)\s+results?")
@@ -43,6 +52,8 @@ class AmazonEG:
             self._load_cookies(json.loads(self._cookie_file.read_text()))
 
     def fetch_page(self, slice: Slice, page: int) -> PageResult:
+        if slice.kind == "deals":
+            return self._fetch_deals(slice, page)
         params = {}
         refinements = []
         if slice.kind == "search":
@@ -82,6 +93,16 @@ class AmazonEG:
                 raise Blocked(f"{self.name}: decoy page (no result bar) for {slice.key()}")
         return result
 
+    def _fetch_deals(self, slice: Slice, page: int) -> PageResult:
+        url = deals_api_url(slice, page)
+        body = self._get(url)
+        if body is None:
+            self._bootstrap_cookies()
+            body = self._get(url)
+            if body is None:
+                raise Blocked(f"{self.name}: still challenged after refreshing cookies")
+        return parse_deals_api(body)
+
     def _get(self, url: str) -> str | None:
         r = self._session.get(url, timeout=30)
         if r.status_code in (202, 503) or any(m in r.text for m in BLOCK_MARKERS):
@@ -118,6 +139,60 @@ class AmazonEG:
     def _load_cookies(self, cookies: list[dict]) -> None:
         for c in cookies:
             self._session.cookies.set(c["name"], c["value"], domain=c["domain"])
+
+
+def deals_api_url(slice: Slice, page: int) -> str:
+    """The deals API query for one page of a `deals:<node>` slice (node = browse node id)."""
+    filters = {"includedDepartments": [slice.value], "excludedDepartments": [], "includedTags": [],
+               "excludedTags": [], "promotionTypes": [], "accessTypes": [], "brandIds": [], "unifiedIds": []}
+    params = {
+        "pageSize": DEALS_PAGE_SIZE,
+        "startIndex": (page - 1) * DEALS_PAGE_SIZE,
+        "calculateRefinements": "false",
+        "rankingContext": json.dumps({"pageTypeId": "deals", "rankGroup": "DEFAULT"}, separators=(",", ":")),
+        "filters": json.dumps(filters, separators=(",", ":")),
+    }
+    if slice.has_price:  # whole EGP; both ends are required (and the page URL's object form is rejected)
+        band = {"id": "price", "min": slice.price_min or 0,
+                "max": DEALS_MAX_PRICE if slice.price_max is None else slice.price_max}
+        params["rangeRefinementFilters"] = json.dumps([band], separators=(",", ":"))
+    return f"{DEALS_API}?{urlencode(params)}"
+
+
+def parse_deals_api(body: str) -> PageResult:
+    """One page of the deals API: products with a deal price, a crossed-out "Was:"/"List:"
+    basis price and a badge. No total is given, and `nextIndex` is null only when the query
+    hit its 500 cap (a short page is the last one), so paging is by page size."""
+    data = json.loads(body)
+    listings: list[Listing] = []
+    for p in data.get("products") or []:
+        asin = p.get("asin")
+        price = _api_money((p.get("price") or {}).get("priceToPay"))
+        if not asin or price is None:
+            continue
+        basis = (p.get("price") or {}).get("basisPrice") or {}
+        list_price = _api_money(basis)
+        list_kind = None
+        if list_price is not None:
+            list_kind = "was" if "was" in (basis.get("label") or "").lower() else "list"
+        badge_text = json.dumps(p.get("dealBadge") or {}) + ((p.get("dealDetails") or {}).get("type") or "")
+        badges = (LIMITED_DEAL,) if ("Limited time deal" in badge_text or "LIGHTNING_DEAL" in badge_text) else ()
+        listings.append(Listing(
+            site=AmazonEG.name, sku=asin, title=p.get("title") or asin, url=f"{BASE}/-/en/dp/{asin}",
+            price=price, list_price=list_price, currency="EGP", in_stock=True,
+            list_price_kind=list_kind, badges=badges,
+        ))
+    products = data.get("products") or []
+    has_next = len(products) >= DEALS_PAGE_SIZE and data.get("nextIndex") is not None
+    return PageResult(listings=listings, has_next=has_next, total=None)
+
+
+def _api_money(node: dict | None) -> int | None:
+    """'43879.0' (EGP) to piastres."""
+    try:
+        return round(float(node["price"]) * 100)
+    except (TypeError, KeyError, ValueError):
+        return None
 
 
 def parse_search_page(html: str, current_node: str | None = None) -> PageResult:

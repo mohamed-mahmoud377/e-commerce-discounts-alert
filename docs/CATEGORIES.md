@@ -57,6 +57,44 @@ Facts that shaped the crawler:
   `n:` refinement and the price filter after it. Sizes above each group's minimum price: TVs 42, fridges 89,
   ACs 105, phones 37, tablets 6, laptops 7, monitors 17, headphones 131, so a sweep of all eight is about 20
   pages. The deals page itself (`/-/en/deals`) is rendered by JavaScript (0 product cards in the HTML).
+- **The Today's Deals page and its JSON API (studied 27 Oct 2026).** `/-/en/deals` is the "discounts
+  widget": the HTML embeds the first 30 deals as JSON (`productSearchResponse` inside `mountWidget(...)`)
+  and the widget pages with a plain GET that works with the worker's WAF cookies and no CSRF token:
+  `GET /d2b/api/v1/products/search?pageSize=200&startIndex=0&calculateRefinements=false&rankingContext={"pageTypeId":"deals","rankGroup":"DEFAULT"}&filters={...}`
+  (`pageSize` up to 200; any query stops at 500 results, `nextIndex` becomes null). `filters` keys:
+  `includedDepartments` (any browse node works, e.g. TVs 21832982031 gave 15, phones 21832883031 gave 3,
+  the PS5 platform node 91; department ids differ from the catalogue roots: Electronics 18018103031,
+  Mobiles 21832868031, Computers 21832872031, Appliances 21863792031 + 21863887031, Home & Kitchen
+  18021934031, Video Games 18022561031), `includedTags` (`PIMA_PRICE_MIN_GV_30D` / `_60D` / `_90D` =
+  "lowest price in N days", `PIMA_TRENDING`), `timeRangeFilters` (`STARTS_TODAY`, `ENDS_TODAY`),
+  `promotionTypes` (`LIGHTNING_DEAL`: 23 site-wide). Ranges go in a separate `rangeRefinementFilters`
+  parameter, a JSON *list*: `[{"id":"percentOff","min":54,"max":80}]` or `{"id":"price",...}` (the
+  object form in the page URL is rejected). Each product carries `price.priceToPay`, `price.basisPrice`
+  with label `Was:` or `List:`, `dealBadge` ("26% off" / "Limited time deal"), `dealDetails.type`
+  (`BEST_DEAL`, `LIGHTNING_DEAL`), `productCategory.productType` and `meta.departmentIds`.
+  Measured 27 Oct: about 2,300 distinct deals across the six departments above (17 requests); the
+  whole-site default list is 500, two fifths of it fashion; 94 deals had started that day; the 54 to 80%
+  band was almost all shoes and shirts. Only 185 of the 2,300 were products we track and **every one was
+  already recorded at the deal price**, so this feed found nothing our sweeps and `p_n_deal_type` lanes
+  had not. It is a *different* and smaller set than the search facet (TVs: 15 here vs 47 on the "All
+  discounts" lane): only products enrolled in Amazon's deals programme appear (the same ones the search
+  cards mark "Limited time deal": 170 of the 185 carried that badge). Where it does help is discovery: it
+  lists products the node/search sweeps never returned (PS5 Slim Disc B0CKYM15RJ at 43,879, Switch 2 +
+  Mario Kart B0F3HFQ5SY at 32,199, Samsung 85" QN70H B0GWJX7BV6 at 78,999), and whole kinds we do not
+  watch (Dyson/Tineco vacuums, washers, Kindle). Since 27 Oct the adapter crawls it as the `deals:<node>`
+  slice kind (one request per group per visit), added next to each priority group's roots. The "Flash deals" bubble is a landing page
+  (`/l/52295425031`, JavaScript, nothing in the HTML); "Last Chance deals" is a node (`206767151031`)
+  that renders as a normal search listing, so it could be a `category:` root.
+- **Node sweeps miss listings (27 Oct 2026, to verify).** Page 1 of the TVs node at 70,000 EGP and up
+  (`p_36:7000000-`, "96 results") held 24 TVs; 8 of them (B0F8BHR91D, B0GWJX7BV6, B0H4YXGC5K,
+  B0GWK4STMH, B0D4727X69, B0FR3FLZ8V, B0FRG2L16Z, B0GWJVS585) had never been recorded, although the
+  group's `price:3000-` sweep (372 listings, 16 pages) had finished minutes earlier with the same
+  cookies and IP. A crawl of the same node in five price bands (3,000 to 10,000, ..., 100,000+) found
+  374 listings against the sweep's 372, but the two sets differ: 26 band listings were not in the database
+  and 7 database products were not in the bands. So every Amazon search query omits a different few
+  percent of a node, consistently for that query; narrower bands alone do not fix it (and 3 of the 8,
+  including the Samsung QN70H, were in neither). The `deals:<node>` lane is the cheap complement: it
+  surfaces the missed products when they are on a deal, which is when they matter.
 
 ## noon.com (Egypt) category paths
 

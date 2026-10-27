@@ -268,7 +268,7 @@ commented template.
 | `[[watch]] require_words`, `exclude_words` | none | Title filters for new products (case-insensitive substrings): the title must contain one of `require_words` and none of `exclude_words`; a title containing "console" is not excluded (bundles) unless it also contains " for " (an accessory for a console). For noisy sources such as searches |
 | `[[watch]] min_price` | none | EGP floor for crawling and alerting |
 | `[[watch]] min_drop` | none | This group's own price-drop threshold |
-| `[[watch]] amazon_eg`, `noon_eg`, `jumia_eg`, `cairosales_eg`, `2b_eg` | | One root or a list: `category:<id>` or `search:<words>`, optionally `\|price:<min>-<max>` (Jumia and Cairo Sales ids are URL slugs, e.g. `televisions`, `tvs-screens/oled`; 2B ids are Magento's numbers, e.g. `131`). Deal-feed roots (fast lanes) use the shop's own filter syntax inside the id: Amazon `category:<node>,p_n_deal_type:26901036031`, noon `category:<path>?f[min_offer_price]=7_days`, Jumia `category:flash-sales` (see GUIDE, Algorithm 3) |
+| `[[watch]] amazon_eg`, `noon_eg`, `jumia_eg`, `cairosales_eg`, `2b_eg` | | One root or a list: `category:<id>` or `search:<words>`, optionally `\|price:<min>-<max>` (Jumia and Cairo Sales ids are URL slugs, e.g. `televisions`, `tvs-screens/oled`; 2B ids are Magento's numbers, e.g. `131`). Deal-feed roots (fast lanes) use the shop's own filter syntax inside the id: Amazon `category:<node>,p_n_deal_type:26901036031` and `deals:<node>` (the Today's Deals JSON API), noon `category:<path>?f[min_offer_price]=7_days`, Jumia `category:flash-sales` (see GUIDE, Algorithm 3) |
 
 Changing a watch's `min_price` or roots creates new plan jobs and deletes the old ones with their slices;
 product history is kept.

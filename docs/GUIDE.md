@@ -385,7 +385,8 @@ crawled like any other slice (same group, same interval and cap, same filters):
 
 | Shop | Root key | What it lists | Size (27 Oct) |
 | --- | --- | --- | --- |
-| amazon.eg | `category:<node>,p_n_deal_type:26901036031` (Amazon's "All discounts" refinement; `26901035031` is "Today's deals", much smaller) | products in the node with any discount | TVs 42, fridges 89, ACs 105, phones 37, tablets 6, laptops 7, monitors 17, headphones 131 |
+| amazon.eg | `category:<node>,p_n_deal_type:26901036031` (Amazon's "All discounts" refinement; `26901035031` is "Today's deals", much smaller) | products in the node with any discount | TVs 42, fridges 89, ACs 105, phones 37, tablets 6, laptops 7, monitors 17, headphones 131  |
+| amazon.eg | `deals:<node>` (the Today's Deals page's JSON API filtered to the browse node; docs/CATEGORIES.md) | products of the node enrolled in Amazon's deals programme, including ones the node's search listing omits (each search query drops a different few percent of a node) | one request per group: TVs 15, PS5 node 91, phones 3 |
 | noon | `category:<path>?f[min_offer_price]=7_days` (noon's own "lowest price in 7 days" filter; `30_days` and `365_days` exist too; `deal_tag` = `deals-generic` / `mega-deal` was empty when checked) | products whose price just hit a 7-day low | phones 200 of 1,071 |
 | Jumia | `category:flash-sales` (its own watch group, "Jumia flash sales", 10 to 15 min) | the flash-sale page, all categories; the adapter marks these listings `limited_deal`, so a new product with a 30%+ claimed discount can alert the first time it is seen | 409, 86 above 1,500 EGP |
 | Cairo Sales, 2B | none found | | |
