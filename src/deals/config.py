@@ -47,6 +47,10 @@ class Watch:
     name: str
     targets: dict[str, list[str]]  # site -> root slice keys
     interval_minutes: int = 60
+    # Slowest a quiet slice of this group may get (minutes). Flash sales start in *quiet* slices,
+    # so for groups you want to catch within minutes this cap matters more than interval_minutes.
+    # Default: interval_minutes x schedule.max_interval_factor.
+    max_interval_minutes: int | None = None
     min_price: int | None = None  # EGP; cheaper products are neither crawled nor alerted
     min_drop: float | None = None  # overrides alerts.min_drop for this group
     label: str | None = None  # display name in alerts (e.g. Arabic); defaults to name
@@ -116,14 +120,15 @@ def load(path: Path) -> Config:
             value = w.get(site)
             if value:
                 targets[site] = [value] if isinstance(value, str) else list(value)
-        unknown = set(w) - set(SITES) - {"name", "label", "interval_minutes", "min_price", "min_drop",
-                                          "require_words", "exclude_words"}
+        unknown = set(w) - set(SITES) - {"name", "label", "interval_minutes", "max_interval_minutes",
+                                          "min_price", "min_drop", "require_words", "exclude_words"}
         if unknown:
             raise ValueError(f"watch {w.get('name')!r}: unknown keys {sorted(unknown)}")
         watches.append(Watch(
             name=w["name"],
             targets=targets,
             interval_minutes=w.get("interval_minutes", 60),
+            max_interval_minutes=w.get("max_interval_minutes"),
             min_price=w.get("min_price"),
             min_drop=w.get("min_drop"),
             label=w.get("label"),

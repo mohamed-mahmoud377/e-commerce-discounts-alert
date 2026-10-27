@@ -157,8 +157,22 @@ Measured on 280 cards from category pages (phones, fryers, fridges, headphones, 
 
 **Flash sales.** `/flash-sales/` (409 products when checked) shows a stock bar (`stock`: "3 items left",
 "28 items in stock"). The same products on their category pages carry the same flash price but no flash
-marker at all (checked 12 of 12), so a category crawl cannot tell a flash sale. A future improvement could
-crawl `/flash-sales/` as its own source and mark those SKUs `limited_deal`.
+marker at all (checked 12 of 12), so a category crawl cannot tell a flash sale. Since 27 October 2026 the
+page is crawled as its own watch group (`category:flash-sales`, 86 products above 1,500 EGP, every 10 to
+15 minutes) and the adapter marks its listings `limited_deal`, so a product first seen there with a 30%+
+claimed discount alerts as a new listing; products already known from a category keep their group and are
+judged against their history. The price filter (`?price=`) works on the page.
+
+**Category pages alternate prices (found 27 October 2026).** The Alaska 377 L chest freezer
+(`AL483HA1TDIHPNAFAMZ`) was recorded at 27,500, then 17,999 with a crossed-out 27,500, then 27,500 again,
+then 17,999, on four consecutive 10-minute crawls of `appliances-fridges-freezers|price:5000-` by the same
+Mac, and 30 Jumia products did the same A-B-A dance within a day (13 of the 41 Jumia drops of 20%+ "reverted"
+within 14 minutes on average). A `search:` for the freezer showed 17,999 on four loads in a row. So Jumia's
+category pages are served from two caches, one with the flash price and one without; the flash price is the
+real one. Consequences: the product's history is a blend of both prices, so after 3 days the rarity rule
+sees "at 17,999 half the time" and will not alert on it, and the "flip-flop" count in `make health` is mostly
+this. Not fixed yet. Ideas: prefer the sighting that carries a crossed-out price when the other does not;
+or treat an A-B-A within one hour as a cache artefact and keep A's history row only.
 
 **Other sellers.** Unlike noon, each Jumia SKU has one seller; the listing shows that SKU's price. When other
 sellers offer the same product, the card carries `mpg.otherOffers` and the cheapest of their prices; we

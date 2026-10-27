@@ -243,7 +243,17 @@ def cmd_categories(args) -> None:
                                             ("Audio", "home-theaters-speakers")],
                           "2b_eg": [("Computer", "118"), ("Mobile & Tablet", "266"), ("Home Appliances", "2370"),
                                     ("Televisions", "1932"), ("Audio", "2382"), ("Gaming", "120"),
-                                    ("Electronics", "610")]}[args.site]:
+                                    ("Electronics", "610")],
+                          "btech_eg": [("TVs & Projectors", "tvs-projectors"), ("Large Home Appliances", "large-home-appliances"),
+                                       ("Small Home Appliances", "small-home-appliances"), ("Mobiles & Tablets", "mobiles-tablets"),
+                                       ("Laptops & PCs", "laptop-pc"), ("Audio & Recording", "audio-recording"),
+                                       ("Gaming Area", "gaming-area"), ("Electronics", "electronics"),
+                                       ("Wearables", "wearables"), ("Personal Care", "personal-care")],
+                          "dream2000_eg": [("TVs", "tvs"), ("Mobiles", "mobiles"), ("Tablets", "tablets"), ("Laptops", "laptop"),
+                                           ("Air Conditioners", "air-conditioners"), ("Refrigerators", "refrigerator-and-deep-freezer"),
+                                           ("Kitchen Appliances", "kitchen-appliances"), ("Gaming", "gaming"),
+                                           ("Audio", "audio"), ("Electronics", "electronics"),
+                                           ("every collection (386)", "https://dream2000.com/en/collections.json?limit=250&page=1")]}[args.site]:
             print(f"  {name:<25} {cid}")
 
 

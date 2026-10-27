@@ -50,6 +50,13 @@ Facts that shaped the crawler:
   would record junk. The parser now flags a page with cards but no result bar (`PageResult.decoy`) and
   the site raises `Blocked`, which pauses that IP on Amazon like a challenge. Lesson: don't run ad-hoc
   Amazon fetches from a machine that runs a worker.
+- **Deals refinement (fast lane, 27 Oct 2026).** The search sidebar's "Deals & Discounts" facet is
+  `p_n_deal_type` (facet id 26901034031): `26901036031` = All discounts, `26901035031` = Today's / limited-time
+  deals (tiny: 1 phone, 3 overall when checked). Any extra refinement can be written straight into the
+  category id, `category:21832883031,p_n_deal_type:26901036031`, because the adapter sends the id as the
+  `n:` refinement and the price filter after it. Sizes above each group's minimum price: TVs 42, fridges 89,
+  ACs 105, phones 37, tablets 6, laptops 7, monitors 17, headphones 131, so a sweep of all eight is about 20
+  pages. The deals page itself (`/-/en/deals`) is rendered by JavaScript (0 product cards in the HTML).
 
 ## noon.com (Egypt) category paths
 
@@ -81,6 +88,12 @@ Facts that shaped the crawler:
 - Every crossed-out price is reported as kind `list` (noon does not say whether it is a past price or an
   RRP), so claims of 60%+ are rejected for new listings.
 - Cloud IPs get HTTP 403 from Akamai; only home/office connections can crawl noon.
+- **Price-drop feed (fast lane, 27 Oct 2026).** The catalogue API's facets include `min_offer_price`
+  ("Price drop": `365_days`, `30_days`, `7_days` = lowest price in that window) and `deal_tag`
+  (`deals-generic`, `mega-deal`; both had 0 products in phones when checked). Written into the category id
+  after a `?`, `category:<path>?f[min_offer_price]=7_days`, the adapter passes it through as a query
+  parameter: phones gave 200 of 1,071 products, 4 pages instead of 22. Unknown parameters are silently
+  ignored (`f[is_deal]`, `f[has_discount]` returned the whole category), so check `nbHits` when trying a new one.
 
 ## jumia.com.eg category slugs
 
@@ -110,6 +123,11 @@ Facts that shaped the crawler:
 - Categories hold products that are in none of their children (air conditioners: 135 of 1,274), so Jumia
   is split by price only. The same turned out true on Amazon and noon (below), so every shop is now.
 - 88% of cards show a seller-set crossed-out price and 45% say "3 or fewer left": neither is evidence.
+- `category:flash-sales` crawls the flash-sale page (409 products, 86 above 1,500 EGP, all categories); the
+  price filter works on it and its listings get the `limited_deal` badge. It is its own watch group.
+- **Category pages alternate between a flash price and the regular price** on consecutive loads from the
+  same machine (Alaska 377 L freezer: 27,500, 17,999, 27,500, 17,999 at 10-minute crawls, 30 products in
+  a day), while a search for the product shows the flash price every time. Details in [JUMIA.md](JUMIA.md).
 
 ## cairosales.com category slugs
 
@@ -168,6 +186,29 @@ Facts that shaped the crawler:
 - "Only N left" sits on 57% of products, so it is not evidence (`LOW_STOCK_EVERYWHERE`); every product
   shows a regular price above its final price (claims of 25 to 30% are the norm), treated like an RRP.
 - An unknown category id returns 0 products with no error, so the adapter looks the category up separately.
+
+## btech.com category slugs
+
+The URL path under `/en/c/` (`tvs-projectors/televisions`); the API only uses the last segment and every slug
+is unique across the 330-slug tree, so `category:televisions` works too. `deals categories btech_eg <slug>`
+lists children with counts; the 12 departments are tvs-projectors 502, large-home-appliances 1,987,
+small-home-appliances 4,009, mobiles-tablets 2,593, laptop-pc 2,242, audio-recording 428, gaming-area 306,
+electronics 1,093, wearables 339, personal-care 1,057, non-electronics 5, tech-care 4. The watch-group table
+with every slug used is in [BTECH.md](BTECH.md). Quirks: only in-stock offers are listed; half the offers are
+third-party sellers with their own skus; pre-owned laptops and consoles sit next to new ones (the consoles
+group excludes "pre-owned" titles; `pre-owned-laptops` is a separate category that is not tracked); an
+unknown slug answers 0 products, which the adapter catches by checking the tree.
+
+## dream2000.com collection handles
+
+Shopify collection handles (`mobiles`, `refrigerator-and-deep-freezer`): flat, no tree. All 386 with counts:
+`https://dream2000.com/en/collections.json?limit=250&page=1` and `page=2`. The general collections used per
+group are in [DREAM2000.md](DREAM2000.md); next to them the shop keeps one collection per brand
+("samsung-tvs", "lg-tvs") and marketing ones ("48-hours-offers", "last-piece", "back-to-school"), all
+subsets. Quirks: no price filter and no search (the coordinator applies the minimum price); about half the
+catalogue is out of stock but keeps its price; several handles are misspelt (`kattle`, `bluethooth-headphones`,
+`nividia-rtx50`) and two overlap (`air-conditioner` 71 and `air-conditioners` 61); products are keyed by Shopify
+id plus the non-colour variant values (`8255092588683:8gb-256gb`).
 
 ## Parent categories hold products their children don't (all shops)
 

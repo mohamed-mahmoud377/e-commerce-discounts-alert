@@ -8,7 +8,7 @@ so big categories must be split into sub-categories / price ranges.
 
 import re
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import parse_qsl, urlencode
 
 from curl_cffi import requests
 
@@ -30,17 +30,7 @@ class NoonEG:
         self._session = requests.Session(impersonate="chrome")
 
     def fetch_page(self, slice: Slice, page: int) -> PageResult:
-        params: dict[str, str | int] = {"page": page}
-        if slice.kind == "search":
-            path = "search"
-            params["q"] = slice.value
-        else:  # category path, e.g. electronics-and-mobiles/mobiles-and-accessories
-            path = slice.value.strip("/")
-        if slice.price_min is not None:
-            params["f[price][min]"] = slice.price_min
-        if slice.price_max is not None:
-            params["f[price][max]"] = slice.price_max
-
+        path, params = request_for(slice, page)
         r = self._session.get(f"{API}/{path}/?{urlencode(params)}", timeout=30,
                               headers={"x-locale": "en-eg", "x-mp": "noon"})
         if r.status_code in (403, 429) or "json" not in r.headers.get("content-type", ""):
@@ -56,6 +46,29 @@ class NoonEG:
                 raise UnknownTarget(f"{self.name}: unknown category {path!r} (site returned {found!r})")
             current = path
         return parse_catalog(data, page, current)
+
+
+def request_for(slice: Slice, page: int) -> tuple[str, dict[str, str | int]]:
+    """API path and query for a slice.
+
+    A category value may carry extra catalogue filters after a `?`, in the API's own
+    syntax, e.g. `category:<path>?f[min_offer_price]=7_days` crawls only the products
+    whose price is at its lowest in 7 days: noon's own price-drop feed, a cheap fast
+    lane for flash sales (see docs/CATEGORIES.md). The price filter is added as usual.
+    """
+    params: dict[str, str | int] = {"page": page}
+    if slice.kind == "search":
+        path = "search"
+        params["q"] = slice.value
+    else:  # category path, e.g. electronics-and-mobiles/mobiles-and-accessories
+        path, _, extra = slice.value.partition("?")
+        path = path.strip("/")
+        params.update(parse_qsl(extra, keep_blank_values=True))
+    if slice.price_min is not None:
+        params["f[price][min]"] = slice.price_min
+    if slice.price_max is not None:
+        params["f[price][max]"] = slice.price_max
+    return path, params
 
 
 def parse_catalog(data: dict, page: int, current_category: str | None = None) -> PageResult:

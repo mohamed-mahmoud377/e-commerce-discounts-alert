@@ -137,6 +137,9 @@ Lines worth reacting to:
 | `blocked: cairosales_eg: ...` / `blocked: 2b_eg: ...` | Same, on Cairo Sales or 2B (both always refuse cloud IPs) | Pauses by itself; see [CAIROSALES.md](CAIROSALES.md) / [2B.md](2B.md) |
 | `cairosales_eg: /en/x/ redirected to /en/` | Unknown Cairo Sales slug (the shop answers with its homepage) | Fix the slug (`deals categories cairosales_eg <parent>`) |
 | `2b_eg: no category with id N` | Unknown 2B category id | Fix the id (`deals categories 2b_eg <parent id>`) |
+| `blocked: btech_eg: the API refused our guest token twice` | B.TECH's API answers 401/403 even with a fresh session cookie (cloud IP, or the token scheme changed) | Pauses by itself; from a cloud IP remove `btech_eg` from that worker; see docs/BTECH.md |
+| `btech_eg: no category with slug 'x'` | Unknown B.TECH slug | `deals categories btech_eg <department>` |
+| `dream2000_eg: no collection with handle 'x'` | Unknown Dream 2000 collection | Look it up in `https://dream2000.com/en/collections.json?limit=250` |
 | `lease lost` | The device was too slow (over 5 min between pages) and the job went to another device | Fine occasionally |
 
 ## Telegram warnings

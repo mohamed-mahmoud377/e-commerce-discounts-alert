@@ -274,3 +274,205 @@ def test_2b_challenge_and_unknown_category(monkeypatch):
     next_response = lambda: Response(200, {"errors": [{"message": "Cannot query field x"}]})
     with pytest.raises(ValueError, match="GraphQL error"):
         twob_eg.TwoBEG().fetch_page(Slice("category", "131", None, None), 1)
+
+
+def test_btech_body_tree_and_parse():
+    from deals.models import BESTSELLER, Blocked
+    from deals.sites.btech_eg import build_body, category_slug, guest_token, parse_category_tree, parse_products
+    assert category_slug("tvs-projectors/televisions") == "televisions" == category_slug("/televisions/")
+    body = build_body(Slice("category", "tvs-projectors/televisions", 3000, 10000), 2)
+    assert body == {"page": 2, "page_size": 100, "sort_by": "price_asc",
+                    "filters": {"in_stock": True, "categories": "televisions", "price_range": {"min": 3000, "max": 10000}}}
+    body = build_body(Slice("search", "playstation 5", 8000, None), 1)
+    assert body["search_query"] == "playstation 5" and body["filters"] == {"in_stock": True, "price_range": {"min": 8000}}
+    assert "categories" not in body["filters"]
+
+    result = parse_products(fixture_json("btech_products.json.gz"), 1)
+    assert len(result.listings) == 100 and result.total == 320 and result.has_next
+    assert len({x.sku for x in result.listings}) == 100
+    own = next(x for x in result.listings if x.sku == "1TSKTVFS3222A000L007")  # B.TECH's own offer with a promotion
+    assert (own.price, own.list_price, own.list_price_kind, own.in_stock, own.brand) == (424900, 449900, "was", True, "Skyline")
+    assert own.seller is None and own.badges == (BESTSELLER,) and own.title.startswith("Skyline 32 Inch TV")
+    assert own.url == "https://btech.com/en/p/06b30035-3d58-4d29-99fc-0f08ed2c3dcc?offering_id=4e0e2f2d-4246-48cf-8775-d36ba2c91345"
+    third_party = [x for x in result.listings if x.seller]
+    assert len(third_party) == 68 and all(x.list_price_kind in (None, "list") for x in third_party)
+    readable = next(x for x in result.listings if x.sku == "GQQNJRYDNUNPIARRXBZL")
+    assert readable.url.startswith("https://btech.com/en/p/evolve-32-inch-fhd-standard-led-frameless-tv?offering_id=")
+    assert not parse_products({"items": [], "total_items": 0, "total_pages": 0}, 1).has_next
+
+    tree = parse_category_tree(fixture_text("btech_category.html.gz"))
+    assert len(tree) == 330 and tree["televisions"]["value"] == "Televisions" and tree["televisions"]["count"] == 320
+    assert [c["id"] for c in tree["tvs-projectors"]["options"]][:3] == ["projectors", "satellite-equipment", "televisions"]
+    assert "no-such-thing" not in tree
+
+    cookie = "%7B%22accessToken%22%3A%22ory_st_x%22%2C%22JWT%22%3A%22eyJhbGciOiJIUzI1NiJ9.e30.sig%22%2C%22isGuest%22%3Atrue%7D"
+    assert guest_token(cookie) == "eyJhbGciOiJIUzI1NiJ9.e30.sig"
+    with pytest.raises(Blocked, match="guest token"):
+        guest_token(None)
+
+
+def test_btech_unknown_category_token_refresh_and_block(monkeypatch):
+    from deals.models import Blocked, UnknownTarget
+    from deals.sites import btech_eg
+
+    page_html = fixture_text("btech_category.html.gz")
+    cookie = "%7B%22JWT%22%3A%22tok%22%7D"
+    calls = []
+
+    class Response:
+        def __init__(self, status_code, body=None, text="", ctype="application/json"):
+            self.status_code, self._body, self.text = status_code, body, text
+            self.headers = {"content-type": ctype}
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self._body
+
+    class Cookies(dict):
+        pass
+
+    class Session:
+        def __init__(self, impersonate):
+            calls.append(("session", impersonate))
+            self.cookies = Cookies()
+
+        def get(self, url, timeout):
+            calls.append(("get", url))
+            self.cookies["btech-auth-session"] = cookie
+            return Response(200, text=page_html, ctype="text/html")
+
+        def post(self, url, json, timeout, headers):
+            calls.append(("post", json["filters"].get("categories"), headers["authorization"]))
+            return next_response()
+
+    monkeypatch.setattr(btech_eg.requests, "Session", Session)
+    ok = {"items": [], "total_items": 0, "total_pages": 0}
+    next_response = lambda: Response(200, ok)
+    site = btech_eg.BtechEG()
+    # the slug is checked against the tree before the API is called; the tree is fetched once
+    with pytest.raises(UnknownTarget, match="no-such-thing"):
+        site.fetch_page(Slice("category", "no-such-thing", 3000, None), 1)
+    assert [c[0] for c in calls] == ["session", "get"]
+    result = site.fetch_page(Slice("category", "tvs-projectors/televisions", 3000, None), 1)
+    assert result.total == 0 and [c.id for c in result.subcategories][:2] == ["smart-tvs", "standard-tvs"] or result.subcategories
+    assert calls[-1] == ("post", "televisions", "Bearer tok")
+    # a refused token: one fresh session (new cookie), then Blocked
+    answers = iter([Response(401, {"message": "Unauthorized"}), Response(401, {"message": "Unauthorized"})])
+    next_response = lambda: next(answers)
+    calls.clear()
+    with pytest.raises(Blocked, match="guest token twice"):
+        site.fetch_page(Slice("search", "ps5", None, None), 1)
+    assert [c[0] for c in calls] == ["post", "session", "get", "post"]
+    # a page past the end answers HTTP 500: the slice shrank, treat it as empty
+    next_response = lambda: Response(500, {"detail": "Error executing search with filters request"})
+    assert site.fetch_page(Slice("search", "ps5", None, None), 3).listings == []
+    with pytest.raises(ValueError, match="API changed"):
+        site.fetch_page(Slice("search", "ps5", None, None), 1)
+
+
+def test_dream2000_variants_fold_into_listings():
+    from deals.sites.dream2000_eg import parse_products, product_listings
+    data = fixture_json("dream2000_products.json.gz")
+    result = parse_products(data, total=112)
+    assert result.total == 112 and not result.has_next  # 111 products < 250: a single page
+    assert len({x.sku for x in result.listings}) == len(result.listings) > 111
+    a17 = [x for x in result.listings if x.sku.startswith("8255092588683")]
+    # RAM and storage make separate listings; the four colours of each fold into one
+    assert sorted(x.sku for x in a17) == ["8255092588683:4gb-128gb", "8255092588683:6gb-128gb", "8255092588683:8gb-256gb"]
+    big = next(x for x in a17 if x.sku.endswith("8gb-256gb"))
+    assert (big.price, big.list_price, big.list_price_kind, big.in_stock) == (2049000, 2460000, "list", True)
+    assert big.title == "Samsung Galaxy A17 (8GB / 256GB)" and big.brand == "Samsung"
+    assert big.url == "https://dream2000.com/en/products/galaxy-a17"
+    small = next(x for x in a17 if x.sku.endswith("4gb-128gb"))
+    assert small.price == 1333000 and not small.in_stock  # sold out, price still shown
+    # a product whose only option is colour (or none at all) is one listing keyed by its id
+    single = [x for x in result.listings if ":" not in x.sku]
+    assert single and all(x.sku.isdigit() for x in single)
+    # the cheapest *available* variant sets the price; sold-out ones only when nothing is available
+    product = {"id": 1, "title": "Watch", "handle": "watch", "vendor": "Amazfit",
+               "options": [{"name": "Color"}],
+               "variants": [{"option1": "Black", "price": "1000.00", "compare_at_price": "1500.00", "available": False},
+                            {"option1": "Pink", "price": "1200.00", "compare_at_price": None, "available": True}]}
+    (watch,) = product_listings(product)
+    assert (watch.sku, watch.price, watch.list_price, watch.in_stock, watch.title) == ("1", 120000, None, True, "Watch")
+    product["variants"][1]["available"] = False
+    (watch,) = product_listings(product)
+    assert (watch.price, watch.list_price, watch.in_stock) == (100000, 150000, False)
+    empty = parse_products({"products": []}, total=None)
+    assert empty.total == 0 and not empty.has_next
+    assert parse_products({"products": [product] * 250}).has_next
+
+
+def test_dream2000_unknown_handle_search_and_block(monkeypatch):
+    from deals.models import Blocked, UnknownTarget
+    from deals.sites import dream2000_eg
+
+    urls = []
+
+    class Response:
+        def __init__(self, status_code, body=None, ctype="application/json"):
+            self.status_code, self._body, self.headers = status_code, body, {"content-type": ctype}
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self._body
+
+    class Session:
+        def __init__(self, impersonate):
+            pass
+
+        def get(self, url, timeout):
+            urls.append(url)
+            return next_response(url)
+
+    monkeypatch.setattr(dream2000_eg.requests, "Session", Session)
+    site = dream2000_eg.Dream2000EG()
+    next_response = lambda url: Response(404, None, "text/html")
+    with pytest.raises(UnknownTarget, match="no-such-xyz"):
+        site.fetch_page(Slice("category", "no-such-xyz", 2500, None), 1)
+    assert urls == ["https://dream2000.com/en/collections/no-such-xyz.json"]
+    with pytest.raises(UnknownTarget, match="no product search"):
+        site.fetch_page(Slice("search", "ps5", None, None), 1)
+    # page 1 asks for the count, later pages don't; 250 products mean another page
+    next_response = lambda url: Response(200, {"collection": {"products_count": 300}} if url.endswith(".json")
+                                         else {"products": [{"id": i, "title": "x", "handle": "x", "options": [], "variants": [
+                                             {"price": "10.00", "available": True}]} for i in range(250)]})
+    urls.clear()
+    page = site.fetch_page(Slice("category", "accessories", None, None), 1)
+    assert page.total == 300 and page.has_next and len(page.listings) == 250
+    assert urls == ["https://dream2000.com/en/collections/accessories.json",
+                    "https://dream2000.com/en/collections/accessories/products.json?limit=250&page=1"]
+    urls.clear()
+    site.fetch_page(Slice("category", "accessories", None, None), 2)
+    assert urls == ["https://dream2000.com/en/collections/accessories/products.json?limit=250&page=2"]
+    next_response = lambda url: Response(430, None, "text/html")
+    with pytest.raises(Blocked, match="HTTP 430"):
+        site.fetch_page(Slice("category", "accessories", None, None), 2)
+
+
+def test_noon_category_value_may_carry_extra_catalogue_filters():
+    """`category:<path>?f[min_offer_price]=7_days` crawls noon's own price-drop feed (fast lane)."""
+    from deals.sites.noon_eg import request_for
+
+    path, params = request_for(Slice("category", "electronics-and-mobiles/tvs?f[min_offer_price]=7_days", 3000, None), 2)
+    assert path == "electronics-and-mobiles/tvs"
+    assert params == {"page": 2, "f[min_offer_price]": "7_days", "f[price][min]": 3000}
+    path, params = request_for(Slice("category", "electronics-and-mobiles/tvs", None, 5000), 1)
+    assert (path, params) == ("electronics-and-mobiles/tvs", {"page": 1, "f[price][max]": 5000})
+    assert request_for(Slice("search", "ps5 console"), 1) == ("search", {"page": 1, "q": "ps5 console"})
+
+
+def test_jumia_flash_sale_listings_carry_the_deal_badge():
+    from deals.models import LIMITED_DEAL
+    from deals.sites.jumia_eg import _parse_product
+
+    card = {"sku": "AB1", "name": "Fryer", "brand": "Fresh", "url": "/fryer.html",
+            "prices": {"rawPrice": "1999.00", "oldPrice": "EGP 2,999.00"}, "isBuyable": True,
+            "stock": {"percent": 3, "text": "3 items left"}}
+    flash = _parse_product(card, flash=True)
+    assert flash.badges == (LIMITED_DEAL,) and flash.stock_left == 3 and flash.list_price == 299_900
+    assert _parse_product(card).badges == ()

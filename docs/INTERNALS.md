@@ -17,6 +17,8 @@ owns one job.
 | `sites/jumia_eg.py` | 191 | Fetching Jumia category pages with Safari's TLS fingerprint (Cloudflare), reading the embedded `__STORE__` JSON, detecting redirects to the parent category | models, base |
 | `sites/cairosales_eg.py` | 150 | Fetching Cairo Sales (PrestaShop) category pages with Chrome's TLS fingerprint, 60 cards a page sorted by price; unpriced cards are out of stock; homepage redirects are unknown slugs | models, base |
 | `sites/twob_eg.py` | 140 | 2B's Magento GraphQL API: one POST per 100 products with exact counts, categories by numeric id | models |
+| `sites/btech_eg.py` | 230 | B.TECH's product search API (guest token from the session cookie, 100 products a POST, inclusive price filter); the category tree read from a category page once a day to validate slugs | models |
+| `sites/dream2000_eg.py` | 120 | Dream 2000's Shopify collection JSON (250 products a GET, exact counts, no price filter); variants folded by everything but colour | models |
 | `sites/base.py` | 35 | The `Site` interface every shop implements; money and count parsing | models |
 | `planner.py` | 93 | Splitting a root into slices under the shop's limit, by price ranges only | models |
 | `db.py` | 349 | Schema and migrations; `record()` (upsert a product, append history on change); backups | models |
@@ -190,7 +192,7 @@ and `DEALS_DATA_DIR` (or the matching flags). It keeps no database; its only loc
 | Thread | Does |
 | --- | --- |
 | main | Starts the others, waits, handles Ctrl+C / SIGTERM by setting the stop event |
-| one per shop (`amazon_eg`, `noon_eg`, `jumia_eg`, `cairosales_eg`, `2b_eg`) | `_loop`: lease, crawl or plan, pause, repeat. Each holds its own shop adapter and HTTP session |
+| one per shop (`amazon_eg`, `noon_eg`, `jumia_eg`, `cairosales_eg`, `2b_eg`, `btech_eg`, `dream2000_eg`) | `_loop`: lease, crawl or plan, pause, repeat. Each holds its own shop adapter and HTTP session |
 | `log-shipper` | Every 10 s posts up to 500 buffered log lines to `/api/logs`; keeps up to 1,000 while the server is unreachable |
 
 **Timeouts and retries.**
@@ -248,7 +250,7 @@ commented template.
 | `[alerts] max_share_at_or_below` | 0.15 | No alert when the product was at or below this price more than 15% of the time |
 | `[alerts] new_product_min_drop` | 0.30 | Claimed discount needed for new listings |
 | `[alerts] list_max_claimed_drop` | 0.60 | A bigger claim against an RRP ("list") price is rejected |
-| `[alerts] confirm_low_confidence` | true | Hold low-confidence alerts until the product is seen again at that price |
+| `[alerts] confirm_low_confidence` | true | Hold low-confidence alerts until the product is seen again at that price. The live config sets it to `false` since 27 Oct 2026 (0 of 105 held alerts were cancelled; the hold cost 14 min on average) |
 | `[alerts] confirm_early_drops` | false | Also hold early drops (by default they are sent at once; only new listings wait) |
 | `[alerts] confirm_minutes` | 90 | ...but send anyway after this long if nobody rechecked it (the hold is at least 3x the group's interval + 10 min, so a slow group can actually be rechecked) |
 | `[alerts] realert_after_days` | 7 | No repeat alert within this many days... |
@@ -261,11 +263,12 @@ commented template.
 | `[[watch]] name` | required | Group name used in the database (keep it stable) |
 | `[[watch]] label` | name | Display name in Arabic messages |
 | `[[watch]] interval_minutes` | 60 | Starting revisit interval for its slices |
+| `[[watch]] max_interval_minutes` | interval x `max_interval_factor` | Cap on how slow a quiet slice of this group may get. The worst-case time to notice a flash sale; 15 min for the top groups, 30 for TVs, fridges, laptops, monitors |
 | `[[watch]] min_price` | none | EGP. Crawl price bands start here, and a *new* product below it (or without a price) is not recorded; known products keep being updated |
 | `[[watch]] require_words`, `exclude_words` | none | Title filters for new products (case-insensitive substrings): the title must contain one of `require_words` and none of `exclude_words`; a title containing "console" is not excluded (bundles) unless it also contains " for " (an accessory for a console). For noisy sources such as searches |
 | `[[watch]] min_price` | none | EGP floor for crawling and alerting |
 | `[[watch]] min_drop` | none | This group's own price-drop threshold |
-| `[[watch]] amazon_eg`, `noon_eg`, `jumia_eg`, `cairosales_eg`, `2b_eg` | | One root or a list: `category:<id>` or `search:<words>`, optionally `\|price:<min>-<max>` (Jumia and Cairo Sales ids are URL slugs, e.g. `televisions`, `tvs-screens/oled`; 2B ids are Magento's numbers, e.g. `131`) |
+| `[[watch]] amazon_eg`, `noon_eg`, `jumia_eg`, `cairosales_eg`, `2b_eg` | | One root or a list: `category:<id>` or `search:<words>`, optionally `\|price:<min>-<max>` (Jumia and Cairo Sales ids are URL slugs, e.g. `televisions`, `tvs-screens/oled`; 2B ids are Magento's numbers, e.g. `131`). Deal-feed roots (fast lanes) use the shop's own filter syntax inside the id: Amazon `category:<node>,p_n_deal_type:26901036031`, noon `category:<path>?f[min_offer_price]=7_days`, Jumia `category:flash-sales` (see GUIDE, Algorithm 3) |
 
 Changing a watch's `min_price` or roots creates new plan jobs and deletes the old ones with their slices;
 product history is kept.
@@ -276,8 +279,8 @@ Every change follows the same loop: write a test that shows what you want, chang
 `make deploy`, restart the Mac worker if worker or site code changed, `make health`, then check the real
 data with `make sql` or `make devices`.
 
-**Add a shop** (Jumia was added exactly this way on 26 October 2026, Cairo Sales and 2B on 27 October;
-[JUMIA.md](JUMIA.md), [CAIROSALES.md](CAIROSALES.md) and [2B.md](2B.md) show the analysis to do first: access,
+**Add a shop** (Jumia was added exactly this way on 26 October 2026, Cairo Sales, 2B, B.TECH and Dream 2000 on 27 October;
+[JUMIA.md](JUMIA.md), [CAIROSALES.md](CAIROSALES.md), [2B.md](2B.md), [BTECH.md](BTECH.md) and [DREAM2000.md](DREAM2000.md) show the analysis to do first: access,
 URL scheme or API, page caps, empty-result behaviour, category tree, signals):
 
 1. Create `src/deals/sites/<shop>.py` with a class having `name`, `max_slice_total` (the most products the

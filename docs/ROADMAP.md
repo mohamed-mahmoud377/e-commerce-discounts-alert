@@ -37,9 +37,11 @@ Ordered by value for effort. "Why" says what problem each one solves.
    a **daily digest** (top 10 deals, system health).
 9. **Effective price**: parse coupons ("Save 10% with coupon") and bank offers; alert on the price
    you'd actually pay.
-10. **Fast lane for hot items.** Re-check products that are near an alert threshold, or on your
-    personal watchlist, every few minutes via their product page, and crawl the shops' own deal
-    filters (noon `deal_tag`, `min_offer_price=7_days`; Amazon deals) every 10 minutes as an early-warning feed.
+10. **Fast lane for hot items.** *Half done 27 Oct 2026:* the shops' own deal feeds are crawled as extra
+    roots of each priority group (Amazon `p_n_deal_type`, noon `min_offer_price=7_days`, Jumia
+    `/flash-sales/`), and priority groups cap their backoff (`max_interval_minutes`). Still open: re-check
+    products that are near an alert threshold, or on a personal watchlist, every few minutes via their
+    product page.
 
 ## Later: scale and polish
 
@@ -48,7 +50,7 @@ Ordered by value for effort. "Why" says what problem each one solves.
     the internet) or Caddy + a domain for automatic HTTPS.
 12. **Web dashboard**: product page with a price chart, search, freshness per group, alert history.
     The data is all in SQLite already; FastAPI can serve it next to the API.
-13. **More shops**: B.TECH, 2B, Raya. Each needs one `sites/<shop>.py` (`fetch_page` +
+13. **More shops**: Raya, Carrefour (B.TECH, 2B, Dream 2000 done 27 October 2026). Each needs one `sites/<shop>.py` (`fetch_page` +
     parser) and a saved-page test; everything else (planner, scheduling, alerts) is shared. Jumia Egypt was
     added on 26 October 2026 ([JUMIA.md](JUMIA.md)); its open ideas: crawl `/flash-sales/` to mark flash
     deals, use the Official Store badge and the other-sellers price (`mpg`) in alerts.

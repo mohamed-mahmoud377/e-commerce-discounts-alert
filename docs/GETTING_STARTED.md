@@ -47,7 +47,7 @@ worker token** (they add it under `[workers]` in their config, named after you).
    ```bash
    DEALS_COORDINATOR=http://207.154.206.127:8787 \
    DEALS_TOKEN=<your token> \
-   DEALS_SITES=noon_eg,amazon_eg,jumia_eg,cairosales_eg,2b_eg \
+   DEALS_SITES=noon_eg,amazon_eg,jumia_eg,cairosales_eg,2b_eg,btech_eg,dream2000_eg \
    .venv/bin/deals worker
    ```
 
@@ -69,7 +69,7 @@ worker token** (they add it under `[workers]` in their config, named after you).
      WorkingDirectory=%h/e-commerce-discounts-alert
      Environment=DEALS_COORDINATOR=http://207.154.206.127:8787
      Environment=DEALS_TOKEN=<your token>
-     Environment=DEALS_SITES=noon_eg,amazon_eg,jumia_eg,cairosales_eg,2b_eg
+     Environment=DEALS_SITES=noon_eg,amazon_eg,jumia_eg,cairosales_eg,2b_eg,btech_eg,dream2000_eg
      ExecStart=%h/e-commerce-discounts-alert/.venv/bin/deals worker
      Restart=always
      RestartSec=10

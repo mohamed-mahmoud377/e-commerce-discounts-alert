@@ -18,7 +18,7 @@ from urllib.parse import urlencode, urlparse
 from curl_cffi import requests
 from selectolax.lexbor import LexborHTMLParser
 
-from deals.models import Blocked, Category, Listing, PageResult, Slice, UnknownTarget
+from deals.models import LIMITED_DEAL, Blocked, Category, Listing, PageResult, Slice, UnknownTarget
 from deals.sites.base import parse_money
 
 BASE = "https://www.jumia.com.eg"
@@ -28,6 +28,9 @@ IMPERSONATE = "safari"  # chrome/firefox fingerprints get the Cloudflare challen
 CHALLENGE_MARKERS = ("_cf_chl_opt", "challenge-platform", "<title>Just a moment")
 PRODUCTS_FOUND = re.compile(r"([\d,]+) products? found")
 STOCK_LEFT = re.compile(r"(\d+) items? left")
+# Jumia's flash-sale page (`category:flash-sales`): the only place a flash price is marked as
+# one (category cards show the same price with no marker), so its listings get the deal badge.
+FLASH_SALES = "flash-sales"
 INDENT = re.compile(r"-ph(x+)l\b")
 
 
@@ -88,9 +91,10 @@ def parse_catalog_page(html: str, requested_path: str, page: int = 1,
         raise UnknownTarget(f"jumia_eg: {requested_path} redirected to {served_path}")
 
     listings: dict[str, Listing] = {}
+    flash = requested_path.strip("/") == FLASH_SALES
     for product in store.get("products") or []:
         if product.get("sku") and not product.get("isSponsored") and product["sku"] not in listings:
-            listings[product["sku"]] = _parse_product(product)
+            listings[product["sku"]] = _parse_product(product, flash=flash)
     count = PRODUCTS_FOUND.search(html)
     total = int(count.group(1).replace(",", "")) if count else (0 if not listings else None)
     return PageResult(
@@ -111,7 +115,7 @@ def _store(html: str) -> dict:
     return json.loads(html[start:end].rstrip().rstrip(";"))
 
 
-def _parse_product(p: dict) -> Listing:
+def _parse_product(p: dict, *, flash: bool = False) -> Listing:
     prices = p.get("prices") or {}
     raw = prices.get("rawPrice")
     price = round(float(raw) * 100) if raw not in (None, "") else None
@@ -145,6 +149,7 @@ def _parse_product(p: dict) -> Listing:
         stock_left=stock_left,
         rating=rating.get("average") if reviews else None,
         reviews=reviews,
+        badges=(LIMITED_DEAL,) if flash else (),
     )
 
 

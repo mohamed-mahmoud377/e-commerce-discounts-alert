@@ -210,3 +210,28 @@ def test_tiny_slice_that_emptied_is_not_a_failure(client):
     client.post(f"/api/jobs/{job['id']}/page", headers=W2,
                 json={"lease_token": job["lease_token"], "page": 1, "listings": [], "done": True})
     assert conn.execute("SELECT failures FROM jobs WHERE kind = 'crawl'").fetchone()["failures"] == 1
+
+
+def test_quiet_slices_back_off_only_up_to_the_groups_cap(cfg):
+    """Flash sales start in quiet slices, so a group's max_interval_minutes bounds the time to notice one."""
+    from dataclasses import replace
+
+    from deals import scheduler
+
+    conn = db.connect(cfg.db_path)
+    now = utcnow()
+    capped = replace(cfg.watches[0], interval_minutes=10, max_interval_minutes=15)
+    cfg_capped = replace(cfg, watches=[capped])
+    with conn:
+        for target, grp in [("capped", "TVs"), ("free", "Other")]:
+            conn.execute("""INSERT INTO jobs (kind, site, target, root, grp, base_interval_s, interval_s, next_due_at,
+                                              created_at, run_changes, run_count)
+                            VALUES ('crawl', 'amazon_eg', ?, ?, ?, 600, 1500, ?, ?, 0, 10)""",
+                         (target, target, grp, iso(now), iso(now)))
+    for _ in range(6):  # no changes: the interval grows by 1.25 each time
+        with conn:
+            for job in conn.execute("SELECT * FROM jobs").fetchall():
+                scheduler.finish_crawl(conn, cfg_capped, job, now)
+    rows = {r["target"]: r["interval_s"] for r in conn.execute("SELECT target, interval_s FROM jobs")}
+    assert rows["capped"] == 15 * 60  # the group's cap
+    assert rows["free"] == 1800  # the default: base interval x max_interval_factor (3)

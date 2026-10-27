@@ -122,7 +122,13 @@ def extend(conn: sqlite3.Connection, cfg: Config, job_id: int, count: int, chang
 def finish_crawl(conn: sqlite3.Connection, cfg: Config, job: sqlite3.Row, now: datetime) -> None:
     job = conn.execute("SELECT * FROM jobs WHERE id = ?", (job["id"],)).fetchone()
     lowest = cfg.schedule.min_interval_minutes * 60
-    highest = max(lowest, int(job["base_interval_s"] * cfg.schedule.max_interval_factor))
+    watch = cfg.watch(job["grp"])
+    # A group can cap how far its quiet slices back off: a flash sale always starts in a
+    # quiet slice, so the cap is the worst-case time to notice it.
+    if watch and watch.max_interval_minutes:
+        highest = max(lowest, watch.max_interval_minutes * 60)
+    else:
+        highest = max(lowest, int(job["base_interval_s"] * cfg.schedule.max_interval_factor))
     if job["run_changes"]:
         interval = job["interval_s"] / 2
     else:

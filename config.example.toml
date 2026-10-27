@@ -29,7 +29,7 @@ early_min_history_days = 1    # from 1 day: a drop of early_min_drop below every
 max_share_at_or_below = 0.15  # no alert if the product was this cheap more than 15% of the time (recurring promos)
 new_product_min_drop = 0.30   # new products: site-claimed discount needed (plus a scarcity/deal signal)
 list_max_claimed_drop = 0.60  # a claim of 60%+ off an RRP ("list") price is rejected as fake
-confirm_low_confidence = true # hold low-confidence alerts until the price is seen again on the next crawl
+confirm_low_confidence = false # new-listing alerts go out at once (27 Oct 2026: 0 of 105 held alerts were ever cancelled; the hold cost 14 min on average)
 confirm_early_drops = false   # ...except early drops, which are sent at once (true = hold them too)
 confirm_minutes = 90          # ...but send anyway after this long if the product was not rechecked
 realert_after_days = 7        # don't repeat an alert for the same product within a week...
@@ -62,6 +62,14 @@ max_delay = 3.0
 min_delay = 1.0
 max_delay = 2.0
 
+[sites.btech_eg]  # B.TECH's product search API (100 products per request); its API host refuses cloud IPs
+min_delay = 1.0
+max_delay = 2.0
+
+[sites.dream2000_eg]  # Shopify collection JSON (250 products per request); works from anywhere
+min_delay = 1.0
+max_delay = 2.0
+
 # ---------------------------------------------------------------------------
 # What to track. Each [[watch]] is a product group with one root per site:
 #   amazon_eg = "category:<browse node id>"
@@ -69,12 +77,16 @@ max_delay = 2.0
 #   jumia_eg  = "category:<slug>"  (the URL path, e.g. televisions; see docs/JUMIA.md)
 #   cairosales_eg = "category:<slug>"  (the URL path under /en/, e.g. tvs-screens or small-appliances/fryers; docs/CAIROSALES.md)
 #   2b_eg     = "category:<number>"  (Magento's category id, e.g. 131 = TVs; docs/2B.md)
+#   btech_eg  = "category:<slug>"  (the URL path under /en/c/, e.g. tvs-projectors/televisions; docs/BTECH.md)
+#   dream2000_eg = "category:<handle>"  (the Shopify collection handle, e.g. mobiles; no search; docs/DREAM2000.md)
 # (or "search:<keywords>"; a list of roots also works). Find ids with:
 #   deals categories amazon_eg 18018102031
 #   deals categories noon_eg electronics-and-mobiles
 #   deals categories jumia_eg electronics
 #   deals categories cairosales_eg tvs-screens
 #   deals categories 2b_eg 2370
+#   deals categories btech_eg large-home-appliances
+#   deals categories dream2000_eg            (then https://dream2000.com/en/collections.json?limit=250 for every handle)
 # label is the name shown in alerts (optional, defaults to name).
 # min_price (EGP) skips cheap accessories/junk both when crawling and alerting.
 # interval_minutes is the starting revisit interval; it adapts per slice.
@@ -85,42 +97,70 @@ max_delay = 2.0
 name = "TVs"
 label = "تلفزيونات"
 interval_minutes = 20
+max_interval_minutes = 30   # quiet slices never back off past this: a flash sale is noticed within it
 min_price = 3000
-amazon_eg = "category:21832982031"
-noon_eg = "category:electronics-and-mobiles/television-and-video/televisions"
+amazon_eg = [
+    "category:21832982031",
+    "category:21832982031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
+]
+noon_eg = [
+    "category:electronics-and-mobiles/television-and-video/televisions",
+    "category:electronics-and-mobiles/television-and-video/televisions?f[min_offer_price]=7_days",  # fast lane: noon's "lowest price in 7 days" feed
+]
 jumia_eg = "category:televisions"
 cairosales_eg = "category:tvs-screens"
 2b_eg = "category:131"
+btech_eg = "category:tvs-projectors/televisions"
+dream2000_eg = "category:tvs"
 
 [[watch]]
 name = "Refrigerators"
 label = "ثلاجات"
 interval_minutes = 20
+max_interval_minutes = 30   # quiet slices never back off past this: a flash sale is noticed within it
 min_price = 5000
-amazon_eg = "category:21863822031"
-noon_eg = "category:home-and-kitchen/home-appliances-31235/large-appliances/refrigerators-and-freezers"
+amazon_eg = [
+    "category:21863822031",
+    "category:21863822031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
+]
+noon_eg = [
+    "category:home-and-kitchen/home-appliances-31235/large-appliances/refrigerators-and-freezers",
+    "category:home-and-kitchen/home-appliances-31235/large-appliances/refrigerators-and-freezers?f[min_offer_price]=7_days",  # fast lane: noon's "lowest price in 7 days" feed
+]
 jumia_eg = [
     "category:appliances-fridges-freezers",
     "category:freezers",
 ]
 cairosales_eg = ["category:refrigerators", "category:freezers"]
 2b_eg = ["category:260", "category:1905"]  # refrigerators, deep freezers
+btech_eg = ["category:large-home-appliances/refrigerators", "category:large-home-appliances/deep-freezers"]
+dream2000_eg = ["category:refrigerator-and-deep-freezer", "category:deep-freezer-1"]
 
 [[watch]]
 name = "Air conditioners"
 label = "تكييفات"
-interval_minutes = 10   # top priority: stays between 10 and 30 min
+interval_minutes = 10
+max_interval_minutes = 15   # quiet slices never back off past this: a flash sale is noticed within it
 min_price = 8000
-amazon_eg = "category:21863915031"
-noon_eg = "category:home-and-kitchen/home-appliances-31235/large-appliances/heating-cooling-and-air-quality/air-conditioners"
+amazon_eg = [
+    "category:21863915031",
+    "category:21863915031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
+]
+noon_eg = [
+    "category:home-and-kitchen/home-appliances-31235/large-appliances/heating-cooling-and-air-quality/air-conditioners",
+    "category:home-and-kitchen/home-appliances-31235/large-appliances/heating-cooling-and-air-quality/air-conditioners?f[min_offer_price]=7_days",  # fast lane: noon's "lowest price in 7 days" feed
+]
 jumia_eg = "category:air-conditioning"
 cairosales_eg = "category:air-conditioners"
 2b_eg = "category:262"  # air conditioners (the parent also holds coolers and purifiers, below 8,000)
+btech_eg = "category:large-home-appliances/air-conditioners"
+dream2000_eg = ["category:air-conditioners", "category:air-conditioner"]  # two overlapping collections
 
 [[watch]]
 name = "Gaming consoles"
 label = "أجهزة ألعاب (بلايستيشن، إكس بوكس، سويتش)"
-interval_minutes = 10   # top priority
+interval_minutes = 10
+max_interval_minutes = 15   # quiet slices never back off past this: a flash sale is noticed within it
 min_price = 8000        # consoles and bundles; games and controllers are cheaper
 # amazon.eg: the platform nodes (PlayStation 5 21868828031, Xbox Series 21868824031...) mix
 # consoles with games and accessories and the planner recurses into their Games children,
@@ -133,7 +173,10 @@ amazon_eg = [
     "search:xbox series x console",
     "search:xbox series s console",
 ]
-noon_eg = "category:electronics-and-mobiles/video-games-10181/gaming-console"
+noon_eg = [
+    "category:electronics-and-mobiles/video-games-10181/gaming-console",
+    "category:electronics-and-mobiles/video-games-10181/gaming-console?f[min_offer_price]=7_days",  # fast lane: noon's "lowest price in 7 days" feed
+]
 # Jumia: console-only categories plus searches (consoles are also filed under accessories)
 jumia_eg = [
     "category:playstation-5-consoles",
@@ -152,12 +195,16 @@ cairosales_eg = [
 ]
 # 2B: a PlayStation 5 category (3 consoles) plus a search; no Xbox or Nintendo on 2B
 2b_eg = ["category:162", "search:playstation 5"]
+# B.TECH: a Consoles category (63, with accessories) plus searches; Dream 2000: a small Consoles collection
+btech_eg = ["category:gaming-area/consoles", "search:playstation 5", "search:xbox series", "search:nintendo switch"]
+dream2000_eg = "category:consoles"
 # Searches and the console nodes still return pricey accessories (racing wheels, headsets, Pro
 # controllers), so only titles that look like a console are recorded; "console" in the title always wins.
 require_words = ["console", "playstation 5", "ps5", "playstation 4", "ps4", "xbox series", "xbox one",
                  "nintendo switch", "switch 2", "switch oled", "switch lite", "steam deck", "rog ally",
                  "legion go", "playstation portal"]
-exclude_words = ["controller", "gamepad", "joystick", "headset", "wheel", "pedal", "case", "cover", "skin",
+exclude_words = ["pre-owned", "pre owned", "used ", "refurbished",  # B.TECH sells used consoles next to new ones
+                 "controller", "gamepad", "joystick", "headset", "wheel", "pedal", "case", "cover", "skin",
                  "stand", "dock", "cable", "charger", "charging", "bag", "grip", "mount", "sticker",
                  "protector", "thumb", "strap", "card", "game ", "edition game", "mouse", "keyboard",
                  "chair", "monitor", "camera", "microphone", "fan ", "cooling", "manette", "arcade",
@@ -169,35 +216,62 @@ exclude_words = ["controller", "gamepad", "joystick", "headset", "wheel", "pedal
 [[watch]]
 name = "Phones"
 label = "موبايلات"
-interval_minutes = 10   # top priority (iPhone, Samsung...)
+interval_minutes = 10
+max_interval_minutes = 15   # quiet slices never back off past this: a flash sale is noticed within it
 min_price = 2500
-amazon_eg = "category:21832883031"
-noon_eg = "category:electronics-and-mobiles/mobiles-and-accessories/mobiles-20905/smartphones"
+amazon_eg = [
+    "category:21832883031",
+    "category:21832883031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
+]
+noon_eg = [
+    "category:electronics-and-mobiles/mobiles-and-accessories/mobiles-20905/smartphones",
+    "category:electronics-and-mobiles/mobiles-and-accessories/mobiles-20905/smartphones?f[min_offer_price]=7_days",  # fast lane: noon's "lowest price in 7 days" feed
+]
 jumia_eg = "category:smartphones"
 cairosales_eg = "category:mobiles-tablets/mobiles"
 2b_eg = "category:119"
+btech_eg = "category:mobiles-tablets/mobile-phones"
+dream2000_eg = "category:mobiles"
 
 [[watch]]
 name = "Tablets"
 label = "تابلت وآيباد"
-interval_minutes = 10   # top priority
+interval_minutes = 10
+max_interval_minutes = 15   # quiet slices never back off past this: a flash sale is noticed within it
 min_price = 5000
-amazon_eg = "category:21832915031"
-noon_eg = "category:electronics-and-mobiles/tablets-and-accessories/tablets"
+amazon_eg = [
+    "category:21832915031",
+    "category:21832915031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
+]
+noon_eg = [
+    "category:electronics-and-mobiles/tablets-and-accessories/tablets",
+    "category:electronics-and-mobiles/tablets-and-accessories/tablets?f[min_offer_price]=7_days",  # fast lane: noon's "lowest price in 7 days" feed
+]
 jumia_eg = "category:tablets"
 cairosales_eg = "category:mobiles-tablets/tablets"
 2b_eg = "category:122"
+btech_eg = "category:mobiles-tablets/tablets"
+dream2000_eg = "category:tablets"
 
 [[watch]]
 name = "Laptops"
 label = "لابتوبات"
 interval_minutes = 20
+max_interval_minutes = 30   # quiet slices never back off past this: a flash sale is noticed within it
 min_price = 8000
-amazon_eg = "category:21832907031"
-noon_eg = "category:electronics-and-mobiles/computers-and-accessories/computers-new/laptops"
+amazon_eg = [
+    "category:21832907031",
+    "category:21832907031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
+]
+noon_eg = [
+    "category:electronics-and-mobiles/computers-and-accessories/computers-new/laptops",
+    "category:electronics-and-mobiles/computers-and-accessories/computers-new/laptops?f[min_offer_price]=7_days",  # fast lane: noon's "lowest price in 7 days" feed
+]
 jumia_eg = "category:laptops"
 cairosales_eg = "category:computer-accessories/laptops-desktop-computers"
 2b_eg = "category:273"
+btech_eg = "category:laptop-pc/laptops"  # pre-owned laptops (376) are a separate category, not tracked
+dream2000_eg = "category:laptop"
 
 [[watch]]
 name = "Desktops"
@@ -209,17 +283,28 @@ noon_eg = "category:electronics-and-mobiles/computers-and-accessories/computers-
 jumia_eg = "category:desktop-computers"
 cairosales_eg = "category:computer-accessories/desktop-computers"
 2b_eg = "category:159"
+btech_eg = "category:laptop-pc/pcs"
+dream2000_eg = "category:computer"
 
 [[watch]]
 name = "Monitors"
 label = "شاشات كمبيوتر"
 interval_minutes = 20
+max_interval_minutes = 30   # quiet slices never back off past this: a flash sale is noticed within it
 min_price = 2500
-amazon_eg = "category:21832909031"
-noon_eg = "category:electronics-and-mobiles/computers-and-accessories/computer-accessories/monitor-accessories/monitors-17248"
+amazon_eg = [
+    "category:21832909031",
+    "category:21832909031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
+]
+noon_eg = [
+    "category:electronics-and-mobiles/computers-and-accessories/computer-accessories/monitor-accessories/monitors-17248",
+    "category:electronics-and-mobiles/computers-and-accessories/computer-accessories/monitor-accessories/monitors-17248?f[min_offer_price]=7_days",  # fast lane: noon's "lowest price in 7 days" feed
+]
 jumia_eg = "category:monitors"
 cairosales_eg = ["category:computer-accessories/computer-monitors", "category:gaming-accessories/gaming-monitors"]
 2b_eg = "category:2381"  # Monitor & Projector (includes a few projectors)
+btech_eg = "category:laptop-pc/monitors"
+dream2000_eg = ["category:monitors", "category:gaming-monitors"]
 
 [[watch]]
 name = "PC components"
@@ -230,6 +315,8 @@ amazon_eg = "category:21832913031"
 noon_eg = "category:electronics-and-mobiles/computers-and-accessories/computer-accessories/computer-components-15997"
 jumia_eg = "category:computer-components"
 2b_eg = "category:1826"  # Cairo Sales has no components category
+btech_eg = "category:laptop-pc/pc-components"
+dream2000_eg = ["category:nividia-rtx50", "category:internal-hard", "category:storage"]  # graphics cards, drives
 # noon lists monitor arms, laptop stands and UPS units under PC components (outside every child
 # category), so new products with these words are skipped (checked against every tracked title).
 exclude_words = ["monitor arm", "monitor mount", "monitor stand", "monitor holder", "monitor desk", "monitor light",
@@ -245,8 +332,14 @@ name = "Headphones"
 label = "سماعات"
 interval_minutes = 60
 min_price = 800
-amazon_eg = "category:21832887031"
-noon_eg = "category:electronics-and-mobiles/portable-audio-and-video/headphones-24056"
+amazon_eg = [
+    "category:21832887031",
+    "category:21832887031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
+]
+noon_eg = [
+    "category:electronics-and-mobiles/portable-audio-and-video/headphones-24056",
+    "category:electronics-and-mobiles/portable-audio-and-video/headphones-24056?f[min_offer_price]=7_days",  # fast lane: noon's "lowest price in 7 days" feed
+]
 # Jumia files AirPods-style earbuds under phone accessories (Bluetooth & corded headsets)
 jumia_eg = [
     "category:electronics-headphone",
@@ -254,6 +347,14 @@ jumia_eg = [
 ]
 cairosales_eg = ["category:home-theaters-speakers/headphones", "category:gaming-accessories/gaming-headphones"]
 2b_eg = "category:592"  # headphones: over-ear, in-ear, earbuds
+btech_eg = "category:audio-recording/headphones"
+dream2000_eg = [
+    "category:airbuds",
+    "category:wired-headphone",
+    "category:bluethooth-headphones",
+    "category:headset",
+    "category:gaming-headset",
+]
 
 [[watch]]
 name = "Kitchen machines"
@@ -311,6 +412,25 @@ cairosales_eg = [
     "category:1969",  # mixers
     "category:1970",  # food processors & juicers
     "category:313",   # microwaves & electric ovens
+]
+btech_eg = [
+    "category:small-home-appliances/fryers",
+    "category:small-home-appliances/kettles-coffee-makers",  # one category for both; kettles fall under the minimum
+    "category:small-home-appliances/blenders-mixers",
+    "category:small-home-appliances/choppers",
+    "category:small-home-appliances/food-processors-grinders",
+    "category:small-home-appliances/kitchen-machines",
+    "category:small-home-appliances/microwaves-ovens",
+]
+dream2000_eg = [
+    "category:air-fryer",
+    "category:kettles-and-coffee-makers",  # titled "Coffee Makers"
+    "category:blender-and-mixers",
+    "category:hand-blender",
+    "category:mixers",
+    "category:food-processor",
+    "category:microwave",
+    "category:electric-oven",
 ]
 
 # The rest of the small appliances (kettles, irons, toasters, grinders...): low priority.
@@ -390,6 +510,24 @@ cairosales_eg = [
     "category:324",   # water dispensers
     "category:284",   # water filters
 ]
+btech_eg = [
+    "category:small-home-appliances/juicers-cirtus-juicers",
+    "category:small-home-appliances/grills",
+    "category:small-home-appliances/toasters-sandwich-makers",
+    "category:small-home-appliances/irons",
+    "category:small-home-appliances/hot-plates-electric-stoves",
+    "category:small-home-appliances/specialty-appliances-and-tools",
+    "category:small-home-appliances/water-dispensers",
+    "category:small-home-appliances/water-coolers-and-filters",
+]
+dream2000_eg = [
+    "category:kattle",  # kettles (the shop's spelling)
+    "category:irons",
+    "category:grill",
+    "category:sandwich-maker",
+    "category:water-dispenser-and-filters",
+    "category:water-filters",
+]
 
 [[watch]]
 name = "Cooking & dishwashers"
@@ -415,3 +553,22 @@ cairosales_eg = [
     "category:built-in-kitchen-products/built-in-hobs",
 ]
 2b_eg = ["category:2416", "category:314", "category:611"]  # cookers, dishwashers, built-in
+btech_eg = [
+    "category:large-home-appliances/cookers",
+    "category:large-home-appliances/dishwashers",
+    "category:large-home-appliances/built-in-ovens",
+    "category:large-home-appliances/built-in-hobs",
+]
+dream2000_eg = ["category:stoves", "category:flat-stove", "category:oven", "category:built-in", "category:dish-washers"]
+
+# Jumia's flash-sales page: the only place its flash prices are marked (category cards show the same
+# price with no marker), mixed categories, about 400 products (86 above 1,500 EGP). Crawled as its own
+# fast lane every 10 to 15 minutes; its listings carry the limited-deal badge. Products already known
+# from another group keep that group; products first seen here are labelled flash sales.
+[[watch]]
+name = "Jumia flash sales"
+label = "عروض فلاش جوميا"
+interval_minutes = 10
+max_interval_minutes = 15
+min_price = 1500
+jumia_eg = "category:flash-sales"

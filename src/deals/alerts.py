@@ -30,7 +30,8 @@ KIND_TITLE = {
     "new_product": "🆕 منتج جديد بخصم كبير",
 }
 SITE_NAME = {"amazon_eg": "أمازون مصر", "noon_eg": "نون مصر", "jumia_eg": "جوميا مصر",
-             "cairosales_eg": "كايرو سيلز", "2b_eg": "توبي (2B)"}
+             "cairosales_eg": "كايرو سيلز", "2b_eg": "توبي (2B)", "btech_eg": "بي تك (B.TECH)",
+             "dream2000_eg": "دريم 2000"}
 CONFIDENCE = {"high": "عالية", "medium": "متوسطة", "low": "منخفضة"}
 SIGNAL_TEXT = {
     "only_left": "متبقٍ {n} فقط",

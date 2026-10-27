@@ -1,6 +1,6 @@
 [project]
 name = "deals"
-version = "0.1.0"
+version = "0.2.0"
 description = "Crawl e-commerce categories, track price history, alert on real discounts"
 requires-python = ">=3.12"
 dependencies = [

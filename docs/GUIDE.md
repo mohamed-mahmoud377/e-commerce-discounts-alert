@@ -8,11 +8,24 @@ alert, with worked examples).
 
 ## Overview
 
-The system crawls whole categories on amazon.eg, noon.com (Egypt), jumia.com.eg, cairosales.com and 2b.com.eg, stores every product's price
+The system crawls whole categories on amazon.eg, noon.com (Egypt), jumia.com.eg, cairosales.com, 2b.com.eg, btech.com and dream2000.com, stores every product's price
 history, and sends an Arabic Telegram alert when a price is genuinely low compared with that product's
 own history. It tracks about 50,000 products on Amazon and noon plus about 14,000 on Jumia, in 14 groups: TVs, refrigerators, air conditioners, gaming consoles,
 phones, tablets, laptops, desktops, monitors, PC components, headphones, kitchen machines (fryers, coffee
 machines, blenders, microwaves), other kitchen appliances, and cooking and dishwashers.
+
+**The principle that drives the design (stated by the user, 27 October 2026).** Flash sales and big drops on
+these shops can be gone in minutes, so two things come before everything else: *notice a drop fast* and
+*alert only when it is a real discount*. Everything below serves one of the two:
+
+| Goal | What does it |
+| --- | --- |
+| Notice fast | A drop is judged the moment a worker posts the page (no batch); the alert loop runs every 3 s; the slice queue takes the most-late slice relative to its own interval; busy slices speed up to 10 min; priority groups have a hard cap on how slow a quiet slice may get (`max_interval_minutes`, 15 min for phones, tablets, ACs and consoles); and each shop's own *deals feed* is crawled as a cheap fast lane (Amazon's "all discounts" filter per category, noon's "lowest price in 7 days" feed per category, Jumia's `/flash-sales/` page) |
+| Only real discounts | The reference is the product's own time-weighted history, never the shop's crossed-out price; the current price never counts towards its own reference; out-of-stock time is ignored; a price the product sits at regularly is not a deal (rarity rule); noon offers are keyed per seller and a drop must also be the cheapest offer; the shop's claim is only used for listings we have not tracked yet, and then needs evidence |
+
+Measured on the first two days (25 to 27 October 2026): a qualifying drop seen on a page becomes a Telegram
+message 3 seconds later (noon Crusher 540 headphones, 18,599 to 12,648, seen 01:20:56 UTC, delivered 01:20:59).
+The waiting time is therefore the slice's revisit interval, which the caps and fast lanes keep short.
 
 It has four parts. One coordinator owns the data and decides what to do; any number of workers do the
 crawling from their own internet connections.
@@ -21,16 +34,16 @@ crawling from their own internet connections.
 | --- | --- | --- |
 | Coordinator (`deals serve`) | Droplet 207.154.206.127 | Owns the SQLite database, hands out crawl jobs, stores results, detects deals, runs the Telegram bot, watches for problems, takes daily backups |
 | Worker (`deals worker`) | Your Mac, the droplet, any friend's PC | Asks for a job, downloads the shop pages, sends the products back. Holds no database |
-| Site adapters (`sites/amazon_eg.py`, `sites/noon_eg.py`, `sites/jumia_eg.py`, `sites/cairosales_eg.py`, `sites/twob_eg.py`) | Inside each worker | Know how to fetch and read one listing page of each shop |
+| Site adapters (`sites/amazon_eg.py`, `sites/noon_eg.py`, `sites/jumia_eg.py`, `sites/cairosales_eg.py`, `sites/twob_eg.py`, `sites/btech_eg.py`, `sites/dream2000_eg.py`) | Inside each worker | Know how to fetch and read one listing page of each shop |
 | Telegram bot (@Jerrys_deals_bot) | Inside the coordinator | Sends deal alerts to approved subscribers and system warnings to you |
 
 Workers only make outgoing requests to the coordinator, so nothing needs to be opened on your Mac or on a
 friend's router. Your Mac does the real crawling because the shops refuse most datacenter traffic (noon,
-Jumia, Cairo Sales and 2B always); the droplet's worker is a fallback for Amazon.
+Jumia, Cairo Sales, 2B and B.TECH's API always); the droplet's worker is a fallback for Amazon and also crawls Dream 2000, which is open to cloud IPs.
 
 ```mermaid
 flowchart TB
-    shops["amazon.eg, noon.com, jumia.com.eg,<br/>cairosales.com, 2b.com.eg<br/>category listing pages"]
+    shops["amazon.eg, noon.com, jumia.com.eg,<br/>cairosales.com, 2b.com.eg, btech.com, dream2000.com<br/>category listing pages and APIs"]
     shops --> mac["Your Mac (launchd)<br/>all five shops<br/>does most of the crawling"]
     shops --> dw["Droplet worker<br/>amazon only<br/>fallback: often refused"]
     shops --> fr["Friend's PC (optional)<br/>any shop it can reach"]
@@ -176,7 +189,7 @@ Adding a friend's computer as a worker (more crawling capacity from another conn
 1. On the server, create a token with `deals token`, add it under `[workers]` as `ahmed = "..."`, restart
    the coordinator.
 2. On their computer: clone the repo, do setup steps 1 and 2, then run
-   `DEALS_COORDINATOR=http://207.154.206.127:8787 DEALS_TOKEN=... DEALS_SITES=noon_eg,amazon_eg,jumia_eg,cairosales_eg,2b_eg .venv/bin/deals worker`.
+   `DEALS_COORDINATOR=http://207.154.206.127:8787 DEALS_TOKEN=... DEALS_SITES=noon_eg,amazon_eg,jumia_eg,cairosales_eg,2b_eg,btech_eg,dream2000_eg .venv/bin/deals worker`.
 
 Running everything on one machine without the server (for experiments): `cp config.example.toml config.toml`,
 then `.venv/bin/deals local` starts a coordinator and a worker in one process with a local database.
@@ -226,6 +239,17 @@ inclusive price filter and 100 structured products per request, so no HTML is pa
 keyed by Magento's numeric id (`category:131` = TVs). Only in-stock products are returned, so a sold-out
 product disappears from its category until it is back. Details: [2B.md](2B.md).
 
+**btech.com.** B.TECH's Next.js storefront renders 20 products and loads the rest from the shop's own product
+search API (`retail-online-prod.btech.com`, 100 products a request, exact counts, an inclusive price filter),
+which needs the guest token from the site's session cookie and refuses datacenter IPs. It is a marketplace:
+half the offers are third-party sellers, each offer with its own sku. Only in-stock offers are listed.
+Details: [BTECH.md](BTECH.md).
+
+**dream2000.com.** Dream 2000 is a Shopify store, and Shopify's public collection JSON (250 products a
+request, exact counts, no price filter) is readable from anywhere, the droplet included. Collections are small,
+so a slice is a whole collection and the coordinator applies the group minimum. Variants that differ in more
+than colour (storage sizes) are separate listings. Details: [DREAM2000.md](DREAM2000.md).
+
 **Which machine can reach which shop** (tested 25 October 2026):
 
 | Shop | Home IP (your Mac) | Droplet (DigitalOcean Frankfurt) |
@@ -234,20 +258,22 @@ product disappears from its category until it is back. Details: [2B.md](2B.md).
 | noon.com | Works | Always refused (Akamai 403) |
 | jumia.com.eg | Works with Safari's fingerprint (tested 26 October) | Always refused (Cloudflare 403, every fingerprint) |
 | cairosales.com | Works with Chrome's fingerprint (tested 27 October) | Always refused (Cloudflare 403) |
+| btech.com | Works, plain curl too (tested 27 October) | Pages load, the API host times out (firewalled) |
+| dream2000.com | Works (tested 27 October) | Works (Shopify) |
 | 2b.com.eg | Works with Chrome's fingerprint, HTML and GraphQL (tested 27 October) | Always refused (Cloudflare challenge) |
 
 **What is read from each product card** (no extra requests):
 
-| Signal | amazon.eg | noon | Jumia | Cairo Sales | 2B |
-| --- | --- | --- | --- | --- | --- |
-| Price | The featured offer's price | The offer's sale price, else its price | The product's price | The price (hidden when out of stock) | `final_price` |
-| Crossed-out price | "Was:" (Amazon's own recent price, trusted) or "List:" (brand RRP, often inflated) | Seller-set, treated like an RRP | Seller-set (on 88% of cards), treated like an RRP | The shop's "regular" price (every card), treated like an RRP | `regular_price` (every product), treated like an RRP |
-| Stock left | "Only 3 left in stock" | "Only 3 left" | "1 item left" (45% of cards say 3 or fewer, so not evidence) | none | `only_x_left_in_stock` (57% of products, so not evidence) |
-| Deal badge | "Limited time deal" | "Deal", "Mega Deal" | none on category pages (flash sales are only marked on `/flash-sales/`) |
-| Shop's own price history | none | "Lowest price in 30 days", "in a year" | none |
-| Demand | "300+ bought in past month" | "200+ sold recently", "Selling out fast", bestseller | none |
-| Rating | Stars and review count | Stars and review count | Stars and review count |
-| Seller | not shown | Store name | not shown (one seller per SKU) |
+| Signal | amazon.eg | noon | Jumia | Cairo Sales | 2B | B.TECH | Dream 2000 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Price | The featured offer's price | The offer's sale price, else its price | The product's price | The price (hidden when out of stock) | `final_price` | `final_price` (coupons included) | The cheapest available variant of the group |
+| Crossed-out price | "Was:" (Amazon's own recent price, trusted) or "List:" (brand RRP, often inflated) | Seller-set, treated like an RRP | Seller-set (on 88% of cards), treated like an RRP | The shop's "regular" price (every card), treated like an RRP | `regular_price` (every product), treated like an RRP | `base_price`: B.TECH's own offers (a promotion on a fifth of them) count as "was", third-party sellers' as an RRP | `compare_at_price` (83% of the catalogue), treated like an RRP |
+| Stock left | "Only 3 left in stock" | "Only 3 left" | "1 item left" (45% of cards say 3 or fewer, so not evidence) | none | `only_x_left_in_stock` (57% of products, so not evidence) | none | none (a "Last Piece" collection exists, not used) |
+| Deal badge | "Limited time deal" | "Deal", "Mega Deal" | none on category pages (flash sales are only marked on `/flash-sales/`) | none | none | none | none |
+| Shop's own price history | none | "Lowest price in 30 days", "in a year" | none | none | none | `price_drop_amount` (not used yet) | none |
+| Demand | "300+ bought in past month" | "200+ sold recently", "Selling out fast", bestseller | none | none | none | `is_best_seller` (half the TVs) | none |
+| Rating | Stars and review count | Stars and review count | Stars and review count | none | `rating_summary`, `review_count` | none | none |
+| Seller | not shown | Store name | not shown (one seller per SKU) | the shop | the shop | `seller_name` (half the offers are third-party, each its own sku) | the shop |
 
 **noon sellers.** One noon product can be sold by several sellers at very different prices. The same
 earbuds were seen at 7,550, 1,000 and 495 EGP, and which offer a listing shows depends on the price filter.
@@ -339,11 +365,32 @@ What the coordinator enforces when handing out jobs:
 **Adaptive revisits.** Each slice starts at its group's `interval_minutes` (20 to 180 minutes). After every crawl:
 
 - if any price changed or new products appeared, the interval halves, down to 10 minutes;
-- if nothing changed, it grows by a quarter, up to 3 times the group's interval;
+- if nothing changed, it grows by a quarter, up to 3 times the group's interval, or up to the group's
+  `max_interval_minutes` when it sets one;
 - the next visit gets plus or minus 10% random jitter so slices don't move in lockstep.
 
 Busy slices (a sale, a new launch) are therefore watched every 10 to 20 minutes while quiet ones cost
-almost nothing.
+almost nothing. **The catch:** a flash sale always *starts* in a quiet slice, so the time to notice one is the
+slow end of the range, not the fast end. Measured on 27 October, every "10-minute" group was in fact sitting
+at 30 minutes on every shop (nothing had changed for a while, so the slices had backed off to 3x). Since that
+day the priority groups cap the backoff: 15 minutes for air conditioners, gaming consoles, phones and tablets,
+30 for TVs, refrigerators, laptops and monitors; the kitchen and component groups keep the 3x rule.
+
+**Fast lanes: the shops' own deal feeds.** A category of 1,000 products costs 42 Amazon pages to sweep, but
+the same category filtered to "discounted" costs 1 or 2, and that filtered page is exactly where a flash
+sale appears. So each priority group has, next to its category root, a *deal-feed root* that is planned and
+crawled like any other slice (same group, same interval and cap, same filters):
+
+| Shop | Root key | What it lists | Size (27 Oct) |
+| --- | --- | --- | --- |
+| amazon.eg | `category:<node>,p_n_deal_type:26901036031` (Amazon's "All discounts" refinement; `26901035031` is "Today's deals", much smaller) | products in the node with any discount | TVs 42, fridges 89, ACs 105, phones 37, tablets 6, laptops 7, monitors 17, headphones 131 |
+| noon | `category:<path>?f[min_offer_price]=7_days` (noon's own "lowest price in 7 days" filter; `30_days` and `365_days` exist too; `deal_tag` = `deals-generic` / `mega-deal` was empty when checked) | products whose price just hit a 7-day low | phones 200 of 1,071 |
+| Jumia | `category:flash-sales` (its own watch group, "Jumia flash sales", 10 to 15 min) | the flash-sale page, all categories; the adapter marks these listings `limited_deal`, so a new product with a 30%+ claimed discount can alert the first time it is seen | 409, 86 above 1,500 EGP |
+| Cairo Sales, 2B | none found | | |
+
+A product seen on a deal feed is the same product as on its category page (same key), so a drop seen there
+is judged against the same history. The feeds are about 20 Amazon pages and 30 noon pages per sweep in
+total, so they cost almost nothing.
 
 **Capacity.** The tracked groups hold about 17,000 Amazon and 27,000 noon products: roughly 700 Amazon
 pages and 540 noon pages for a full pass. Two workers crawl Amazon (Mac and droplet) and one crawls noon
@@ -360,20 +407,25 @@ The time from a price changing on the shop to the Telegram message is three step
 3. **Sending:** the alert loop runs every 3 seconds; measured delivery time is 11 s on average, 37 s at
    most (107 messages).
 
-Measured on the live system, 26 October 2026 (the two rows marked "since 26 Oct" are expected values
-after that day's change):
+Measured on the live system on 27 October 2026, 06:30 UTC, *before* that day's caps (every priority group had
+backed off to its 3x ceiling because nothing had changed for a while), with the range the caps now allow:
 
-| Group | `interval_minutes` | Current intervals | Typical time to alert | Worst case |
+| Group | `interval_minutes` | Measured 27 Oct, before the caps | Allowed since the caps | Worst case now |
 | --- | --- | --- | --- | --- |
-| Air conditioners, Gaming consoles, Phones, Tablets (top priority since 26 Oct) | 10 | 10 to 30 min | ~10 min | ~30 min |
-| Monitors | 20 | 10 min | ~7 min | ~13 min |
-| Laptops | 20 | 10 to 16 min | ~8 min | ~18 min |
-| Refrigerators, TVs | 20 | 10 to 29 min | ~12 min | ~30 min |
-| Headphones | 60 | 10 to 88 min | ~15 min | ~1.5 h |
-| PC components, Desktops | 60 | 13 to 117 min | ~35 min | ~2 h |
-| Cooking & dishwashers | 120 | 150 to 188 min | ~1.5 h | ~3 h |
-| Kitchen machines (fryers, coffee, blenders, microwaves; since 26 Oct) | 30 | 10 to 90 min | ~20 min | ~1.5 h |
-| Other kitchen appliances (kettles, irons, toasters...) | 180 | 90 to 225 min | ~1.5 h | ~4 h |
+| Air conditioners, Gaming consoles, Phones, Tablets | 10 | 15 to 30 min (Amazon, noon, Jumia, Cairo Sales, 2B alike) | 10 to 15 min | ~15 min + crawl |
+| TVs, Refrigerators, Laptops, Monitors | 20 | 10 to 60 min | 10 to 30 min | ~30 min + crawl |
+| Jumia flash sales (new) | 10 | | 10 to 15 min | ~15 min |
+| Headphones | 60 | 10 to 180 min | unchanged (3x) | ~3 h |
+| PC components, Desktops | 60 | 10 to 180 min | unchanged | ~3 h |
+| Kitchen machines (fryers, coffee, blenders, microwaves) | 30 | 10 to 90 min | unchanged | ~1.5 h |
+| Cooking & dishwashers | 120 | 48 to 293 min | unchanged | ~5 h |
+| Other kitchen appliances (kettles, irons, toasters...) | 180 | 16 to 540 min | unchanged | ~9 h |
+
+How long do big drops actually last? In the 24 hours before 27 October 06:30 UTC there were 133 drops of 20%
+or more (Amazon 32, Jumia 41, noon 60). On noon none had reverted; on Amazon 6 of 32 reverted, 3 of them
+within an hour; on Jumia 13 of 41 "reverted" within 14 minutes on average, but those are the shop's own
+alternating cache, not real reversals (see [JUMIA.md](JUMIA.md)). So most drops last hours or days, and a
+15-to-30-minute revisit catches nearly all of them; the fast lanes are for the rest.
 
 Re-measure any time with `make sql`:
 
@@ -410,17 +462,19 @@ On the server (`make ssh`), edit `/etc/deals/config.toml`:
 ```toml
 [[watch]]
 name = "TVs"
-interval_minutes = 20   # starting revisit interval; slices adapt between the minimum and 3x this
-min_price = 3000        # EGP; cheaper items are neither crawled nor alerted
+interval_minutes = 20     # starting revisit interval; slices adapt between the minimum and the cap
+max_interval_minutes = 30 # the cap: a quiet slice is never left longer than this (default: 3x interval_minutes)
+min_price = 3000          # EGP; cheaper items are neither crawled nor alerted
 ```
 
-then `systemctl restart deals-coordinator` (or `make restart-server` from your computer). The other knobs,
+then `systemctl restart deals-coordinator` (or `make restart-server` from your computer). For catching
+flash sales the cap is the number that matters: it is the longest a drop can sit unseen. The other knobs,
 under `[schedule]`, apply to every group:
 
 | Setting | Default | Effect |
 | --- | --- | --- |
 | `min_interval_minutes` | 10 | Fastest any slice is revisited, even while its prices keep moving |
-| `max_interval_factor` | 3.0 | Quiet slices slow down to at most `interval_minutes` x this |
+| `max_interval_factor` | 3.0 | Quiet slices slow down to at most `interval_minutes` x this, unless the group sets `max_interval_minutes` |
 
 What happens after the restart: the new limits apply at each slice's next crawl, so a slice already scheduled
 far ahead keeps that one visit, then follows the new range. To make it take effect at once, mark the group
@@ -547,15 +601,16 @@ another seller has had it at 3,000 all along, so no alert goes out while a cheap
 same item exists. Only offers seen in the last 24 hours count: a seller that stops selling simply
 disappears from the pages, so its last price must not block alerts forever.
 
-**Confirmation.** New-listing alerts (they rest on the shop's own crossed-out price) are held until the next crawl sees the
-product again: if it is still at that price (or cheaper) the alert goes out, if the price went back up it is
-cancelled (it was a glitch, a seller switch or a one-crawl mistake). The hold lasts long enough for the
-slowest revisit of the group (3x its interval plus 10 minutes, at least `confirm_minutes` = 90); if nobody
-rechecks the product in that time (e.g. the Mac is asleep) it goes out anyway: nothing disproved it. For
-top groups this adds 10 to 30 minutes. `confirm_low_confidence = false` turns it off. Early drops are low
-confidence too but are sent at once (since 27 October 2026, at the user's request: they rest on our own
-history and speed matters for them; in the first day of holding, all 85 held alerts were confirmed and none
-cancelled). `confirm_early_drops = true` holds them again.
+**Confirmation (off since 27 October 2026).** The code can hold new-listing alerts (they rest on the shop's
+own crossed-out price) until the next crawl sees the product again: still at that price, the alert goes out;
+back up, it is cancelled (a glitch, a seller switch, a one-crawl mistake). The hold lasts long enough for the
+slowest revisit of the group (3x its interval plus 10 minutes, at least `confirm_minutes` = 90) and goes out
+anyway after that. In two days of running it, 105 alerts were held, 98 released by a second sighting, 7 by the
+timeout and **none cancelled**, at a cost of 14 minutes on average (90 at most) per alert. A flash sale can be
+over in that time, so the live config sets `confirm_low_confidence = false` and every alert goes out at once;
+the message still says "not yet verified by our history" and asks the reader to check the page. Set it back
+to `true` if cancellations ever turn out to be needed (`make alerts` shows them). Early drops were never held
+(`confirm_early_drops`).
 
 **Path B: less than a day of history (a new listing).** We have no reference of our own, so the shop's
 claim is used but must be backed by evidence:
@@ -690,6 +745,6 @@ changes. SQLite on this droplet is comfortable into the millions of products; Po
 it beyond that, or with several coordinators.
 
 To crawl more or faster, add workers on other connections (a friend's PC, an always-on Raspberry Pi at
-home). That needs a token in the config and no code change. Adding another shop (Jumia, B.TECH, 2B, Raya)
+home). That needs a token in the config and no code change. Adding another shop (Raya, Carrefour)
 needs one new adapter file and a saved-page test; the planner, scheduler, alerts and bot are shared. See
 [ROADMAP.md](ROADMAP.md) and the improvements in [REVIEW-2026-10-25.md](REVIEW-2026-10-25.md).
