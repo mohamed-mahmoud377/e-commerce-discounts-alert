@@ -374,7 +374,9 @@ almost nothing. **The catch:** a flash sale always *starts* in a quiet slice, so
 slow end of the range, not the fast end. Measured on 27 October, every "10-minute" group was in fact sitting
 at 30 minutes on every shop (nothing had changed for a while, so the slices had backed off to 3x). Since that
 day the priority groups cap the backoff: 15 minutes for air conditioners, gaming consoles, phones and tablets,
-30 for TVs, refrigerators, laptops and monitors; the kitchen and component groups keep the 3x rule.
+30 for TVs, refrigerators, laptops and monitors. Later that day the two slowest groups got caps too: Cooking &
+dishwashers 90 minutes (was 3 x 120 = 6 h) and Kitchen appliances 120 minutes (was 3 x 180 = 9 h), both
+starting at 60. Kitchen machines, headphones, PC components and desktops keep the 3x rule.
 
 **Fast lanes: the shops' own deal feeds.** A category of 1,000 products costs 42 Amazon pages to sweep, but
 the same category filtered to "discounted" costs 1 or 2, and that filtered page is exactly where a flash
@@ -418,8 +420,8 @@ backed off to its 3x ceiling because nothing had changed for a while), with the 
 | Headphones | 60 | 10 to 180 min | unchanged (3x) | ~3 h |
 | PC components, Desktops | 60 | 10 to 180 min | unchanged | ~3 h |
 | Kitchen machines (fryers, coffee, blenders, microwaves) | 30 | 10 to 90 min | unchanged | ~1.5 h |
-| Cooking & dishwashers | 120 | 48 to 293 min | unchanged | ~5 h |
-| Other kitchen appliances (kettles, irons, toasters...) | 180 | 16 to 540 min | unchanged | ~9 h |
+| Cooking & dishwashers | 60 (was 120) | 48 to 293 min | 10 to 90 min (was up to 360) | ~1.5 h (was ~6 h) |
+| Other kitchen appliances (kettles, irons, toasters...) | 60 (was 180) | 16 to 540 min | 10 to 120 min (was up to 540) | ~2 h (was ~9 h) |
 
 How long do big drops actually last? In the 24 hours before 27 October 06:30 UTC there were 133 drops of 20%
 or more (Amazon 32, Jumia 41, noon 60). On noon none had reverted; on Amazon 6 of 32 reverted, 3 of them
@@ -499,6 +501,27 @@ Trade-offs before making everything faster:
 - **To get faster for real,** add workers on other home connections (a friend's PC, a Raspberry Pi): each
   new connection adds a full share for both shops.
 - **Narrowing helps too.** Raising `min_price` drops cheap items from the crawl, which frees time for the rest.
+
+**Where the capacity actually is (measured 27 October 2026, 02:40 to 08:40 UTC, from the workers' "done"
+events; three workers: the Mac, the droplet and a friend's Mac).** Each worker runs one loop per shop, and a
+loop's request rate is fixed by the delay between pages, so a shorter interval never makes one connection hit
+a shop faster: it only shortens the idle time between jobs. How much of each loop's time was spent crawling:
+
+| Shop | Loops busy | Pages per hour (all workers) | Biggest costs |
+| --- | --- | --- | --- |
+| amazon.eg | 86 to 91% on all three, 20 slices overdue (worst 45 min) | about 1,900 | Kitchen machines 56 crawl-min/h, Headphones 21, Cooking & dishwashers 16, Kitchen appliances 14 |
+| noon | 64 to 69% | about 1,300 | Kitchen machines 20, Headphones 16, Kitchen appliances 15 |
+| Jumia | 51 to 63% | about 580 | Phones 17, Kitchen machines 13, Refrigerators 12 |
+| Cairo Sales, 2B, B.TECH, Dream 2000 | 0 to 5% | 10 to 80 each | |
+
+No shop had ever blocked any worker (the `blocks` table was empty, every `worker_sites.blocks` 0). The slow
+end of the two kitchen groups was on the cheap shops (2B 293 to 352 min, Cairo Sales up to 352, B.TECH and
+Dream 2000 150 to 225, Jumia up to 439), where a whole sweep of the group takes 0.1 to 7 minutes. On Amazon
+their prices move often enough that the slices were already revisited every 24 to 30 minutes (median), so the
+caps cost Amazon little. A full quiet sweep of both groups at the new caps costs about 9 crawl-min/h on Amazon,
+3 on noon and 5 on Jumia, at most, against less than 0.5 on each small shop. **Amazon is the limit**: at 90% busy
+it cannot take a broad speed-up of the heavy groups (Kitchen machines, Headphones) without every slow slice
+running late; there the cheaper way is a deal-feed root or another home connection.
 
 ## Algorithm 4: price history and statistics
 

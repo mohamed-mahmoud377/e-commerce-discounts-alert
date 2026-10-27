@@ -437,7 +437,8 @@ dream2000_eg = [
 [[watch]]
 name = "Kitchen appliances"
 label = "أجهزة مطبخ"
-interval_minutes = 180
+interval_minutes = 60
+max_interval_minutes = 120  # quiet slices never back off past this (was 3x180 = 9 h)
 min_price = 2000
 amazon_eg = [
     "category:21863959031",  # bread makers & baking
@@ -532,7 +533,8 @@ dream2000_eg = [
 [[watch]]
 name = "Cooking & dishwashers"
 label = "بوتاجازات وغسالات أطباق"
-interval_minutes = 120
+interval_minutes = 60
+max_interval_minutes = 90   # quiet slices never back off past this (was 3x120 = 6 h)
 min_price = 5000
 amazon_eg = ["category:21863824031", "category:21863823031"]  # ranges/ovens/cooktops, dishwashers
 noon_eg = [
