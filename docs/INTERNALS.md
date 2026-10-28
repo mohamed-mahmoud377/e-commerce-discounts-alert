@@ -88,8 +88,10 @@ every function on the way. Reading the code in this order is the fastest way to 
     `run_count`/`run_changes`; `unblock()` clears this IP's block record for the shop; `worker_site_ok()`
     updates the device's per-shop status; `worker_seen()` counts the page.
 14. On the last page `_finish_crawl()` treats "slice had products, parsed zero" as a failure; otherwise
-    `scheduler.finish_crawl()` halves the interval if anything changed or multiplies it by 1.25 if not,
-    clamps it between 10 minutes and 3 times the group interval, adds plus or minus 10% jitter, sets
+    `scheduler.finish_crawl()` halves the interval if anything that could alert happened (`run_changes`
+    counts drops of `DROP_SPEEDUP` = 3% or more, restocks and new products, not rises) or multiplies it by
+    1.25 if not, clamps it between 10 minutes and the group's cap (`feed_max_interval_minutes` for deal
+    feeds, see `is_deal_feed()`), adds plus or minus 10% jitter, sets
     `next_due_at` and clears the lease.
 
 **Delivery**
@@ -133,7 +135,7 @@ many have run, and `db.connect()` runs the missing ones in a transaction on star
 | --- | --- | --- |
 | `products` | `id`; unique `(site, sku)` | `title`, `url`, `currency`; `price` (None when no price shown), `list_price` (crossed-out), `list_price_kind` (`was` = Amazon's recent price, `list` = RRP or noon seller price), `in_stock`; `brand`, `seller`, `stock_left`, `recent_sales`, `rating`, `reviews`, `badges` (comma list: `limited_deal`, `mega_deal`, `selling_fast`, `lowest_30d`, `lowest_365d`, `bestseller`); `grp` (watch group); `first_seen_at`, `last_seen_at`, `last_change_at` |
 | `price_history` | `id`; index `(product_id, observed_at)` and `(observed_at)` | `product_id`, `price`, `list_price`, `in_stock`, `observed_at`. One row per change; the row's values hold until the next row. Moves under 1% (`db.PRICE_NOISE`) are not changes: `products.price` keeps the last recorded value so a slow creep is recorded once it adds up, and it only moves when the price itself moved (a list-price-only change writes a row repeating the stored price), so `products.price` is always the price at `last_change_at` |
-| `jobs` | `id`; unique `(kind, site, target)`; index `(site, next_due_at)` | `kind` (`plan`/`crawl`), `target` (slice key), `root`, `grp`, `expected_total`, `oversized`; `base_interval_s` (from the watch), `interval_s` (adaptive), `next_due_at`; lease: `lease_worker`, `lease_ip`, `lease_token`, `lease_expires_at`; current run: `run_count`, `run_changes`; history: `failures`, `last_error`, `last_done_at`, `last_count`, `last_changes` |
+| `jobs` | `id`; unique `(kind, site, target)`; index `(site, next_due_at)` | `kind` (`plan`/`crawl`), `target` (slice key), `root`, `grp`, `expected_total`, `oversized`; `base_interval_s` (from the watch), `interval_s` (adaptive), `next_due_at`; lease: `lease_worker`, `lease_ip`, `lease_token`, `lease_expires_at`; current run: `run_count`, `run_changes` (drops, restocks and new products: what speeds the slice up); history: `failures`, `last_error`, `last_done_at`, `last_count`, `last_changes` |
 | `workers` | `name` | `last_seen_at`, `last_ip`, `sites`, `version`, `pages`, `jobs_done` |
 | `worker_sites` | `(worker, site)` | `last_ok_at`, `last_error_at`, `last_error`, `pages`, `products`, `blocks` |
 | `blocks` | `(site, ip)` | `strikes`, `until`, `reason`, `updated_at`; deleted on the IP's next successful page |
@@ -267,6 +269,7 @@ commented template.
 | `[alerts] realert_extra_drop` | 0.05 | ...unless the price fell this much more |
 | `[schedule] min_interval_minutes` | 10 | Fastest revisit of a busy slice |
 | `[schedule] max_interval_factor` | 3.0 | Quiet slices slow down to group interval times this |
+| `[schedule] feed_max_interval_minutes` | 10 | Cap for shop deal-feed roots (`deals:`, `p_n_deal_type`, noon's `min_offer_price`, Jumia's `flash-sales`) |
 | `[schedule] replan_days` | 7 | How often categories are re-split |
 | `[schedule] lease_minutes` | 5 | Lease length, renewed per page |
 | `[sites.SHOP] min_delay`, `max_delay` | 2.0, 4.0 | Seconds between requests per worker (config sets noon and 2B to 1-2, Jumia and Cairo Sales to 1.5-3) |

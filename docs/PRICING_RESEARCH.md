@@ -541,6 +541,12 @@ then the SQL below or the slice query in GUIDE.md.
 
 ### Do now
 
+**Done 28 October 2026** (see GUIDE.md): **1**, slices speed up only on drops of 3% or more, restocks and new
+products (`scheduler.DROP_SPEEDUP`); **2**, deal feeds capped at 10 minutes (`feed_max_interval_minutes`) and
+the Amazon discount filter added to Kitchen machines, PC components and Desktops. **3** (sale-event mode) and
+**4** (the 30-day prior-price test) were built and then removed the same day at the user's request: not wanted
+for now, partly because crawling harder raises the risk of being blocked. Rows 3 to 9 are open.
+
 | # | Change | Touches | Evidence | Notice fast | Only real discounts | Effort | Basis |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 1 | Speed a slice up (halve its interval) only on a **drop of 3% or more or a new product**; never on rises or moves under 2–3% | the scheduler's adaptive rule (`interval_s` after each crawl) | Cho & Garcia-Molina 2003 (proportional schedules waste visits); our data: rises 4:1 on noon, 42% of Amazon changes under 2%; Amazon loops 86–91% busy | Better: the budget moves from noise to quiet slices, where flash sales start, and the Amazon backlog shrinks | No change | Low | Own derivation from a published result |

@@ -207,7 +207,7 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
         bootstrap = job["kind"] == "plan" or job["last_done_at"] is None
         watch = cfg.watch(job["grp"])
         floor = (watch.min_price or 0) * 100 if watch else 0
-        changes = deals = skipped = 0
+        changes = drops = deals = skipped = 0
         with conn:
             for item in body.listings:
                 listing = item.to_listing()
@@ -228,10 +228,18 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
                     changes += 1
                 dropped = (rec.status == "new" or (listing.price is not None and (
                     rec.old_price is None or not rec.old_in_stock or listing.price < rec.old_price)))
+                # What speeds the slice up: only what could become an alert (a new product, a
+                # restock, a drop of DROP_SPEEDUP or more), never rises or small repricing moves.
+                if listing.in_stock and (
+                        (rec.status == "new" and not bootstrap)
+                        or (rec.status == "changed" and listing.price is not None and (
+                            rec.old_price is None or not rec.old_in_stock
+                            or listing.price <= rec.old_price * (1 - scheduler.DROP_SPEEDUP)))):
+                    drops += 1
                 if rec.price_moved and dropped and listing.in_stock:
                     deal = alerts.check_product(conn, cfg, rec.product_id, bootstrap=bootstrap, now=now)
                     deals += deal is not None
-            scheduler.extend(conn, cfg, job_id, len(body.listings), changes, now)
+            scheduler.extend(conn, cfg, job_id, len(body.listings), drops, now)
             if body.no_results and not body.listings:
                 # The slice genuinely emptied (amazon: "No results for your search query"),
                 # so finding nothing is not a parser failure.

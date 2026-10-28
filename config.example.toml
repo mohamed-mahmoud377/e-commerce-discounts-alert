@@ -298,7 +298,11 @@ name = "Desktops"
 label = "كمبيوترات مكتبية"
 interval_minutes = 60
 min_price = 8000
-amazon_eg = "category:21832914031"
+amazon_eg = [
+    "category:21832914031",
+    "category:21832914031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
+    "deals:21832914031",  # fast lane: Amazon's Today's Deals API for this node
+]
 noon_eg = "category:electronics-and-mobiles/computers-and-accessories/computers-new/desktops"
 jumia_eg = "category:desktop-computers"
 cairosales_eg = "category:computer-accessories/desktop-computers"
@@ -333,7 +337,11 @@ name = "PC components"
 label = "مكونات كمبيوتر"
 interval_minutes = 60
 min_price = 1500
-amazon_eg = "category:21832913031"
+amazon_eg = [
+    "category:21832913031",
+    "category:21832913031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
+    "deals:21832913031",  # fast lane: Amazon's Today's Deals API for this node
+]
 noon_eg = "category:electronics-and-mobiles/computers-and-accessories/computer-accessories/computer-components-15997"
 jumia_eg = "category:computer-components"
 2b_eg = "category:1826"  # Cairo Sales has no components category
@@ -387,10 +395,15 @@ interval_minutes = 30
 min_price = 1500
 amazon_eg = [
     "category:21863949031",  # fryers
+    "category:21863949031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
     "category:21864088031",  # coffee machines
+    "category:21864088031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
     "category:21863955031",  # blenders, mixers & food processors
+    "category:21863955031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
     "category:21863956031",  # pressure, steam & slow cookers
+    "category:21863956031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
     "category:21863820031",  # microwaves & countertop ovens
+    "category:21863820031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
 ]
 noon_eg = [
     "category:home-and-kitchen/home-appliances-31235/small-appliances/fryers",

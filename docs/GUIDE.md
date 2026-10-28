@@ -21,7 +21,7 @@ these shops can be gone in minutes, so two things come before everything else: *
 
 | Goal | What does it |
 | --- | --- |
-| Notice fast | A drop is judged the moment a worker posts the page (no batch); the alert loop runs every 3 s; the slice queue takes the most-late slice relative to its own interval; busy slices speed up to 10 min; priority groups have a hard cap on how slow a quiet slice may get (`max_interval_minutes`, 15 min for phones, tablets, ACs and consoles); and each shop's own *deals feed* is crawled as a cheap fast lane (Amazon's "all discounts" filter per category, noon's "lowest price in 7 days" feed per category, Jumia's `/flash-sales/` page) |
+| Notice fast | A drop is judged the moment a worker posts the page (no batch); the alert loop runs every 3 s; the slice queue takes the most-late slice relative to its own interval; slices where prices *dropped* speed up to 10 min (rises and moves under 3% don't count); priority groups have a hard cap on how slow a quiet slice may get (`max_interval_minutes`, 15 min for phones, tablets, ACs and consoles); and each shop's own *deals feed* is crawled as a cheap fast lane (Amazon's "all discounts" filter per category, noon's "lowest price in 7 days" feed per category, Jumia's `/flash-sales/` page), each feed revisited at least every 10 min whatever its group |
 | Only real discounts | The reference is the product's own time-weighted history, never the shop's crossed-out price; the current price never counts towards its own reference; out-of-stock time is ignored; a price the product sits at regularly is not a deal (rarity rule); noon offers are keyed per seller and a drop must also be the cheapest offer; the shop's claim is only used for listings we have not tracked yet, and then needs evidence |
 
 Measured on the first two days (25 to 27 October 2026): a qualifying drop seen on a page becomes a Telegram
@@ -375,9 +375,11 @@ What the coordinator enforces when handing out jobs:
 
 **Adaptive revisits.** Each slice starts at its group's `interval_minutes` (20 to 180 minutes). After every crawl:
 
-- if any price changed or new products appeared, the interval halves, down to 10 minutes;
-- if nothing changed, it grows by a quarter, up to 3 times the group's interval, or up to the group's
-  `max_interval_minutes` when it sets one;
+- if a price dropped by 3% or more, a product came back in stock or a new product appeared, the interval
+  halves, down to 10 minutes;
+- otherwise (nothing changed, or only rises and small repricing moves) it grows by a quarter, up to 3 times
+  the group's interval, or up to the group's `max_interval_minutes` when it sets one;
+- a shop's deal feed (below) never gets slower than `feed_max_interval_minutes` (10);
 - the next visit gets plus or minus 10% random jitter so slices don't move in lockstep.
 
 Busy slices (a sale, a new launch) are therefore watched every 10 to 20 minutes while quiet ones cost
@@ -388,6 +390,13 @@ day the priority groups cap the backoff: 15 minutes for air conditioners, gaming
 30 for TVs, refrigerators, laptops and monitors. Later that day the two slowest groups got caps too: Cooking &
 dishwashers 90 minutes (was 3 x 120 = 6 h) and Kitchen appliances 120 minutes (was 3 x 180 = 9 h), both
 starting at 60. Kitchen machines, headphones, PC components and desktops keep the 3x rule.
+
+**Only drops speed a slice up (since 28 October 2026).** Until then *any* change halved the interval. But on
+noon price rises outnumbered drops 4 to 1 (the pound's October slide) and 42% of Amazon's changes were under 2%
+(repricing bots), so the speed-ups went to slices that could not produce an alert: Amazon's slices asked for
+about 3,350 pages an hour against the roughly 1,900 its workers fetch, and 32 were overdue. Rises are still
+recorded in the history; they just don't pull revisits away from the quiet slices where flash sales start
+([PRICING_RESEARCH.md](PRICING_RESEARCH.md), recommendation 1).
 
 **Fast lanes: the shops' own deal feeds.** A category of 1,000 products costs 42 Amazon pages to sweep, but
 the same category filtered to "discounted" costs 1 or 2, and that filtered page is exactly where a flash
@@ -490,6 +499,7 @@ under `[schedule]`, apply to every group:
 | --- | --- | --- |
 | `min_interval_minutes` | 10 | Fastest any slice is revisited, even while its prices keep moving |
 | `max_interval_factor` | 3.0 | Quiet slices slow down to at most `interval_minutes` x this, unless the group sets `max_interval_minutes` |
+| `feed_max_interval_minutes` | 10 | Slowest a shop's deal feed may get, whatever its group |
 
 What happens after the restart: the new limits apply at each slice's next crawl, so a slice already scheduled
 far ahead keeps that one visit, then follows the new range. To make it take effect at once, mark the group

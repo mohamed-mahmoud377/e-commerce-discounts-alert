@@ -237,6 +237,32 @@ def test_quiet_slices_back_off_only_up_to_the_groups_cap(cfg):
     assert rows["free"] == 1800  # the default: base interval x max_interval_factor (3)
 
 
+def test_only_drops_speed_a_slice_up(client):
+    """Price rises and repricing noise don't halve a slice's interval; a real drop does."""
+    plan_amazon(client, slices=("category:111|price:1000-",))
+    conn = client.conn
+    with conn:
+        for sku, price in [("UP", 1_000_000), ("NOISE", 1_000_000), ("DROP", 1_000_000)]:
+            db.record(conn, Listing("amazon_eg", sku, "TV", f"https://x/{sku}", price, None, "EGP", True),
+                      grp="TVs", now=utcnow() - timedelta(days=1))
+        conn.execute("UPDATE jobs SET last_done_at = ?, interval_s = 2400 WHERE kind = 'crawl'", (iso(utcnow()),))
+
+    def crawl(listings):
+        job = lease(client)
+        assert job["kind"] == "crawl", job
+        client.post(f"/api/jobs/{job['id']}/page", headers=W1, json={
+            "lease_token": job["lease_token"], "page": 1, "done": True, "listings": listings})
+        row = conn.execute("SELECT interval_s, last_changes FROM jobs WHERE id = ?", (job["id"],)).fetchone()
+        conn.execute("UPDATE jobs SET next_due_at = ?, interval_s = 2400 WHERE kind = 'crawl'", (iso(utcnow() - timedelta(seconds=1)),))
+        return row["interval_s"], row["last_changes"]
+
+    # a 20% rise and a 2% cut: both recorded in the history, neither speeds the slice up
+    assert crawl([listing("UP", 12000), listing("NOISE", 9800)]) == (3000, 0)
+    assert conn.execute("SELECT count(*) FROM price_history").fetchone()[0] == 5
+    # a 5% cut does
+    assert crawl([listing("DROP", 9500)]) == (1200, 1)
+
+
 def test_deal_feeds_have_their_own_tighter_cap(cfg):
     """schedule.feed_max_interval_minutes keeps the shops' deal feeds fast whatever their group's cap."""
     from dataclasses import replace

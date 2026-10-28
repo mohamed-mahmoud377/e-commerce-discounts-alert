@@ -8,7 +8,7 @@
   home router never hammer a site together.
 - When a site blocks an IP, that (site, IP) pair cools down with exponential
   backoff (15 min, 30 min, 1 h ... up to 24 h); other IPs keep going.
-- Crawl intervals adapt: slices where prices moved are revisited sooner (down to
+- Crawl intervals adapt: slices where prices dropped are revisited sooner (down to
   min_interval), quiet ones back off (up to watch interval x max_interval_factor).
 """
 
@@ -131,6 +131,8 @@ def finish_crawl(conn: sqlite3.Connection, cfg: Config, job: sqlite3.Row, now: d
         highest = max(lowest, int(job["base_interval_s"] * cfg.schedule.max_interval_factor))
     if cfg.schedule.feed_max_interval_minutes and is_deal_feed(job["root"] or job["target"]):
         highest = max(lowest, min(highest, cfg.schedule.feed_max_interval_minutes * 60))
+    # run_changes counts only what could alert (drops of DROP_SPEEDUP or more, restocks, new
+    # products), so price rises and repricing noise don't pull revisits away from quiet slices.
     if job["run_changes"]:
         interval = job["interval_s"] / 2
     else:
@@ -218,6 +220,11 @@ def worker_seen(conn: sqlite3.Connection, name: str, ip: str, now: datetime, *, 
                pages = pages + excluded.pages, jobs_done = jobs_done + excluded.jobs_done""",
         (name, iso(now), ip, ",".join(sites) if sites else None, version, pages, jobs_done),
     )
+
+
+# A price drop at least this big speeds its slice up; smaller moves are repricing noise
+# (42% of amazon.eg's changes are under 2%, docs/PRICING_RESEARCH.md).
+DROP_SPEEDUP = 0.03
 
 
 # Root keys that read a shop's own deal feed rather than a whole category: Amazon's Today's
