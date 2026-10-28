@@ -120,13 +120,17 @@ def products(conn: sqlite3.Connection, q: str, site: str | None, limit: int, grp
              changed_since: str | None = None) -> dict:
     """One page of the product list plus the total match count (for 'showing N of M' and
     endless scrolling: the client asks for the next `offset` as it nears the bottom).
-    `changed_since` keeps products whose price or stock last changed at or after that time."""
+    `changed_since` keeps products whose price or stock last changed at or after that time.
+    `prev_price` is the last recorded price that differs from the current one (only this page's rows
+    look it up, through the price_history index)."""
     where, params = _product_filter(q, site, grp, in_stock_only, changed_since)
     order = PRODUCT_SORTS.get(sort, PRODUCT_SORTS["recent"])
     total = conn.execute(f"SELECT COUNT(*) FROM products WHERE {where}", params).fetchone()[0]
     rows = conn.execute(
         f"""SELECT id, site, sku, title, url, grp, price, list_price, in_stock, stock_left, seller, rating, reviews,
-                   badges, last_seen_at, last_change_at, first_seen_at
+                   badges, last_seen_at, last_change_at, first_seen_at,
+                   (SELECT h.price FROM price_history h WHERE h.product_id = products.id AND h.price != products.price
+                    ORDER BY h.observed_at DESC, h.id DESC LIMIT 1) AS prev_price
             FROM products WHERE {where} ORDER BY {order}, id LIMIT ? OFFSET ?""",
         (*params, limit, offset)).fetchall()
     return {"products": [dict(r) for r in rows], "total": total, "offset": offset, "limit": limit}
@@ -375,6 +379,9 @@ const shop = s => (SITES.find(x => x[0] === s) || [s, s])[1];
 const money = p => p == null ? '—' : Math.round(p / 100).toLocaleString('en');
 const pct = x => x == null ? '' : Math.round(x * 100) + '%';
 const changePct = x => { const p = Math.abs(x * 100); return (p < 10 ? p.toFixed(1) : Math.round(p)) + '%'; };
+// Green with ▼ for a price that fell, orange with ▲ for one that rose (colour plus arrow, never colour alone).
+const trend = (now, was) => now == null || was == null || now === was ? '' : now < was ? 'down' : 'up';
+const arrow = cls => cls === 'down' ? '▼ ' : cls === 'up' ? '▲ ' : '';
 const ago = t => { if (!t) return 'never'; const s = (Date.now() - Date.parse(t)) / 1000;
   return s < 120 ? Math.round(s) + ' s' : s < 7200 ? Math.round(s / 60) + ' min' : s < 172800 ? (s / 3600).toFixed(1) + ' h' : Math.round(s / 86400) + ' d'; };
 const hhmm = t => t ? new Date(t).toLocaleString('en-GB', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'}) : '';
@@ -635,8 +642,12 @@ const views = {
     const cell = (v, c, row) => c === 'title' && (iu >= 0 || ip >= 0)
         ? (ip >= 0 && row[ip] ? `<a class='rowlink' href='#Products:${row[ip]}'>${esc(v)}</a>` : `<a class='rowlink' href='${esc(row[iu])}' target='_blank' rel='noopener'>${esc(v)}</a>`)
           + (iu >= 0 && row[iu] && ip >= 0 ? ` <a href='${esc(row[iu])}' target='_blank' rel='noopener' class='muted' aria-label='open in shop'>↗</a>` : '') + (is >= 0 && row[is] ? ` <span class='sub'>· ${esc(row[is])}</span>` : '')
-      : c === 'site' ? esc(shop(v)) : isMoney(c) ? `<span class='num'>${money(v)}</span>` : typeof v === 'number' ? `<span class='num'>${v.toLocaleString()}</span>`
+      : c === 'site' ? esc(shop(v)) : PCT_TREND[c] && typeof v === 'number' ? `<span class='num ${PCT_TREND[c]}'>${arrow(PCT_TREND[c])}${v.toLocaleString('en', {maximumFractionDigits: 1})}%</span>`
+      : isMoney(c) ? moneyCell(v, c, row) : typeof v === 'number' ? `<span class='num'>${v.toLocaleString()}</span>`
       : typeof v === 'string' && /^\d{4}-\d\d-\d\dT/.test(v) ? `<span class='num'>${esc(v.slice(5, 16).replace('T', ' '))}</span>` : esc(v);
+    // a price next to the one it is compared with (now vs was, now vs the previous low...) gets the trend colour
+    const moneyCell = (v, c, row) => { const ref = (PRICE_REF[c] || []).map(k => d.columns.indexOf(k)).find(i => i >= 0);
+      const cls = ref == null ? '' : trend(v, row[ref]); return `<span class='num ${cls}'>${arrow(cls)}${money(v)}</span>`; };
     const qrow = r => `<tr>${d.columns.map((c, i) => hide.has(c) ? '' : `<td>${cell(r[i], c, r)}</td>`).join('')}</tr>`;
     const nextFeed = {url: o => `/api/queries/${qz.name}?limit=${PAGE}&offset=${o}&total=${d.total}&` + query, row: qrow, rows: '#qrows', count: '#qcount', more: '#qmore', next: d.rows.length, total: d.total, busy: false};
     const lq = qz.listQ.trim().toLowerCase();
@@ -730,6 +741,9 @@ const pz = {q: '', site: '', grp: '', sort: 'recent', stock: false, changed: 24}
 const jz = {only: 'all', site: '', grp: ''}, lz = {level: 'info', src: '', q: '', paused: false};
 const qz = {list: null, groups: null, name: null, hours: '24', grp: '', site: '', q: '', sort: null, desc: false, listQ: '', topic: 'all'};
 const TOPICS = {Alerts: ['alerts_by_day', 'held_and_cancelled', 'deliveries'], Crawling: ['coverage', 'schedule', 'device_hours', 'tables']};
+// Saved-query columns that are a rise or a fall, and which column each price is compared with.
+const PCT_TREND = {drop_pct: 'down', below_pct: 'down', rise_pct: 'up', above_pct: 'up'};
+const PRICE_REF = {now: ['was', 'previous_low'], price_now: ['alert_price', 'now'], b: ['a']};
 const topicOf = n => Object.keys(TOPICS).find(t => TOPICS[t].includes(n)) || 'Prices';
 function pickQuery(name) { qz.name = name; qz.sort = null; history.replaceState(null, '', '#Queries:' + name); render(); }
 async function downloadCsv() {
@@ -758,8 +772,13 @@ const PRODUCT_SORT_NAMES = [['recent', 'Recently changed'], ['oldest', 'Oldest c
   ['rating_low', 'Worst rated'], ['reviews', 'Most reviews'], ['reviews_few', 'Fewest reviews'], ['title', 'Title A→Z'], ['title_desc', 'Title Z→A'],
   ['site', 'Shop'], ['grp', 'Group'], ['crossed', 'Crossed-out price ↑'], ['crossed_desc', 'Crossed-out price ↓'], ['stock', 'In stock first'], ['stock_desc', 'Out of stock first']];
 const stockPill = p => p.in_stock ? (p.stock_left ? pill('warn', p.stock_left + ' left') : pill('ok', 'in stock')) : pill('idle', 'sold out');
+function priceCell(p) {
+  const cls = trend(p.price, p.prev_price);
+  if (!cls) return money(p.price);
+  return `<span class='${cls}' title='was ${money(p.prev_price)}'>${money(p.price)}</span><div class='${cls}' style='font-size:12px'>${arrow(cls)}${money(Math.abs(p.price - p.prev_price))} · ${changePct((p.price - p.prev_price) / p.prev_price)}</div>`;
+}
 const productRow = p => `<tr class='click' onclick='openProduct(${p.id})'><td><a class='rowlink' href='#Products:${p.id}' onclick='event.stopPropagation()'>${esc(p.title)}</a><div class='sub'>${esc(p.sku)}${p.seller ? ' · ' + esc(p.seller) : ''}</div></td>
-  <td class='nw'>${esc(shop(p.site))}</td><td>${esc(p.grp || '')}</td><td class='num nw'>${money(p.price)}</td><td class='num r muted'>${p.list_price ? '<s>' + money(p.list_price) + '</s>' : '—'}</td>
+  <td class='nw'>${esc(shop(p.site))}</td><td>${esc(p.grp || '')}</td><td class='num nw'>${priceCell(p)}</td><td class='num r muted'>${p.list_price ? '<s>' + money(p.list_price) + '</s>' : '—'}</td>
   <td>${stockPill(p)}</td><td class='num r nw'>${p.rating ? p.rating.toFixed(1) + ` <span class='muted'>(${(p.reviews || 0).toLocaleString()})</span>` : '—'}</td><td class='num r muted nw'>${ago(p.last_change_at)}</td></tr>`;
 // Endless scrolling for paged lists (products, saved queries): when the marker under the
 // table comes into view, fetch the next page for the same filters and sort, append it, and

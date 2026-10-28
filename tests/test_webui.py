@@ -207,3 +207,15 @@ def test_admin_manages_subscribers_and_workers_cannot(cfg):
         assert c.post("/api/report").json() == {"ok": True}
         report = c.app.state.conn.execute("SELECT kind, dedupe_key FROM alerts").fetchone()
         assert report["kind"] == "system" and report["dedupe_key"].startswith("report-now:")
+
+
+def test_products_carry_their_previous_price(client):
+    client.post("/ui/login", data={"token": "admin-secret"}, follow_redirects=False)
+    conn = client.app.state.conn
+    with conn:
+        db.record(conn, Listing("amazon_eg", "TV1", "Samsung 55 inch TV", "https://x/TV1", 1_600_000, None, "EGP", True),
+                  grp="TVs", now=utcnow() + timedelta(minutes=5))
+        db.record(conn, Listing("amazon_eg", "TV1", "Samsung 55 inch TV", "https://x/TV1", 1_600_000, None, "EGP", False),
+                  grp="TVs", now=utcnow() + timedelta(minutes=10))  # a stock change at the same price
+    p = client.get("/api/products?q=samsung").json()["products"][0]
+    assert (p["price"], p["prev_price"]) == (1_600_000, 2_000_000)  # the last *different* price
