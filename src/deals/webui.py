@@ -374,6 +374,7 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '
 const shop = s => (SITES.find(x => x[0] === s) || [s, s])[1];
 const money = p => p == null ? '—' : Math.round(p / 100).toLocaleString('en');
 const pct = x => x == null ? '' : Math.round(x * 100) + '%';
+const changePct = x => { const p = Math.abs(x * 100); return (p < 10 ? p.toFixed(1) : Math.round(p)) + '%'; };
 const ago = t => { if (!t) return 'never'; const s = (Date.now() - Date.parse(t)) / 1000;
   return s < 120 ? Math.round(s) + ' s' : s < 7200 ? Math.round(s / 60) + ' min' : s < 172800 ? (s / 3600).toFixed(1) + ' h' : Math.round(s / 86400) + ' d'; };
 const hhmm = t => t ? new Date(t).toLocaleString('en-GB', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'}) : '';
@@ -824,7 +825,7 @@ async function productPage(id) {
       <tr><th>When</th><th class='r'>Price</th><th class='r'>Crossed-out</th><th>Stock</th><th class='r'>Change</th></tr>
       ${d.history.slice().reverse().map((h, i, arr) => { const prev = arr[i + 1], ch = prev && prev.price && h.price ? h.price - prev.price : null;
         return `<tr><td class='num nw'>${hhmm(h.observed_at)}</td><td class='num r'>${money(h.price)}</td><td class='num r muted'>${money(h.list_price)}</td><td>${h.in_stock ? 'in stock' : 'sold out'}</td>
-        <td class='num r ${ch < 0 ? 'down' : 'up'}'>${ch ? (ch < 0 ? '▼ ' : '▲ ') + money(Math.abs(ch)) : ''}</td></tr>`; }).join('')}</table></div></section>`;
+        <td class='num r nw ${ch < 0 ? 'down' : 'up'}'>${ch ? (ch < 0 ? '▼ ' : '▲ ') + money(Math.abs(ch)) + ' · ' + changePct(ch / prev.price) : ''}</td></tr>`; }).join('')}</table></div></section>`;
 }
 // Step chart of the recorded prices (a price holds until the next row), with the 90-day typical
 // price dashed, out-of-stock stretches left blank, and a dot where an alert went out. Hover for the value.
