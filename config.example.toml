@@ -38,6 +38,7 @@ realert_extra_drop = 0.05     # ...unless the price drops another 5%
 [schedule]
 min_interval_minutes = 10     # fastest a slice is ever re-crawled (when its prices keep moving)
 max_interval_factor = 3.0     # quiet slices back off to watch interval x 3
+feed_max_interval_minutes = 10 # shop deal feeds (Amazon discounts/deals, noon 7-day low, Jumia flash) never slower than this
 replan_days = 7               # re-split categories weekly (new sub-categories, shifting sizes)
 lease_minutes = 5
 

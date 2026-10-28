@@ -235,3 +235,28 @@ def test_quiet_slices_back_off_only_up_to_the_groups_cap(cfg):
     rows = {r["target"]: r["interval_s"] for r in conn.execute("SELECT target, interval_s FROM jobs")}
     assert rows["capped"] == 15 * 60  # the group's cap
     assert rows["free"] == 1800  # the default: base interval x max_interval_factor (3)
+
+
+def test_deal_feeds_have_their_own_tighter_cap(cfg):
+    """schedule.feed_max_interval_minutes keeps the shops' deal feeds fast whatever their group's cap."""
+    from dataclasses import replace
+
+    from deals import scheduler
+
+    conn = db.connect(cfg.db_path)
+    now = utcnow()
+    cfg_feeds = replace(cfg, schedule=replace(cfg.schedule, feed_max_interval_minutes=12))
+    with conn:
+        for target in ["deals:21832982031", "category:21832982031,p_n_deal_type:26901036031",
+                       "category:tvs?f[min_offer_price]=7_days", "category:televisions"]:
+            conn.execute("""INSERT INTO jobs (kind, site, target, root, grp, base_interval_s, interval_s, next_due_at,
+                                              created_at, run_changes, run_count)
+                            VALUES ('crawl', 'amazon_eg', ?, ?, 'Other', 600, 1500, ?, ?, 0, 10)""",
+                         (target, target, iso(now), iso(now)))
+    for _ in range(6):
+        with conn:
+            for job in conn.execute("SELECT * FROM jobs").fetchall():
+                scheduler.finish_crawl(conn, cfg_feeds, job, now)
+    rows = {r["target"]: r["interval_s"] for r in conn.execute("SELECT target, interval_s FROM jobs")}
+    assert rows.pop("category:televisions") == 1800  # a plain category keeps the group's back-off
+    assert set(rows.values()) == {12 * 60}  # every kind of deal feed is held at the feed cap

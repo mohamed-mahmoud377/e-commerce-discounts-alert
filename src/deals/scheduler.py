@@ -129,6 +129,8 @@ def finish_crawl(conn: sqlite3.Connection, cfg: Config, job: sqlite3.Row, now: d
         highest = max(lowest, watch.max_interval_minutes * 60)
     else:
         highest = max(lowest, int(job["base_interval_s"] * cfg.schedule.max_interval_factor))
+    if cfg.schedule.feed_max_interval_minutes and is_deal_feed(job["root"] or job["target"]):
+        highest = max(lowest, min(highest, cfg.schedule.feed_max_interval_minutes * 60))
     if job["run_changes"]:
         interval = job["interval_s"] / 2
     else:
@@ -216,6 +218,15 @@ def worker_seen(conn: sqlite3.Connection, name: str, ip: str, now: datetime, *, 
                pages = pages + excluded.pages, jobs_done = jobs_done + excluded.jobs_done""",
         (name, iso(now), ip, ",".join(sites) if sites else None, version, pages, jobs_done),
     )
+
+
+# Root keys that read a shop's own deal feed rather than a whole category: Amazon's Today's
+# Deals API and "all discounts" filter, noon's "lowest price in 7 days", Jumia's flash sales.
+DEAL_FEED_MARKS = ("deals:", "p_n_deal_type", "min_offer_price", "flash-sales")
+
+
+def is_deal_feed(key: str) -> bool:
+    return any(mark in key for mark in DEAL_FEED_MARKS)
 
 
 def _lease(cfg: Config) -> timedelta:

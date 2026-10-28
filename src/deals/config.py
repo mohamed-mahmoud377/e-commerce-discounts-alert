@@ -32,6 +32,9 @@ class Schedule:
     max_interval_factor: float = 3.0  # quiet slices back off up to watch interval x this
     replan_days: float = 7
     lease_minutes: float = 5  # extended by every page a worker reports
+    # Slowest a shop's own deal feed (Amazon discounts/deals, noon 7-day low, Jumia flash sales)
+    # may get, whatever its group's cap: the feeds are where flash sales show up first.
+    feed_max_interval_minutes: int | None = None
 
 
 @dataclass(frozen=True)

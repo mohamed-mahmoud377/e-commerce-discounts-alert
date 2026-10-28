@@ -14,7 +14,7 @@ import re
 import sqlite3
 from datetime import datetime, timedelta
 
-from deals import db, health, monitor
+from deals import db, health, monitor, scheduler
 from deals.alerts import product_stats
 from deals.config import Config
 from deals.db import iso
@@ -169,10 +169,6 @@ def subscribers(conn: sqlite3.Connection, now: datetime) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-# Roots that read a shop's own deal feed (crawled as extra, faster roots of a group).
-FAST_LANE_MARKS = ("deals:", "p_n_deal_type", "min_offer_price", "flash-sales")
-
-
 def rules(cfg: Config) -> dict:
     """The alert rules, schedule and watched groups from config.toml (shown, not edited)."""
     from dataclasses import asdict
@@ -183,7 +179,7 @@ def rules(cfg: Config) -> dict:
             "name": w.name, "label": w.label, "interval_minutes": w.interval_minutes,
             "max_interval_minutes": w.max_interval_minutes or round(w.interval_minutes * cfg.schedule.max_interval_factor),
             "min_price": w.min_price, "min_drop": w.min_drop, "sites": sorted(w.targets),
-            "fast_lanes": sum(any(m in key for m in FAST_LANE_MARKS) for keys in w.targets.values() for key in keys),
+            "fast_lanes": sum(scheduler.is_deal_feed(key) for keys in w.targets.values() for key in keys),
         } for w in cfg.watches],
     }
 
@@ -724,7 +720,8 @@ const views = {
       <h2 style='margin:4px 0 0;font-size:17px'>Schedule</h2>
       <section class='card rule' style='display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px 28px'>
         ${kv('Fastest re-crawl of a slice', s.min_interval_minutes + ' min')}${kv('Quiet slices back off to interval ×', s.max_interval_factor)}
-        ${kv('Re-split categories every', s.replan_days + ' days')}${kv('Job lease length', s.lease_minutes + ' min')}</section>`;
+        ${kv('Re-split categories every', s.replan_days + ' days')}${kv('Job lease length', s.lease_minutes + ' min')}
+        ${s.feed_max_interval_minutes ? kv('Deal feeds never slower than', s.feed_max_interval_minutes + ' min') : ''}</section>`;
   },
 };
 const dz = {days: '1', loaded: null, data: [], kind: 'all', site: '', state: '', q: '', sel: null, shown: 50};
