@@ -6,22 +6,22 @@ What the output means: [MONITORING.md](MONITORING.md). How it all works: [GUIDE.
 
 ## Web UI (the easiest way)
 
-Tabs: Overview, Devices, Logs (live), Alerts (with state: sent / held / cancelled), Jobs, Products (search,
-group, sort, in-stock filter; click a product for its price chart, typical price, rarity, other sellers and
-alerts), Queries (17 saved reports). Click any table header to sort by it.
+Screens (sidebar on a computer, tab bar on a phone): Overview, Deals (every alert by kind, with the exact
+Telegram message), Products (search, shop, group, sort, in stock, "price changed in the last 24 h / 7 days /
+30 days"; click a product for its price chart, typical price, rarity, other sellers and alerts), Devices, Jobs,
+Logs (live), Queries (17 saved reports with search and filters), Subscribers, Rules & watches. Click a table
+header to sort by it. Light, dark or Auto (follows the device) from the switch at the bottom of the sidebar.
 
-A small read-only website served by the coordinator itself: nothing to install or run.
+A small website served by the coordinator itself: nothing to install or run. Worker tokens can only look; the
+admin token (what `make ui` uses) can also approve, reject, remove or promote subscribers (the same as the bot's
+/subscribers buttons) and send the daily report now. Rules are shown, not edited: change them in
+`/etc/deals/config.toml` and restart the coordinator.
 
 | What | How |
 | --- | --- |
 | Open it, already logged in | `make ui` |
 | Open it from a phone or another computer | `make ui-token` (copies the token), then open http://207.154.206.127:8787/ui and paste it |
-| Log out | the "log out" link (top right) |
-
-Tabs: **Overview** (status, totals, every health check, devices, shops), **Devices** (each device's state per
-shop), **Logs** (live, from every device and the server; filter by device and level), **Alerts** (what was
-sent, to how many people), **Jobs** (every slice: failing first, then running; interval, last result, error),
-**Products** (search titles; click one for its price history and typical price).
+| Log out | "Log out" at the bottom of the sidebar (on a phone: More) |
 
 How the login works: the secret is `admin_token` in `/etc/deals/config.toml` (worker tokens also work). After
 logging in it is kept in a cookie for 30 days. To change it: `make ssh`, then
@@ -180,6 +180,8 @@ or a Bearer header (no token needed on the server itself). Full reference: [INTE
 | `GET /api/overview` | Status, totals, every health check, devices, shops |
 | `GET /api/alerts?days=1` | Recent alerts with delivery counts |
 | `GET /api/jobs` | Every job, failing first |
-| `GET /api/products?q=samsung+55` / `GET /api/products/{id}` | Product search / one product with stats and history |
+| `GET /api/products?q=samsung+55&changed_since=<UTC time>` / `GET /api/products/{id}` | Product search / one product with stats and history |
+| `GET /api/subscribers`, `GET /api/rules` | Subscribers; alert rules, schedule and watches from the config |
+| `POST /api/subscribers/{chat_id}/{approve,reject,remove,promote,demote}`, `POST /api/report` | Admin token only: manage a subscriber; send the daily report now |
 | `GET /dashboard` | The older one-page dashboard |
 | `GET /docs` | Interactive API schema |

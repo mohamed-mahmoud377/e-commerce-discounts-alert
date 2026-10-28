@@ -20,6 +20,7 @@ from datetime import datetime, timedelta
 from importlib.metadata import version as pkg_version
 
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
@@ -128,6 +129,7 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
         stop.set()
 
     app = FastAPI(title="deals coordinator", version=VERSION, lifespan=lifespan)
+    app.add_middleware(GZipMiddleware, minimum_size=2000)  # the web UI page and big JSON lists, for phones
     app.state.conn = conn
     tokens = {token: name for name, token in cfg.workers.items()}
 
@@ -148,6 +150,16 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
         token = (request.cookies.get(webui.COOKIE) or request.query_params.get("token")
                  or request.headers.get("authorization", "").removeprefix("Bearer ").strip())
         return token in view_tokens
+
+    def is_admin(request: Request) -> bool:
+        """Only the admin token may change anything (approve people, send the report)."""
+        token = (request.cookies.get(webui.COOKIE) or request.query_params.get("token")
+                 or request.headers.get("authorization", "").removeprefix("Bearer ").strip())
+        return bool(cfg.admin_token) and token == cfg.admin_token
+
+    def admin(request: Request) -> None:
+        if not is_admin(request):
+            raise HTTPException(403, "only the admin token can do this")
 
     def viewer(request: Request) -> None:
         if not can_view(request):
@@ -328,7 +340,7 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
             logs = monitor.events(rc, source=source, level=level, limit=300)
             return monitor.render_page(overview(rc, utcnow()), logs, source, request.query_params.get("token"))
 
-    # --- web UI (read-only) --------------------------------------------------------
+    # --- web UI (viewers read; the admin token can also manage subscribers) -------
     revision_file = Path(__file__).resolve().parents[2] / "REVISION"
 
     @app.get("/", include_in_schema=False)
@@ -369,10 +381,10 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
         return response
 
     @app.get("/api/overview", dependencies=[Depends(viewer)])
-    def overview_api():
+    def overview_api(request: Request):
         revision = revision_file.read_text().split(" deployed")[0] if revision_file.exists() else ""
         with closing(read_conn()) as rc:
-            return webui.overview(rc, cfg, utcnow(), revision)
+            return {**webui.overview(rc, cfg, utcnow(), revision), "admin": is_admin(request)}
 
     @app.get("/api/alerts", dependencies=[Depends(viewer)])
     def alerts_api(days: float = 1, kind: str | None = None, limit: int = 300):
@@ -386,10 +398,10 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
 
     @app.get("/api/products", dependencies=[Depends(viewer)])
     def products_api(q: str = "", site: str | None = None, limit: int = 100, grp: str | None = None,
-                     sort: str = "recent", in_stock: int = 0, offset: int = 0):
+                     sort: str = "recent", in_stock: int = 0, offset: int = 0, changed_since: str | None = None):
         with closing(read_conn()) as rc:
             page = webui.products(rc, q, site or None, max(0, min(limit, 500)), grp or None, sort, bool(in_stock),
-                                  max(0, offset))
+                                  max(0, offset), changed_since or None)
             return {**page, "groups": webui.groups(rc)}
 
     @app.get("/api/queries", dependencies=[Depends(viewer)])
@@ -398,13 +410,14 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
 
     @app.get("/api/queries/{name}", dependencies=[Depends(viewer)])
     def query_api(name: str, hours: float = 24, grp: str | None = None, site: str | None = None,
-                  sort: str | None = None, desc: int = 0, limit: int = 100, offset: int = 0, total: int | None = None):
+                  sort: str | None = None, desc: int = 0, limit: int = 100, offset: int = 0, total: int | None = None,
+                  q: str = ""):
         if name not in webui.QUERIES:
             raise HTTPException(404, "no such query")
         with closing(read_conn()) as rc:
             return webui.run_query(rc, name, utcnow(), max(1.0, min(hours, 24 * 90)), grp or None, site or None,
                                    sort=sort or None, desc=bool(desc), limit=max(1, min(limit, 500)), offset=max(0, offset),
-                                   known_total=total)
+                                   known_total=total, search=q)
 
     @app.get("/api/groups", dependencies=[Depends(viewer)])
     def groups_api():
@@ -418,6 +431,41 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
         if found is None:
             raise HTTPException(404, "no such product")
         return found
+
+    @app.get("/api/subscribers", dependencies=[Depends(viewer)])
+    def subscribers_api(request: Request):
+        with closing(read_conn()) as rc:
+            return {"admin": is_admin(request), "people": webui.subscribers(rc, utcnow())}
+
+    @app.post("/api/subscribers/{chat_id}/{action}", dependencies=[Depends(admin)])
+    def subscriber_action(chat_id: int, action: str):
+        # A thread of its own (plain def): telling the person on Telegram is a network call.
+        if action not in bot.DECISIONS:
+            raise HTTPException(404, "no such action")
+        with closing(db.connect(cfg.db_path)) as wc:
+            sub = wc.execute("SELECT * FROM subscribers WHERE chat_id = ?", (chat_id,)).fetchone()
+            if sub is None or sub["is_admin"] or sub["status"] == "removed":
+                raise HTTPException(404, "no such person")
+            if action in ("approve", "reject") and sub["status"] != "pending":
+                raise HTTPException(409, f"already {sub['status']}")
+            if action == "promote" and sub["status"] != "active":
+                raise HTTPException(409, "only active subscribers can be helper admins")
+            tg = alerts.Telegram(cfg.telegram_token) if cfg.telegram_token else None
+            bot.decide(wc, tg, sub, action, utcnow())
+        return {"ok": True}
+
+    @app.post("/api/report", dependencies=[Depends(admin)])
+    def report_now():
+        """Queue the daily report for the admins now (the alert sender delivers it)."""
+        now = utcnow()
+        with closing(db.connect(cfg.db_path)) as wc, wc:
+            alerts.system_alert(wc, f"report-now:{iso(now)}", health.daily_report(wc, cfg, now), now,
+                                timedelta(0), raw_html=True)
+        return {"ok": True}
+
+    @app.get("/api/rules", dependencies=[Depends(viewer)])
+    def rules_api():
+        return webui.rules(cfg)
 
     return app
 

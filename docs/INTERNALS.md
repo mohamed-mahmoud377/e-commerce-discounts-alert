@@ -26,11 +26,11 @@ owns one job.
 | `scheduler.py` | 241 | The job queue: leases, intervals, blocks, failures, worker bookkeeping, events | db, planner |
 | `pricing.py` | 222 | Price statistics and the deal rules; pure functions, no database | config, models |
 | `alerts.py` | 279 | Judging a changed product, writing alerts, formatting the Arabic message, the Telegram client and the delivery loop | db, pricing |
-| `bot.py` | 191 | The Telegram conversation: /start, /stop, approvals, subscribers | alerts, db |
+| `bot.py` | 292 | The Telegram conversation: /start, /stop, approvals, subscribers; `decide()` is shared with the web UI | alerts, db |
 | `health.py` | 200 | Health checks and the daily report | db, alerts |
 | `monitor.py` | 166 | Device states, events (logs), the dashboard page | db, scheduler |
-| `webui.py` | 243 | The web UI page (HTML + JS) and its read-only queries | health, monitor, alerts |
-| `coordinator.py` | 363 | The FastAPI app (all endpoints) and the watchdog thread | everything above |
+| `webui.py` | 1182 | The web UI page (one HTML + CSS + JS string, light and dark themes) and its queries | health, monitor, alerts |
+| `coordinator.py` | 545 | The FastAPI app (all endpoints) and the watchdog thread | everything above |
 | `worker.py` | 271 | The crawling loop on each device, retries, log shipping | sites, planner, HTTP to the coordinator |
 | `cli.py` | 445 | The `deals` command: every subcommand | everything |
 
@@ -167,10 +167,18 @@ Base address `http://207.154.206.127:8787` (port 8787 open in the firewall). Wor
 | `GET /api/events?source=&level=&after_id=&limit=` | viewer | | `{events: [{id, at, source, level, message}]}` |
 | `GET /dashboard?source=&level=` | viewer | | HTML page |
 | `GET /ui`, `GET/POST /ui/login`, `GET /ui/logout` | anyone / viewer | `token` (form or one-click `?token=`) | The web UI; login sets the HttpOnly cookie `deals_ui` (30 days) |
-| `GET /api/overview` | viewer | | totals, health checks, devices, shops, live revision |
-| `GET /api/alerts?days=&kind=&limit=` | viewer | | recent alerts with delivery counts |
+| `GET /api/overview` | viewer | | totals, health checks, latest deals, devices, shops, server load and RAM, live revision, `admin` (is this the admin token) |
+| `GET /api/alerts?days=&kind=&limit=` | viewer | | recent alerts with delivery counts and the Telegram text |
 | `GET /api/jobs?limit=` | viewer | | jobs, failing first then running |
-| `GET /api/products?q=&site=&limit=`, `GET /api/products/{id}` | viewer | | product search; one product with stats and history |
+| `GET /api/products?q=&site=&grp=&sort=&in_stock=&changed_since=&limit=&offset=`, `GET /api/products/{id}` | viewer | | product search (`changed_since`: last change at or after this UTC time); one product with stats and history |
+| `GET /api/queries`, `GET /api/queries/{name}?hours=&grp=&site=&q=&sort=&desc=&limit=&offset=` | viewer | | saved reports; `q` = words that must all be in the title |
+| `GET /api/subscribers` | viewer | | everyone but removed people, join requests first, messages in 7 days; `admin` |
+| `GET /api/rules` | viewer | | alert rules, schedule and watched groups from the config (read-only) |
+| `POST /api/subscribers/{chat_id}/{action}` | admin token | | `approve`, `reject`, `remove`, `promote`, `demote` (as the bot's buttons; tells the person on Telegram). 403 for other tokens, 409 if already decided |
+| `POST /api/report` | admin token | | queue the daily report to the admins now |
+
+Responses over 2 KB are gzipped (the web UI page is about 80 KB, 23 KB compressed); the page is one static
+string, and lists are paged in SQL, so the UI costs the 1 GB droplet next to nothing at rest.
 
 A `Listing` in JSON: `site`, `sku`, `title`, `url`, `price`, `list_price`, `currency`, `in_stock`, and
 optional `list_price_kind`, `brand`, `stock_left`, `recent_sales`, `rating`, `reviews`, `badges` (list), `seller`.
@@ -178,6 +186,7 @@ optional `list_price_kind`, `brand`, `stock_left`, `recent_sales`, `rating`, `re
 | Error | Meaning |
 | --- | --- |
 | 401 | Unknown token |
+| 403 | A change from the web UI made with a worker token (only the admin token may) |
 | 409 | Lease lost: expired and given to another worker, or the job was removed by a config change. The worker drops the job |
 | 422 | Bad body, a listing for another shop, or a plan sent for a crawl job |
 

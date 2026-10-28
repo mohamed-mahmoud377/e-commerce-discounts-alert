@@ -72,7 +72,7 @@ Everything is driven by `make` from your Mac:
 
 | Command | What it does |
 |---|---|
-| `make ui` | **the web UI**, already logged in: status, devices, live logs, alerts, jobs, product search (`make ui-token` for your phone) |
+| `make ui` | **the web UI**, already logged in: status, deals, products, devices, jobs, live logs, saved queries, subscribers, rules; light or dark; works on a phone (`make ui-token`) |
 | `make health` | **is everything working?** server services and logs, deployed code, this Mac's worker, database, crawling per site, Telegram delivery, disk, backups (✅/⚠️/❌) |
 | `make devices` | every connected device and its fetch state per shop (🟢 ok, 🔵 crawling, ⚪ idle, 🟠 blocked, 🔴 failing/offline) |
 | `make dashboard` | the same in your browser, refreshing every 15 s, with everyone's logs (filter by device) |

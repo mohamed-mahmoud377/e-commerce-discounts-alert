@@ -149,50 +149,60 @@ def _on_button(conn, tg: Telegram, cq: dict, owner: int, now: datetime) -> None:
     who = html.escape(sub["name"] or str(sub["chat_id"]), quote=False)
 
     if action in ("approve", "reject"):
-        if sub["status"] != "pending":
-            answer(f"تم التعامل مع هذا الطلب بالفعل: {STATUS_LABEL.get(sub['status'], sub['status'])}")
+        if refused := decide(conn, tg, sub, action, now):
+            answer(refused)
             return
-        if action == "approve":
-            with conn:
-                conn.execute("UPDATE subscribers SET status = 'active', approved_at = ?, updated_at = ? WHERE chat_id = ?",
-                             (iso(now), iso(now), sub["chat_id"]))
-            tg.send(sub["chat_id"], APPROVED)
-            result = "✅ تمت الموافقة"
-        else:
-            _set_status(conn, sub["chat_id"], "rejected", now)
-            tg.send(sub["chat_id"], REJECTED)
-            result = "❌ تم الرفض"
+        result = "✅ تمت الموافقة" if action == "approve" else "❌ تم الرفض"
         if message:  # replace the buttons with the decision
             tg.call("editMessageText", chat_id=message["chat"]["id"], message_id=message["message_id"],
                     text=f"{html.escape(message.get('text', ''), quote=False)}\n\n{result}", parse_mode="HTML")
         answer(result)
-        log.info("subscriber %s: %s", sub["chat_id"], action)
     elif action == "remove":  # ask first: a slip of the finger shouldn't drop a friend
         _edit(tg, message, f"إزالة <b>{who}</b>؟ لن تصله التنبيهات بعد الآن، ويمكنه طلب الاشتراك من جديد.",
               [[{"text": "🗑 نعم، أزله", "callback_data": f"remove_yes:{sub['chat_id']}"},
                 {"text": "↩️ رجوع", "callback_data": "list:"}]])
         answer("")
     elif action == "remove_yes":
-        with conn:
-            conn.execute("UPDATE subscribers SET status = 'removed', is_manager = 0, updated_at = ? WHERE chat_id = ?",
-                         (iso(now), sub["chat_id"]))
-        _notify(tg, sub["chat_id"], REMOVED)
+        decide(conn, tg, sub, "remove", now)
         _show_list(conn, tg, message)
         answer(f"تمت إزالة {sub['name'] or sub['chat_id']}")
-        log.info("subscriber %s removed", sub["chat_id"])
     elif action in ("promote", "demote"):
-        if action == "promote" and sub["status"] != "active":
-            answer("يجب أن يكون مشتركًا نشطًا أولًا")
+        if refused := decide(conn, tg, sub, action, now):
+            answer(refused)
             return
-        with conn:
-            conn.execute("UPDATE subscribers SET is_manager = ?, updated_at = ? WHERE chat_id = ?",
-                         (int(action == "promote"), iso(now), sub["chat_id"]))
-        _notify(tg, sub["chat_id"], MADE_MANAGER if action == "promote" else NO_LONGER_MANAGER)
         _show_list(conn, tg, message)
         answer("⭐ أصبح مساعدًا" if action == "promote" else "لم يعد مساعدًا")
-        log.info("subscriber %s: %s", sub["chat_id"], action)
     else:
         answer("طلب غير معروف")
+
+
+DECISIONS = {"approve": APPROVED, "reject": REJECTED, "remove": REMOVED,
+             "promote": MADE_MANAGER, "demote": NO_LONGER_MANAGER}
+
+
+def decide(conn, tg: Telegram | None, sub: sqlite3.Row, action: str, now: datetime) -> str | None:
+    """Apply the owner's decision about one person (from the bot's buttons or the web UI) and tell
+    them on Telegram. Returns why it can't be done (Arabic, for the bot), or None when done."""
+    if action in ("approve", "reject") and sub["status"] != "pending":
+        return f"تم التعامل مع هذا الطلب بالفعل: {STATUS_LABEL.get(sub['status'], sub['status'])}"
+    if action == "promote" and sub["status"] != "active":
+        return "يجب أن يكون مشتركًا نشطًا أولًا"
+    with conn:
+        if action == "approve":
+            conn.execute("UPDATE subscribers SET status = 'active', approved_at = ?, updated_at = ? WHERE chat_id = ?",
+                         (iso(now), iso(now), sub["chat_id"]))
+        elif action == "reject":
+            _set_status(conn, sub["chat_id"], "rejected", now)
+        elif action == "remove":
+            conn.execute("UPDATE subscribers SET status = 'removed', is_manager = 0, updated_at = ? WHERE chat_id = ?",
+                         (iso(now), sub["chat_id"]))
+        else:
+            conn.execute("UPDATE subscribers SET is_manager = ?, updated_at = ? WHERE chat_id = ?",
+                         (int(action == "promote"), iso(now), sub["chat_id"]))
+    if tg is not None:
+        _notify(tg, sub["chat_id"], DECISIONS[action])
+    log.info("subscriber %s: %s", sub["chat_id"], action)
+    return None
 
 
 def _show_list(conn, tg: Telegram, message: dict) -> None:

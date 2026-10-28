@@ -11,7 +11,7 @@ silent, an IP keeps getting blocked, a page layout seems to change, or the disk 
 
 | When | What | Time |
 | --- | --- | --- |
-| Any time | `make ui`: the web UI shows status, devices, logs, alerts, jobs and products in one place | 1 minute |
+| Any time | `make ui`: the web UI shows status, deals, products, devices, jobs, logs and subscribers in one place | 1 minute |
 | Every morning | Read the daily report (09:00 Cairo). "كل شيء يعمل بشكل طبيعي" means nothing to do | 10 seconds |
 | When a warning arrives | Follow its row in the Telegram warnings section below | 1 to 5 minutes |
 | When something looks off | `make health`, then `make devices`, then `make events LEVEL=warning` | 2 minutes |

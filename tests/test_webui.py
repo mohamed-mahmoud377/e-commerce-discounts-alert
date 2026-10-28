@@ -1,4 +1,5 @@
 from dataclasses import replace
+from datetime import timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -68,12 +69,12 @@ def test_saved_queries_run_and_need_login(client):
     rows = client.get("/api/queries/coverage").json()["rows"]
     assert rows and rows[0][0] == "TVs" and rows[0][2] == 1  # the one recorded product
     d = client.get("/api/queries/coverage?grp=TVs&site=amazon_eg").json()
-    assert d["filters"] == {"grp": True, "site": True} and len(d["rows"]) == 1
+    assert d["filters"] == {"grp": True, "site": True, "q": False} and len(d["rows"]) == 1
     assert client.get("/api/queries/coverage?grp=Phones").json()["rows"] == []
     assert client.get("/api/queries/new_products?site=noon_eg&hours=48").json()["rows"] == []
     assert client.get("/api/queries/new_products?site=amazon_eg&hours=48").json()["rows"][0][2] == "Samsung 55 inch TV"
     d = client.get("/api/queries/tables?grp=TVs").json()  # no such columns: filter ignored, not an error
-    assert d["filters"] == {"grp": False, "site": False} and len(d["rows"]) == 8
+    assert d["filters"] == {"grp": False, "site": False, "q": False} and len(d["rows"]) == 8
 
 
 def test_product_page_data_and_filters(client):
@@ -148,3 +149,61 @@ def test_saved_queries_page_and_sort_on_the_server(client):
     assert d["sort"] == "title" and d["desc"] is True and d["rows"][0][d["columns"].index("title")] == "Samsung 55 inch TV"
     assert client.get("/api/queries/new_products?hours=24&sort=drop%20table").json()["sort"] is None  # unknown column ignored
     assert client.get("/api/queries/new_products?hours=24&limit=50&offset=5000").json()["rows"] == []
+
+
+def test_products_changed_within_a_period(client):
+    client.post("/ui/login", data={"token": "admin-secret"}, follow_redirects=False)
+    conn = client.app.state.conn
+    old = utcnow() - timedelta(days=3)
+    with conn:
+        db.record(conn, Listing("noon_eg", "OLD@s", "Old Samsung fridge", "https://x/old", 900_000, None, "EGP", True),
+                  grp="TVs", now=old)
+    recent = (utcnow() - timedelta(hours=24)).isoformat()
+    titles = [p["title"] for p in client.get("/api/products", params={"changed_since": recent}).json()["products"]]
+    assert titles == ["Samsung 55 inch TV"]
+    assert client.get("/api/products", params={"changed_since": ""}).json()["total"] == 2  # empty = any time
+
+
+def test_saved_query_text_search(client):
+    client.post("/ui/login", data={"token": "admin-secret"}, follow_redirects=False)
+    d = client.get("/api/queries/new_products?hours=48&q=samsung 55").json()
+    assert d["filters"]["q"] is True and len(d["rows"]) == 1
+    assert client.get("/api/queries/new_products?hours=48&q=iphone").json()["rows"] == []
+    assert len(client.get("/api/queries/tables?q=whatever").json()["rows"]) == 8  # no title column: ignored
+
+
+def test_new_screens_data(client):
+    client.post("/ui/login", data={"token": "admin-secret"}, follow_redirects=False)
+    page = client.get("/ui").text
+    for screen in ("Deals", "Subscribers", "Rules", "setTheme"):
+        assert screen in page
+    o = client.get("/api/overview").json()
+    assert o["admin"] is True and "server" in o and o["latest"] == [] and o["totals"]["pending"] == 0
+    rules = client.get("/api/rules").json()
+    assert rules["alerts"]["min_drop"] > 0 and rules["schedule"]["min_interval_minutes"] > 0
+    assert {w["name"] for w in rules["watches"]} and all("max_interval_minutes" in w for w in rules["watches"])
+
+
+def test_admin_manages_subscribers_and_workers_cannot(cfg):
+    cfg = replace(cfg, admin_token="admin-secret", telegram_token="")
+    app = create_app(cfg, background=False)
+    now = utcnow().isoformat()
+    with db.connect(cfg.db_path) as conn:
+        conn.execute("INSERT INTO subscribers (chat_id, name, status, created_at, updated_at) VALUES (7, 'Omar', 'pending', ?, ?)", (now, now))
+    with TestClient(app) as c:
+        assert c.post("/api/subscribers/7/approve", params={"token": "token-1"}).status_code == 403  # worker token: look only
+        c.post("/ui/login", data={"token": "admin-secret"}, follow_redirects=False)
+        people = c.get("/api/subscribers").json()
+        assert people["admin"] is True and [p["status"] for p in people["people"] if p["chat_id"] == 7] == ["pending"]
+        assert c.post("/api/subscribers/7/approve").json() == {"ok": True}
+        assert c.post("/api/subscribers/7/approve").status_code == 409  # already decided
+        assert c.post("/api/subscribers/7/promote").status_code == 200
+        assert c.post("/api/subscribers/7/explode").status_code == 404
+        assert c.post("/api/subscribers/999/remove").status_code == 404
+        row = c.app.state.conn.execute("SELECT status, is_manager FROM subscribers WHERE chat_id = 7").fetchone()
+        assert (row["status"], row["is_manager"]) == ("active", 1)
+        assert c.post("/api/subscribers/7/remove").status_code == 200
+        assert 7 not in [p["chat_id"] for p in c.get("/api/subscribers").json()["people"]]
+        assert c.post("/api/report").json() == {"ok": True}
+        report = c.app.state.conn.execute("SELECT kind, dedupe_key FROM alerts").fetchone()
+        assert report["kind"] == "system" and report["dedupe_key"].startswith("report-now:")
