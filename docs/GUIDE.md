@@ -4,7 +4,8 @@ Also kept as a shared doc with the same content. Companion docs: [MONITORING.md]
 (health, devices, logs, runbook), [INTERNALS.md](INTERNALS.md) (code-level detail),
 [REVIEW-2026-10-25.md](REVIEW-2026-10-25.md) (first review of the live system), [ROADMAP.md](ROADMAP.md),
 [JUMIA.md](JUMIA.md) (the Jumia analysis), [PRODUCT_FLOW.md](PRODUCT_FLOW.md) (one product from first sighting to
-alert, with worked examples).
+alert, with worked examples), [PRICING_RESEARCH.md](PRICING_RESEARCH.md) (how Amazon and noon price, and
+the science behind the rules below).
 
 ## Overview
 

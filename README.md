@@ -19,6 +19,7 @@ Each worker only takes jobs for the sites its internet connection can reach.
 - Monitoring, health checks, devices, logs and the runbook: [docs/MONITORING.md](docs/MONITORING.md)
 - Code-level detail for improving it (modules, one page end to end, schema, API, config): [docs/INTERNALS.md](docs/INTERNALS.md)
 - First review of the live system and ranked improvements: [docs/REVIEW-2026-10-25.md](docs/REVIEW-2026-10-25.md)
+- How Amazon and noon set and change prices, and the science behind catching real drops fast (with ranked changes for this project): [docs/PRICING_RESEARCH.md](docs/PRICING_RESEARCH.md)
 - What to improve next: [docs/ROADMAP.md](docs/ROADMAP.md)
 
 ```
