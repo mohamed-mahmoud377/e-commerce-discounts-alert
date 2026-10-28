@@ -24,8 +24,9 @@ DAY = 86400.0
 STRONG_SIGNALS = {"mega_deal", "limited_deal", "lowest_365d"}
 # Shops where "only N left" is shown so widely it proves nothing (amazon.eg: 45% of
 # listings show 3 or fewer left, measured 2026-10-25; jumia: 45% too, 2026-10-26;
-# 2B: "only N left" on 57% of its TVs, 2026-10-27).
-LOW_STOCK_EVERYWHERE = {"amazon_eg", "jumia_eg", "2b_eg"}
+# 2B: "only N left" on 57% of its TVs, 2026-10-27; Carrefour: low stock of 1 to 3 on
+# 42% of its TVs, 2026-10-28).
+LOW_STOCK_EVERYWHERE = {"amazon_eg", "jumia_eg", "2b_eg", "carrefour_eg"}
 
 
 @dataclass(frozen=True)

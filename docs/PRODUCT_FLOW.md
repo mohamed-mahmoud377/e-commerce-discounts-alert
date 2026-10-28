@@ -334,7 +334,7 @@ days later. Those are the alerts worth acting on.
 
 | Step | Code |
 | --- | --- |
-| 1 Reading a card | `sites/amazon_eg.py` `_parse_card`, `sites/noon_eg.py` `_parse_hit`, `sites/jumia_eg.py` `_parse_product`, `sites/btech_eg.py` `_parse_item`, `sites/dream2000_eg.py` `product_listings`, `sites/cairosales_eg.py` `_parse_card`, `sites/twob_eg.py` `_parse_item` |
+| 1 Reading a card | `sites/amazon_eg.py` `_parse_card`, `sites/noon_eg.py` `_parse_hit`, `sites/jumia_eg.py` `_parse_product`, `sites/btech_eg.py` `_parse_item`, `sites/dream2000_eg.py` `product_listings`, `sites/cairosales_eg.py` `_parse_card`, `sites/twob_eg.py` `_parse_item`, `sites/carrefour_eg.py` `_parse_card` |
 | 2 Group filters | `coordinator.py` page handler (`unwanted`), `config.Watch.accepts` |
 | 3 Recording | `db.record()`, `db.PRICE_NOISE` |
 | 4 When judged | `coordinator.py` page handler (`dropped`) |

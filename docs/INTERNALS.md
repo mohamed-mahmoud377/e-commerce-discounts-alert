@@ -18,7 +18,8 @@ owns one job.
 | `sites/cairosales_eg.py` | 150 | Fetching Cairo Sales (PrestaShop) category pages with Chrome's TLS fingerprint, 60 cards a page sorted by price; unpriced cards are out of stock; homepage redirects are unknown slugs | models, base |
 | `sites/twob_eg.py` | 140 | 2B's Magento GraphQL API: one POST per 100 products with exact counts, categories by numeric id | models |
 | `sites/btech_eg.py` | 230 | B.TECH's product search API (guest token from the session cookie, 100 products a POST, inclusive price filter); the category tree read from a category page once a day to validate slugs | models |
-| `sites/dream2000_eg.py` | 120 | Dream 2000's Shopify collection JSON (250 products a GET, exact counts, no price filter); variants folded by everything but colour | models |
+| `sites/dream2000_eg.py` | 115 | Dream 2000's Shopify collection JSON (250 products a GET, exact counts, no price filter); variants folded by everything but colour | models |
+| `sites/carrefour_eg.py` | 183 | Carrefour Egypt's category pages (Akamai; the listing JSON cut out of the Next.js RSC payload, 60 cards a page sorted by price, inclusive price filter, 21-page cap); an empty category slice is checked against the bare category to tell an unknown id from an empty range | models, btech_eg (RSC helpers) |
 | `sites/base.py` | 35 | The `Site` interface every shop implements; money and count parsing | models |
 | `planner.py` | 93 | Splitting a root into slices under the shop's limit, by price ranges only | models |
 | `db.py` | 349 | Schema and migrations; `record()` (upsert a product, append history on change); backups | models |
@@ -192,7 +193,7 @@ and `DEALS_DATA_DIR` (or the matching flags). It keeps no database; its only loc
 | Thread | Does |
 | --- | --- |
 | main | Starts the others, waits, handles Ctrl+C / SIGTERM by setting the stop event |
-| one per shop (`amazon_eg`, `noon_eg`, `jumia_eg`, `cairosales_eg`, `2b_eg`, `btech_eg`, `dream2000_eg`) | `_loop`: lease, crawl or plan, pause, repeat. Each holds its own shop adapter and HTTP session |
+| one per shop (`amazon_eg`, `noon_eg`, `jumia_eg`, `cairosales_eg`, `2b_eg`, `btech_eg`, `dream2000_eg`, `carrefour_eg`) | `_loop`: lease, crawl or plan, pause, repeat. Each holds its own shop adapter and HTTP session |
 | `log-shipper` | Every 10 s posts up to 500 buffered log lines to `/api/logs`; keeps up to 1,000 while the server is unreachable |
 
 **Timeouts and retries.**
@@ -202,7 +203,7 @@ and `DEALS_DATA_DIR` (or the matching flags). It keeps no database; its only loc
 | Shop request timeout | 30 s |
 | Page retries on network errors | after 5, 20, 60 s, then the job is reported failed |
 | Coordinator calls | retried forever with backoff 2 s doubling to 60 s; stops only when shutting down. Logged as INFO for the first 60 s of an outage, WARNING after, plus "reachable again" |
-| Pause between pages and between jobs | random within the shop's `min_delay`..`max_delay` (Amazon 2-4 s, noon 1-2 s, Jumia 1.5-3 s, Cairo Sales 1.5-3 s, 2B 1-2 s) |
+| Pause between pages and between jobs | random within the shop's `min_delay`..`max_delay` (Amazon 2-4 s, noon 1-2 s, Jumia 1.5-3 s, Cairo Sales 1.5-3 s, 2B 1-2 s, B.TECH 1-2 s, Dream 2000 1-2 s, Carrefour 2-4 s) |
 | Nothing due | waits the `retry_after` the coordinator sends (5-60 s) |
 | Lease | 5 min, renewed by each page post |
 
@@ -268,7 +269,7 @@ commented template.
 | `[[watch]] require_words`, `exclude_words` | none | Title filters for new products (case-insensitive substrings): the title must contain one of `require_words` and none of `exclude_words`; a title containing "console" is not excluded (bundles) unless it also contains " for " (an accessory for a console). For noisy sources such as searches |
 | `[[watch]] min_price` | none | EGP floor for crawling and alerting |
 | `[[watch]] min_drop` | none | This group's own price-drop threshold |
-| `[[watch]] amazon_eg`, `noon_eg`, `jumia_eg`, `cairosales_eg`, `2b_eg` | | One root or a list: `category:<id>` or `search:<words>`, optionally `\|price:<min>-<max>` (Jumia and Cairo Sales ids are URL slugs, e.g. `televisions`, `tvs-screens/oled`; 2B ids are Magento's numbers, e.g. `131`). Deal-feed roots (fast lanes) use the shop's own filter syntax inside the id: Amazon `category:<node>,p_n_deal_type:26901036031` and `deals:<node>` (the Today's Deals JSON API), noon `category:<path>?f[min_offer_price]=7_days`, Jumia `category:flash-sales` (see GUIDE, Algorithm 3) |
+| `[[watch]] amazon_eg`, `noon_eg`, `jumia_eg`, `cairosales_eg`, `2b_eg`, `btech_eg`, `dream2000_eg`, `carrefour_eg` | | One root or a list: `category:<id>` or `search:<words>`, optionally `\|price:<min>-<max>` (Jumia and Cairo Sales ids are URL slugs, e.g. `televisions`, `tvs-screens/oled`; 2B ids are Magento's numbers, e.g. `131`; Carrefour ids are case-sensitive codes, e.g. `NFEGY4080000`). Deal-feed roots (fast lanes) use the shop's own filter syntax inside the id: Amazon `category:<node>,p_n_deal_type:26901036031` and `deals:<node>` (the Today's Deals JSON API), noon `category:<path>?f[min_offer_price]=7_days`, Jumia `category:flash-sales` (see GUIDE, Algorithm 3) |
 
 Changing a watch's `min_price` or roots creates new plan jobs and deletes the old ones with their slices;
 product history is kept.
@@ -279,8 +280,8 @@ Every change follows the same loop: write a test that shows what you want, chang
 `make deploy`, restart the Mac worker if worker or site code changed, `make health`, then check the real
 data with `make sql` or `make devices`.
 
-**Add a shop** (Jumia was added exactly this way on 26 October 2026, Cairo Sales, 2B, B.TECH and Dream 2000 on 27 October;
-[JUMIA.md](JUMIA.md), [CAIROSALES.md](CAIROSALES.md), [2B.md](2B.md), [BTECH.md](BTECH.md) and [DREAM2000.md](DREAM2000.md) show the analysis to do first: access,
+**Add a shop** (Jumia was added exactly this way on 26 October 2026, Cairo Sales, 2B, B.TECH and Dream 2000 on 27 October, Carrefour on 28 October;
+[JUMIA.md](JUMIA.md), [CAIROSALES.md](CAIROSALES.md), [2B.md](2B.md), [BTECH.md](BTECH.md), [DREAM2000.md](DREAM2000.md) and [CARREFOUR.md](CARREFOUR.md) show the analysis to do first: access,
 URL scheme or API, page caps, empty-result behaviour, category tree, signals):
 
 1. Create `src/deals/sites/<shop>.py` with a class having `name`, `max_slice_total` (the most products the

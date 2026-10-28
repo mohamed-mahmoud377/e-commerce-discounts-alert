@@ -248,6 +248,16 @@ catalogue is out of stock but keeps its price; several handles are misspelt (`ka
 `nividia-rtx50`) and two overlap (`air-conditioner` 71 and `air-conditioners` 61); products are keyed by Shopify
 id plus the non-colour variant values (`8255092588683:8gb-256gb`).
 
+## carrefouregypt.com category ids
+
+Ids after `/c/` in the URL, case-sensitive (`NFEGY4080000`; non-food ids start `NFEGY`, groceries `FEGY`,
+promotions are `promo-<name>`). Up to four levels: `NFEGY4000000` Electronics & Appliances > `NFEGY4040000`
+Small Appliances > `NFEGY4040100` Coolers, Heaters & Air Treatment > `NFEGY4040112` Air Conditioners. The
+category tree a page shows leaves some children out (air conditioners, built-in hobs and ovens, smartwatches),
+so the full map, found from the category paths in search results, is in [CARREFOUR.md](CARREFOUR.md). Quirks:
+an unknown id and an empty price range look the same (the adapter checks the bare category); relevance order is
+unstable across pages (always sort by price); pages past the 21st repeat it; out-of-stock products are hidden.
+
 ## Parent categories hold products their children don't (all shops)
 
 Measured 26 October 2026 by comparing a category's count with the sum of its children's counts (same price

@@ -140,6 +140,8 @@ Lines worth reacting to:
 | `blocked: btech_eg: the API refused our guest token twice` | B.TECH's API answers 401/403 even with a fresh session cookie (cloud IP, or the token scheme changed) | Pauses by itself; from a cloud IP remove `btech_eg` from that worker; see docs/BTECH.md |
 | `btech_eg: no category with slug 'x'` | Unknown B.TECH slug | `deals categories btech_eg <department>` |
 | `dream2000_eg: no collection with handle 'x'` | Unknown Dream 2000 collection | Look it up in `https://dream2000.com/en/collections.json?limit=250` |
+| `blocked: carrefour_eg: HTTP 429` (or 403) | Akamai rate-limited or refused this connection | Pauses by itself; if it repeats, raise `[sites.carrefour_eg]` delays; see [CARREFOUR.md](CARREFOUR.md) |
+| `carrefour_eg: no products in category 'x'` | Unknown (or lowercase) Carrefour id | Ids are case-sensitive, e.g. `NFEGY4080000`; see [CARREFOUR.md](CARREFOUR.md) |
 | `lease lost` | The device was too slow (over 5 min between pages) and the job went to another device | Fine occasionally |
 
 ## Telegram warnings

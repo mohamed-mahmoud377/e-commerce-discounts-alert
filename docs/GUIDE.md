@@ -8,7 +8,7 @@ alert, with worked examples).
 
 ## Overview
 
-The system crawls whole categories on amazon.eg, noon.com (Egypt), jumia.com.eg, cairosales.com, 2b.com.eg, btech.com and dream2000.com, stores every product's price
+The system crawls whole categories on amazon.eg, noon.com (Egypt), jumia.com.eg, cairosales.com, 2b.com.eg, btech.com, dream2000.com and carrefouregypt.com, stores every product's price
 history, and sends an Arabic Telegram alert when a price is genuinely low compared with that product's
 own history. It tracks about 50,000 products on Amazon and noon plus about 14,000 on Jumia, in 14 groups: TVs, refrigerators, air conditioners, gaming consoles,
 phones, tablets, laptops, desktops, monitors, PC components, headphones, kitchen machines (fryers, coffee
@@ -34,7 +34,7 @@ crawling from their own internet connections.
 | --- | --- | --- |
 | Coordinator (`deals serve`) | Droplet 207.154.206.127 | Owns the SQLite database, hands out crawl jobs, stores results, detects deals, runs the Telegram bot, watches for problems, takes daily backups |
 | Worker (`deals worker`) | Your Mac, the droplet, any friend's PC | Asks for a job, downloads the shop pages, sends the products back. Holds no database |
-| Site adapters (`sites/amazon_eg.py`, `sites/noon_eg.py`, `sites/jumia_eg.py`, `sites/cairosales_eg.py`, `sites/twob_eg.py`, `sites/btech_eg.py`, `sites/dream2000_eg.py`) | Inside each worker | Know how to fetch and read one listing page of each shop |
+| Site adapters (`sites/amazon_eg.py`, `sites/noon_eg.py`, `sites/jumia_eg.py`, `sites/cairosales_eg.py`, `sites/twob_eg.py`, `sites/btech_eg.py`, `sites/dream2000_eg.py`, `sites/carrefour_eg.py`) | Inside each worker | Know how to fetch and read one listing page of each shop |
 | Telegram bot (@Jerrys_deals_bot) | Inside the coordinator | Sends deal alerts to approved subscribers and system warnings to you |
 
 Workers only make outgoing requests to the coordinator, so nothing needs to be opened on your Mac or on a
@@ -43,7 +43,7 @@ Jumia, Cairo Sales, 2B and B.TECH's API always); the droplet's worker is a fallb
 
 ```mermaid
 flowchart TB
-    shops["amazon.eg, noon.com, jumia.com.eg,<br/>cairosales.com, 2b.com.eg, btech.com, dream2000.com<br/>category listing pages and APIs"]
+    shops["amazon.eg, noon.com, jumia.com.eg,<br/>cairosales.com, 2b.com.eg, btech.com, dream2000.com,<br/>carrefouregypt.com<br/>category listing pages and APIs"]
     shops --> mac["Your Mac (launchd)<br/>all five shops<br/>does most of the crawling"]
     shops --> dw["Droplet worker<br/>amazon only<br/>fallback: often refused"]
     shops --> fr["Friend's PC (optional)<br/>any shop it can reach"]
@@ -250,6 +250,15 @@ request, exact counts, no price filter) is readable from anywhere, the droplet i
 so a slice is a whole collection and the coordinator applies the group minimum. Variants that differ in more
 than colour (storage sizes) are separate listings. Details: [DREAM2000.md](DREAM2000.md).
 
+**carrefouregypt.com.** Carrefour Egypt's Next.js storefront sits behind Akamai, which lets a browser's TLS
+fingerprint through from home and from the droplet. Its listing API is internal, but each category page
+(`/mafegy/en/c/<id>?sortBy=price_asc&currentPage=N&minPrice=..&maxPrice=..`) embeds the whole answer in its
+React Server Components payload: 60 cards, an exact count, the category's children. Three traps: relevance
+order shuffles between pages (so pages are sorted by price), pages past the 21st repeat the 21st (so slices
+stay under 1,200), and an unknown id answers exactly like an empty price range (so the adapter checks the bare
+category). Out-of-stock products are hidden; a third of the products are marketplace sellers. Too fast a pace
+earns HTTP 429. Details: [CARREFOUR.md](CARREFOUR.md).
+
 **Which machine can reach which shop** (tested 25 October 2026):
 
 | Shop | Home IP (your Mac) | Droplet (DigitalOcean Frankfurt) |
@@ -260,20 +269,21 @@ than colour (storage sizes) are separate listings. Details: [DREAM2000.md](DREAM
 | cairosales.com | Works with Chrome's fingerprint (tested 27 October) | Always refused (Cloudflare 403) |
 | btech.com | Works, plain curl too (tested 27 October) | Pages load, the API host times out (firewalled) |
 | dream2000.com | Works (tested 27 October) | Works (Shopify) |
+| carrefouregypt.com | Works with a browser fingerprint (tested 28 October) | Works too (40 pages in a row); plain curl is refused |
 | 2b.com.eg | Works with Chrome's fingerprint, HTML and GraphQL (tested 27 October) | Always refused (Cloudflare challenge) |
 
 **What is read from each product card** (no extra requests):
 
-| Signal | amazon.eg | noon | Jumia | Cairo Sales | 2B | B.TECH | Dream 2000 |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| Price | The featured offer's price | The offer's sale price, else its price | The product's price | The price (hidden when out of stock) | `final_price` | `final_price` (coupons included) | The cheapest available variant of the group |
-| Crossed-out price | "Was:" (Amazon's own recent price, trusted) or "List:" (brand RRP, often inflated) | Seller-set, treated like an RRP | Seller-set (on 88% of cards), treated like an RRP | The shop's "regular" price (every card), treated like an RRP | `regular_price` (every product), treated like an RRP | `base_price`: B.TECH's own offers (a promotion on a fifth of them) count as "was", third-party sellers' as an RRP | `compare_at_price` (83% of the catalogue), treated like an RRP |
-| Stock left | "Only 3 left in stock" | "Only 3 left" | "1 item left" (45% of cards say 3 or fewer, so not evidence) | none | `only_x_left_in_stock` (57% of products, so not evidence) | none | none (a "Last Piece" collection exists, not used) |
-| Deal badge | "Limited time deal" | "Deal", "Mega Deal" | none on category pages (flash sales are only marked on `/flash-sales/`) | none | none | none | none |
-| Shop's own price history | none | "Lowest price in 30 days", "in a year" | none | none | none | `price_drop_amount` (not used yet) | none |
-| Demand | "300+ bought in past month" | "200+ sold recently", "Selling out fast", bestseller | none | none | none | `is_best_seller` (half the TVs) | none |
-| Rating | Stars and review count | Stars and review count | Stars and review count | none | `rating_summary`, `review_count` | none | none |
-| Seller | not shown | Store name | not shown (one seller per SKU) | the shop | the shop | `seller_name` (half the offers are third-party, each its own sku) | the shop |
+| Signal | amazon.eg | noon | Jumia | Cairo Sales | 2B | B.TECH | Dream 2000 | Carrefour |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Price | The featured offer's price | The offer's sale price, else its price | The product's price | The price (hidden when out of stock) | `final_price` | `final_price` (coupons included) | The cheapest available variant of the group | `sellingPrice` (the buy-box offer, before coupons) |
+| Crossed-out price | "Was:" (Amazon's own recent price, trusted) or "List:" (brand RRP, often inflated) | Seller-set, treated like an RRP | Seller-set (on 88% of cards), treated like an RRP | The shop's "regular" price (every card), treated like an RRP | `regular_price` (every product), treated like an RRP | `base_price`: B.TECH's own offers (a promotion on a fifth of them) count as "was", third-party sellers' as an RRP | `compare_at_price` (83% of the catalogue), treated like an RRP | `markedPrice`: Carrefour's own (a timed promotion on a fifth of TVs) counts as "was", a marketplace seller's as an RRP |
+| Stock left | "Only 3 left in stock" | "Only 3 left" | "1 item left" (45% of cards say 3 or fewer, so not evidence) | none | `only_x_left_in_stock` (57% of products, so not evidence) | none | none (a "Last Piece" collection exists, not used) | `lowStock` with a count on 42% of TVs (so not evidence); "Only N left" is the order limit |
+| Deal badge | "Limited time deal" | "Deal", "Mega Deal" | none on category pages (flash sales are only marked on `/flash-sales/`) | none | none | none | none | "Ends in N hrs" (timed discount), read as a limited-time deal |
+| Shop's own price history | none | "Lowest price in 30 days", "in a year" | none | none | none | `price_drop_amount` (not used yet) | none | none |
+| Demand | "300+ bought in past month" | "200+ sold recently", "Selling out fast", bestseller | none | none | none | `is_best_seller` (half the TVs) | none | none |
+| Rating | Stars and review count | Stars and review count | Stars and review count | none | `rating_summary`, `review_count` | none | none | Stars and review count (on a tenth of products) |
+| Seller | not shown | Store name | not shown (one seller per SKU) | the shop | the shop | `seller_name` (half the offers are third-party, each its own sku) | the shop | `shopName` (a third are marketplace sellers) |
 
 **noon sellers.** One noon product can be sold by several sellers at very different prices. The same
 earbuds were seen at 7,550, 1,000 and 495 EGP, and which offer a listing shows depends on the price filter.
@@ -390,6 +400,7 @@ crawled like any other slice (same group, same interval and cap, same filters):
 | noon | `category:<path>?f[min_offer_price]=7_days` (noon's own "lowest price in 7 days" filter; `30_days` and `365_days` exist too; `deal_tag` = `deals-generic` / `mega-deal` was empty when checked) | products whose price just hit a 7-day low | phones 200 of 1,071 |
 | Jumia | `category:flash-sales` (its own watch group, "Jumia flash sales", 10 to 15 min) | the flash-sale page, all categories; the adapter marks these listings `limited_deal`, so a new product with a 30%+ claimed discount can alert the first time it is seen | 409, 86 above 1,500 EGP |
 | Cairo Sales, 2B | none found | | |
+| Carrefour | `filter=deal:true` ("Today's Deals") exists but is not used: every Carrefour root is a few pages, so the whole root costs what its deal feed would | | TVs 64 of 168 |
 
 A product seen on a deal feed is the same product as on its category page (same key), so a drop seen there
 is judged against the same history. The feeds are about 20 Amazon pages and 30 noon pages per sweep in

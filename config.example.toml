@@ -70,6 +70,10 @@ max_delay = 2.0
 min_delay = 1.0
 max_delay = 2.0
 
+[sites.carrefour_eg]  # Next.js pages behind Akamai (60 products per page, ~1 MB); works from anywhere; HTTP 429 when pushed
+min_delay = 2.0
+max_delay = 4.0
+
 # ---------------------------------------------------------------------------
 # What to track. Each [[watch]] is a product group with one root per site:
 #   amazon_eg = "category:<browse node id>"
@@ -79,6 +83,7 @@ max_delay = 2.0
 #   2b_eg     = "category:<number>"  (Magento's category id, e.g. 131 = TVs; docs/2B.md)
 #   btech_eg  = "category:<slug>"  (the URL path under /en/c/, e.g. tvs-projectors/televisions; docs/BTECH.md)
 #   dream2000_eg = "category:<handle>"  (the Shopify collection handle, e.g. mobiles; no search; docs/DREAM2000.md)
+#   carrefour_eg = "category:<id>"  (the id after /c/ in the URL, case-sensitive, e.g. NFEGY4080000; docs/CARREFOUR.md)
 # (or "search:<keywords>"; a list of roots also works). Find ids with:
 #   deals categories amazon_eg 18018102031
 #   deals categories noon_eg electronics-and-mobiles
@@ -87,6 +92,7 @@ max_delay = 2.0
 #   deals categories 2b_eg 2370
 #   deals categories btech_eg large-home-appliances
 #   deals categories dream2000_eg            (then https://dream2000.com/en/collections.json?limit=250 for every handle)
+#   deals categories carrefour_eg NFEGY4000000
 # label is the name shown in alerts (optional, defaults to name).
 # min_price (EGP) skips cheap accessories/junk both when crawling and alerting.
 # interval_minutes is the starting revisit interval; it adapts per slice.
@@ -113,6 +119,7 @@ cairosales_eg = "category:tvs-screens"
 2b_eg = "category:131"
 btech_eg = "category:tvs-projectors/televisions"
 dream2000_eg = "category:tvs"
+carrefour_eg = "category:NFEGY4080000"  # TVs & Projectors (139 TVs, projectors, mounts below the minimum)
 
 [[watch]]
 name = "Refrigerators"
@@ -137,6 +144,7 @@ cairosales_eg = ["category:refrigerators", "category:freezers"]
 2b_eg = ["category:260", "category:1905"]  # refrigerators, deep freezers
 btech_eg = ["category:large-home-appliances/refrigerators", "category:large-home-appliances/deep-freezers"]
 dream2000_eg = ["category:refrigerator-and-deep-freezer", "category:deep-freezer-1"]
+carrefour_eg = ["category:NFEGY4100500", "category:NFEGY4100400"]  # fridges, freezers
 
 [[watch]]
 name = "Air conditioners"
@@ -158,6 +166,7 @@ cairosales_eg = "category:air-conditioners"
 2b_eg = "category:262"  # air conditioners (the parent also holds coolers and purifiers, below 8,000)
 btech_eg = "category:large-home-appliances/air-conditioners"
 dream2000_eg = ["category:air-conditioners", "category:air-conditioner"]  # two overlapping collections
+carrefour_eg = "category:NFEGY4040112"  # split ACs, inside Coolers, Heaters & Air Treatment
 
 [[watch]]
 name = "Gaming consoles"
@@ -201,6 +210,7 @@ cairosales_eg = [
 # B.TECH: a Consoles category (63, with accessories) plus searches; Dream 2000: a small Consoles collection
 btech_eg = ["category:gaming-area/consoles", "search:playstation 5", "search:xbox series", "search:nintendo switch"]
 dream2000_eg = "category:consoles"
+carrefour_eg = "category:NFEGY4090000"  # the PlayStation 5 department: consoles, games, VR
 # Searches and the console nodes still return pricey accessories (racing wheels, headsets, Pro
 # controllers), so only titles that look like a console are recorded; "console" in the title always wins.
 require_words = ["console", "playstation 5", "ps5", "playstation 4", "ps4", "xbox series", "xbox one",
@@ -236,6 +246,7 @@ cairosales_eg = "category:mobiles-tablets/mobiles"
 2b_eg = "category:119"
 btech_eg = "category:mobiles-tablets/mobile-phones"
 dream2000_eg = "category:mobiles"
+carrefour_eg = "category:NFEGY1220200"  # smartphones (not the smartwatches next to them)
 
 [[watch]]
 name = "Tablets"
@@ -257,6 +268,7 @@ cairosales_eg = "category:mobiles-tablets/tablets"
 2b_eg = "category:122"
 btech_eg = "category:mobiles-tablets/tablets"
 dream2000_eg = "category:tablets"
+carrefour_eg = "category:NFEGY1230000"
 
 [[watch]]
 name = "Laptops"
@@ -278,6 +290,7 @@ cairosales_eg = "category:computer-accessories/laptops-desktop-computers"
 2b_eg = "category:273"
 btech_eg = "category:laptop-pc/laptops"  # pre-owned laptops (376) are a separate category, not tracked
 dream2000_eg = "category:laptop"
+carrefour_eg = "category:NFEGY4070500"
 
 [[watch]]
 name = "Desktops"
@@ -312,6 +325,7 @@ cairosales_eg = ["category:computer-accessories/computer-monitors", "category:ga
 2b_eg = "category:2381"  # Monitor & Projector (includes a few projectors)
 btech_eg = "category:laptop-pc/monitors"
 dream2000_eg = ["category:monitors", "category:gaming-monitors"]
+carrefour_eg = "category:NFEGY4070600"
 
 [[watch]]
 name = "PC components"
@@ -363,6 +377,7 @@ dream2000_eg = [
     "category:headset",
     "category:gaming-headset",
 ]
+carrefour_eg = "category:NFEGY1210300"
 
 [[watch]]
 name = "Kitchen machines"
@@ -440,6 +455,7 @@ dream2000_eg = [
     "category:microwave",
     "category:electric-oven",
 ]
+carrefour_eg = ["category:NFEGY4040200", "category:NFEGY4040400", "category:NFEGY4040600"]  # food preparation (fryers, blenders, juicers), kettles & coffee, microwaves & ovens
 
 # The rest of the small appliances (kettles, irons, toasters, grinders...): low priority.
 [[watch]]
@@ -537,6 +553,7 @@ dream2000_eg = [
     "category:water-dispenser-and-filters",
     "category:water-filters",
 ]
+carrefour_eg = ["category:NFEGY4040300", "category:NFEGY4040700", "category:NFEGY4040113"]  # irons, toasters & grills, water dispensers
 
 [[watch]]
 name = "Cooking & dishwashers"
@@ -570,6 +587,14 @@ btech_eg = [
     "category:large-home-appliances/built-in-hobs",
 ]
 dream2000_eg = ["category:stoves", "category:flat-stove", "category:oven", "category:built-in", "category:dish-washers"]
+carrefour_eg = [
+    "category:NFEGY4100200",  # cookers
+    "category:NFEGY4100300",  # dishwashers
+    "category:NFEGY4100100",  # built-in dishwashers
+    "category:NFEGY4100130",  # built-in hobs
+    "category:NFEGY4100800",  # built-in ovens
+    "category:NFEGY4100150",  # other built-in
+]
 
 # Jumia's flash-sales page: the only place its flash prices are marked (category cards show the same
 # price with no marker), mixed categories, about 400 products (86 above 1,500 EGP). Crawled as its own

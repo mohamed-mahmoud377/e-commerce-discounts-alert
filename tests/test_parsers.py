@@ -1,3 +1,5 @@
+import json
+
 from conftest import fixture_json, fixture_text
 import pytest
 
@@ -498,3 +500,99 @@ def test_amazon_deals_api_page():
     assert Slice.from_key("deals:1|price:10-20").key() == "deals:1|price:10-20"
     with pytest.raises(ValueError):
         Slice.from_key("deal:1")
+
+
+def _carrefour_page(data: dict) -> str:
+    """A minimal Carrefour page: the listing object inside a Next.js RSC chunk."""
+    return f'<html><script>self.__next_f.push([1,{json.dumps(json.dumps(data))}])</script></html>'
+
+
+def test_carrefour_category_page():
+    from deals.sites.carrefour_eg import page_url, parse_listing_page
+    result = parse_listing_page(fixture_text("carrefour_category.html.gz"), 1)
+    assert result.total == 2010 and result.has_next and len(result.listings) == 60
+    assert ("NFEGY4080000", "TVs & Projectors (168)") in [(c.id, c.name) for c in result.subcategories]
+    by_sku = {x.sku: x for x in result.listings}
+    # Carrefour's own timed promotion: the crossed-out price is its regular price ("was")
+    tv = by_sku["658120"]
+    assert (tv.price, tv.list_price, tv.list_price_kind, tv.badges) == (2649900, 2799900, "was", (LIMITED_DEAL,))
+    assert (tv.rating, tv.reviews, tv.brand, tv.seller, tv.in_stock) == (4.9, 23, "Samsung", None, True)
+    assert tv.url == "https://www.carrefouregypt.com/mafegy/en/uhd-tv/samsung-led-tv-ua-65u8000-f-sm-4k/p/658120"
+    assert tv.title == "Samsung 65-inch 4K Crystal UHD Smart TV - 65U8000F"
+    # a marketplace seller's crossed-out price is only a claim
+    washer = by_sku["529297"]
+    assert (washer.seller, washer.list_price_kind, washer.stock_left) == ("Electro Zone", "list", 1)
+    # "Only 4 left" is the order limit on an in-stock card, not a stock count
+    kettle = by_sku["647686"]
+    assert kettle.stock_left is None and kettle.badges == () and kettle.list_price is None
+    assert not any(x.title.startswith("‎") for x in result.listings)
+    # sorted by price, 0-based pages, inclusive price bounds, search by keyword
+    assert page_url(Slice.from_key("category:NFEGY4080000|price:3000-5000"), 1) == (
+        "https://www.carrefouregypt.com/mafegy/en/c/NFEGY4080000?sortBy=price_asc&minPrice=3000&maxPrice=5000")
+    assert page_url(Slice.from_key("category:NFEGY4080000|price:3000-"), 3) == (
+        "https://www.carrefouregypt.com/mafegy/en/c/NFEGY4080000?sortBy=price_asc&currentPage=2&minPrice=3000")
+    assert page_url(Slice.from_key("search:playstation 5"), 1) == (
+        "https://www.carrefouregypt.com/mafegy/en/search?keyword=playstation+5&sortBy=price_asc")
+
+
+def test_carrefour_page_cap_empty_unknown_and_block(monkeypatch):
+    from deals.models import Blocked, UnknownTarget
+    from deals.sites import carrefour_eg
+
+    card = {"uid": "master-product-card", "componentDTO": {"additionalAttributes": {
+        "productId": "1", "productName": "TV", "sellingPrice": 4000, "markedPrice": 4000,
+        "shopName": "Carrefour", "stock": {"stockLevelStatus": "inStock"}, "productUrl": "/mafegy/en/tv/p/1"}}}
+    sponsored = {"uid": "master-product-card", "componentDTO": {"additionalAttributes": {
+        "productId": "2", "productName": "Kettle", "sellingPrice": 300, "isSponsored": True}}}
+    full = _carrefour_page({"topStickySections": [], "sections": [card, sponsored], "additionalAttributes": {},
+                            "pagination": {"totalPages": 34, "totalResults": 2010, "currentPage": 0}})
+    empty = _carrefour_page({"topStickySections": [], "sections": [], "additionalAttributes": {"maxColumns": 12}})
+    # pages past currentPage=20 repeat page 20, so paging stops at page 21
+    assert carrefour_eg.parse_listing_page(full, 20).has_next
+    assert not carrefour_eg.parse_listing_page(full, 21).has_next
+    assert [x.sku for x in carrefour_eg.parse_listing_page(full, 1).listings] == ["1"]  # sponsored card dropped
+    with pytest.raises(ValueError, match="layout changed"):
+        carrefour_eg.parse_listing_page("<html>Access Denied</html>")
+
+    urls = []
+
+    class Response:
+        def __init__(self, status_code, text):
+            self.status_code, self.text = status_code, text
+
+        def raise_for_status(self):
+            pass
+
+    class Session:
+        def __init__(self, impersonate):
+            pass
+
+        def get(self, url, timeout):
+            urls.append(url)
+            return answer(url)
+
+    monkeypatch.setattr(carrefour_eg.requests, "Session", Session)
+    site = carrefour_eg.CarrefourEG()
+    # an empty price range of a real category is an empty slice (checked once against the bare category)
+    answer = lambda url: Response(200, full if "minPrice" not in url else empty)
+    result = site.fetch_page(Slice.from_key("category:NFEGY4080000|price:900000-"), 1)
+    assert result.total == 0 and not result.listings and len(urls) == 2
+    urls.clear()
+    assert site.fetch_page(Slice.from_key("category:NFEGY4080000|price:800000-"), 1).total == 0
+    assert len(urls) == 1  # the category is known now
+    # an unknown id answers 200 with the same empty listing
+    answer = lambda url: Response(200, empty)
+    with pytest.raises(UnknownTarget, match="NFEGY999"):
+        site.fetch_page(Slice.from_key("category:NFEGY999|price:3000-"), 1)
+    with pytest.raises(UnknownTarget):
+        site.fetch_page(Slice.from_key("category:nfegy4080000"), 1)  # ids are case-sensitive
+    # an empty search or a page past the end is just empty
+    assert site.fetch_page(Slice.from_key("search:zzqq"), 1).total == 0
+    later = site.fetch_page(Slice.from_key("category:NFEGY4080000"), 3)
+    assert later.listings == [] and later.total is None and not later.has_next
+    # Akamai refuses twice (a fresh session in between): blocked
+    answer = lambda url: Response(429, "<HTML>Access Denied</HTML>")
+    urls.clear()
+    with pytest.raises(Blocked, match="HTTP 429"):
+        site.fetch_page(Slice.from_key("category:NFEGY4080000"), 1)
+    assert len(urls) == 2

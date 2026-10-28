@@ -253,7 +253,10 @@ def cmd_categories(args) -> None:
                                            ("Air Conditioners", "air-conditioners"), ("Refrigerators", "refrigerator-and-deep-freezer"),
                                            ("Kitchen Appliances", "kitchen-appliances"), ("Gaming", "gaming"),
                                            ("Audio", "audio"), ("Electronics", "electronics"),
-                                           ("every collection (386)", "https://dream2000.com/en/collections.json?limit=250&page=1")]}[args.site]:
+                                           ("every collection (386)", "https://dream2000.com/en/collections.json?limit=250&page=1")],
+                          "carrefour_eg": [("Electronics & Appliances", "NFEGY4000000"), ("Mobiles, Tablets & Wearables", "NFEGY1200000"),
+                                           ("Small Appliances", "NFEGY4040000"), ("Large Appliances", "NFEGY4100000"),
+                                           ("Computers & Office", "NFEGY4070000"), ("TVs & Projectors", "NFEGY4080000")]}[args.site]:
             print(f"  {name:<25} {cid}")
 
 

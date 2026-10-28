@@ -1,21 +1,21 @@
 # deals: notes for working on this project
 
-Personal price tracker for amazon.eg, noon.com (Egypt), jumia.com.eg, cairosales.com, 2b.com.eg, btech.com and dream2000.com: crawls whole categories, keeps each
+Personal price tracker for amazon.eg, noon.com (Egypt), jumia.com.eg, cairosales.com, 2b.com.eg, btech.com, dream2000.com and carrefouregypt.com: crawls whole categories, keeps each
 product's price history in SQLite, and sends Arabic Telegram alerts for real discounts.
 Read [README.md](README.md), [docs/GUIDE.md](docs/GUIDE.md) (design and algorithms) and
 [docs/INTERNALS.md](docs/INTERNALS.md) (code map, schema, API) before changing behaviour;
 [docs/MONITORING.md](docs/MONITORING.md) is the runbook and [docs/COMMANDS.md](docs/COMMANDS.md) lists every command.
-[docs/CATEGORIES.md](docs/CATEGORIES.md) holds category ids and shop quirks; [docs/JUMIA.md](docs/JUMIA.md), [docs/CAIROSALES.md](docs/CAIROSALES.md), [docs/2B.md](docs/2B.md), [docs/BTECH.md](docs/BTECH.md) and [docs/DREAM2000.md](docs/DREAM2000.md) are the per-shop analyses. Keep these in step with the code, and
+[docs/CATEGORIES.md](docs/CATEGORIES.md) holds category ids and shop quirks; [docs/JUMIA.md](docs/JUMIA.md), [docs/CAIROSALES.md](docs/CAIROSALES.md), [docs/2B.md](docs/2B.md), [docs/BTECH.md](docs/BTECH.md), [docs/DREAM2000.md](docs/DREAM2000.md) and [docs/CARREFOUR.md](docs/CARREFOUR.md) are the per-shop analyses. Keep these in step with the code, and
 write down anything new you learn about the shops or the operations there (the user wants findings kept).
 
 ## Where things run
 
-- **Droplet** `root@207.154.206.127` (458 MB RAM + 1 GB swap): systemd `deals-coordinator`
+- **Droplet** `root@207.154.206.127` (1 GB RAM + 1 GB swap): systemd `deals-coordinator`
   (FastAPI :8787 + SQLite `/var/lib/deals/deals.db` + Telegram bot + watchdog) and `deals-worker`
-  (amazon and dream2000 only; datacenter IPs are often refused by Amazon and always by noon, Jumia, Cairo Sales, 2B
-  and B.TECH's API; Dream 2000 (Shopify) is open to everyone).
+  (amazon, dream2000 and carrefour only; datacenter IPs are often refused by Amazon and always by noon, Jumia, Cairo Sales, 2B
+  and B.TECH's API; Dream 2000 (Shopify) and Carrefour (Akamai, browser fingerprint) are open to everyone).
   Config: `/etc/deals/config.toml` (worker tokens, Telegram token, watches). Code: `/opt/deals`.
-- **The user's Mac**: launchd agent `com.deals.worker` (all seven shops), env in `./worker.env`,
+- **The user's Mac**: launchd agent `com.deals.worker` (all eight shops), env in `./worker.env`,
   log `~/Library/Logs/deals-worker.log`. `make keep-awake` (launchd `com.deals.awake`,
   `caffeinate -s`) stops it sleeping on power. It runs code from this checkout; after changing worker
   code, restart it: `launchctl kickstart -k gui/$(id -u)/com.deals.worker`. After changing `worker.env`
