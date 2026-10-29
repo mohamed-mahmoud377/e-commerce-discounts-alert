@@ -214,12 +214,14 @@ dream2000_eg = "category:consoles"
 carrefour_eg = "category:NFEGY4090000"  # the PlayStation 5 department: consoles, games, VR
 # Searches and the console nodes still return pricey accessories (racing wheels, headsets, Pro
 # controllers), so only titles that look like a console are recorded; "console" in the title always wins.
+# Words match anywhere in the title ("stand " has a space so "Standard Edition" stays); a controller
+# count ("PS5 Slim 1 TB ,1 Controllers", B.TECH) is not taken for an accessory.
 require_words = ["console", "playstation 5", "ps5", "playstation 4", "ps4", "xbox series", "xbox one",
                  "nintendo switch", "switch 2", "switch oled", "switch lite", "steam deck", "rog ally",
                  "legion go", "playstation portal"]
 exclude_words = ["pre-owned", "pre owned", "used ", "refurbished",  # B.TECH sells used consoles next to new ones
                  "controller", "gamepad", "joystick", "headset", "wheel", "pedal", "case", "cover", "skin",
-                 "stand", "dock", "cable", "charger", "charging", "bag", "grip", "mount", "sticker",
+                 "stand ", "stands", "dock", "cable", "charger", "charging", "bag", "grip", "mount", "sticker",
                  "protector", "thumb", "strap", "card", "game ", "edition game", "mouse", "keyboard",
                  "chair", "monitor", "camera", "microphone", "fan ", "cooling", "manette", "arcade",
                  "amplifier", "dac", "fight stick", "fightstick", "remote control", "for ps5", "for ps4",

@@ -137,7 +137,7 @@ def test_new_products_must_pass_price_floor_and_title_words(cfg):
     from dataclasses import replace
     from deals.config import Watch
     consoles = Watch(name="TVs", targets={"amazon_eg": ["category:111"]}, interval_minutes=30, min_price=1000,
-                     require_words=("console", "playstation 5"), exclude_words=("controller", "headset", "mount"))
+                     require_words=("console", "playstation 5"), exclude_words=("controller", "headset", "mount", "stand "))
     cfg = replace(cfg, watches=[consoles])
     app = create_app(cfg, background=False)
     with TestClient(app) as client:
@@ -148,15 +148,18 @@ def test_new_products_must_pass_price_floor_and_title_words(cfg):
             "lease_token": job["lease_token"], "page": 1, "done": True, "listings": [
                 listing("PS5", 25000, title="PlayStation 5 Slim Console"),               # kept
                 listing("BUNDLE", 27000, title="PlayStation 5 Console + extra controller"),  # "console" beats exclusions
+                listing("BTECH", 41999, title="Sony Playstation 5 Slim 1 TB ,1 Controllers ,White"),  # a controller count is no accessory
+                listing("STD", 45999, title="Sony Playstation 5 Standard Slim"),          # "stand " is not "Standard"
+                listing("STAND", 9000, title="PlayStation 5 Slim Vertical Stand"),       # ...but matches at the end of a title
                 listing("MOUNT", 10000, title="Wall Mount Kit for PS5 Slim Console"),      # ...unless it is *for* a console
                 listing("PAD", 4000, title="PlayStation 5 DualSense Controller"),        # excluded word
                 listing("WHEEL", 14000, title="Logitech G29 Racing Wheel for PS5"),      # no required word
                 listing("CHEAP", 500, title="PlayStation 5 Console (used)"),             # under the group minimum
                 listing("NOPRICE", 25000, title="PlayStation 5 Console", price=None),   # unknown price
             ]})
-        assert r.json()["skipped"] == 5
+        assert r.json()["skipped"] == 6
         kept = sorted(p["sku"] for p in client.conn.execute("SELECT sku FROM products"))
-        assert kept == ["BUNDLE", "PS5"]
+        assert kept == ["BTECH", "BUNDLE", "PS5", "STD"]
         # a product we already know keeps being updated even when it drops below the floor / goes unpriced
         job = lease(client)
         client.post(f"/api/jobs/{job['id']}/page", headers=W1, json={

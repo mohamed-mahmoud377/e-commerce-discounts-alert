@@ -121,7 +121,7 @@ Products counted on 27 October 2026 (in stock, before the group's minimum price)
 | TVs | tvs-projectors/televisions | 320 |
 | Refrigerators | large-home-appliances/refrigerators, deep-freezers | 321 + 172 |
 | Air conditioners | large-home-appliances/air-conditioners | 310 |
-| Gaming consoles | gaming-area/consoles (63, with accessories), searches "playstation 5" (41), "xbox series", "nintendo switch"; used consoles are excluded by title ("Pre-Owned") | |
+| Gaming consoles | gaming-area/consoles (63, with accessories), searches "playstation 5" (41), "xbox series", "nintendo switch"; used consoles are excluded by title ("Pre-Owned"). Console titles name the bundle's controllers ("Sony Playstation 5 Slim 1 TB ,1 Controllers ,White"): until 29 Oct the "controller" exclude word dropped all of these, so only the 5 PS5s with "Console" in the title were tracked (about 35 new PS5 listings, Slim/Disc/Digital/Pro/30th Anniversary, were missed). The filter now ignores a controller count. "Joy-Con Nintendo Switch , 64 GB" (a Switch, 24,999) is still dropped by "joy-con" | |
 | Phones | mobiles-tablets/mobile-phones | 819 |
 | Tablets | mobiles-tablets/tablets | 63 |
 | Laptops | laptop-pc/laptops (pre-owned-laptops 376 not tracked) | 533 |

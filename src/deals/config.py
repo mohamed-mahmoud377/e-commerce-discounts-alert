@@ -1,10 +1,15 @@
 """Coordinator configuration (TOML). See config.example.toml for every option."""
 
+import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from deals.models import Slice
+
+# "1 Controllers", "2 controllers": what a console bundle comes with (every B.TECH console
+# title has one), not an accessory, so it is ignored when looking for exclude_words.
+_CONTROLLER_COUNT = re.compile(r"\b\d+\s*x?\s*controllers?\b")
 
 
 @dataclass(frozen=True)
@@ -65,11 +70,11 @@ class Watch:
     exclude_words: tuple[str, ...] = ()
 
     def accepts(self, title: str) -> bool:
-        t = title.lower()
+        t = f" {title.lower()} "  # padded: a word with a trailing space ("stand ") also matches at the end
         if self.require_words and not any(w in t for w in self.require_words):
             return False
         bundle = "console" in t and " for " not in t
-        if self.exclude_words and not bundle and any(w in t for w in self.exclude_words):
+        if self.exclude_words and not bundle and any(w in _CONTROLLER_COUNT.sub(" ", t) for w in self.exclude_words):
             return False
         return True
 
