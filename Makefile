@@ -2,7 +2,7 @@ HOST ?= root@207.154.206.127
 HOST_IP = $(lastword $(subst @, ,$(HOST)))
 SSH_DEALS = ssh $(HOST) runuser -u deals -- /opt/deals/.venv/bin/deals
 
-.PHONY: test deploy keep-awake allow-sleep save-logs ui ui-token ssh restart-server restart-mac-worker health devices dashboard events worker-log report telegram db sql dbweb status alerts movers models logs mac-worker-env mac-worker install-mac-worker uninstall-mac-worker
+.PHONY: test deploy keep-awake allow-sleep save-logs ui ui-token ssh restart-server restart-mac-worker health devices dashboard events worker-log report telegram db sql dbweb status alerts movers models pause resume pauses logs mac-worker-env mac-worker install-mac-worker uninstall-mac-worker
 
 test:                 ## run the test suite
 	.venv/bin/pytest -q
@@ -76,6 +76,15 @@ movers:               ## biggest price moves in the last 24h
 
 models:               ## the same product on several shops: coverage; FIND=AH-XP12BME (or title words), SAMPLE=10
 	$(SSH_DEALS) models --config /etc/deals/config.toml $(if $(FIND),'"$(FIND)"') $(if $(SAMPLE),--sample $(SAMPLE))
+
+pause:                ## pause crawling: DEVICE=mac SITE=jumia_eg HOURS=2 PAGES=1 (all optional; ends by itself)
+	$(SSH_DEALS) pause --config /etc/deals/config.toml $(if $(DEVICE),--device $(DEVICE)) $(if $(SITE),--site $(SITE)) $(if $(HOURS),--hours $(HOURS)) $(if $(PAGES),--pages)
+
+resume:               ## end pauses now (DEVICE=, SITE= to pick; none = all)
+	$(SSH_DEALS) pause --config /etc/deals/config.toml --resume $(if $(DEVICE),--device $(DEVICE)) $(if $(SITE),--site $(SITE))
+
+pauses:               ## list active pauses
+	$(SSH_DEALS) pause --config /etc/deals/config.toml --list
 
 logs:                 ## follow server logs
 	ssh $(HOST) journalctl -u deals-coordinator -u deals-worker -f -n 100

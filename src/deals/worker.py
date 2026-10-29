@@ -157,11 +157,41 @@ class Worker:
                 break
             job = reply.get("job")
             if job is None:
-                self.stop.wait(reply.get("retry_after", 30))
+                started = time.monotonic()
+                if reply.get("detail"):  # nothing to crawl: one product page meanwhile (details.py)
+                    self.read_detail(reply["detail"])
+                self.stop.wait(max(0.0, reply.get("retry_after", 30) - (time.monotonic() - started)))
                 continue
             self.run_job(job)
             # same politeness between jobs as between pages
             self.stop.wait(random.uniform(job["min_delay"], job["max_delay"]))
+
+    def read_detail(self, page: dict) -> None:
+        """Read one product page for its barcode and model number, with the shop's own session; a
+        refusal is reported (the coordinator pauses that shop's pages for this IP), never retried."""
+        from deals import details
+
+        report: dict = {"site": page["site"]}
+        try:
+            found = details.fetch_details(self.site(page["site"]), page["url"])
+        except Blocked as exc:
+            log.warning("product page refused, pausing them: %s", exc)
+            report.update(status="blocked", reason=str(exc)[:300])
+        except Exception as exc:
+            log.info("product page %s not read: %s", page["url"], exc.__class__.__name__)
+            report.update(status="failed", reason=f"{exc.__class__.__name__}: {exc}"[:300])
+        else:
+            if found is None:
+                report["status"] = "gone"
+            else:
+                report.update(status="ok", gtins=found.gtins, mpns=found.mpns, model_name=found.model_name,
+                              specs=found.specs)
+                log.info("product page %s: %d barcode(s), model %s", page["product_id"], len(found.gtins),
+                         ", ".join(found.mpns) or "-")
+        try:
+            self.api.call(f"/api/details/{page['product_id']}", report)
+        except LeaseLost:
+            pass
 
     def run_job(self, job: dict) -> None:
         log.info("%s %s %s", job["kind"], job["site"], job["target"])

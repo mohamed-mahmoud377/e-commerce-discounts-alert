@@ -256,3 +256,11 @@ SELECT kind, count(*), sum(failures > 0) failing, min(next_due_at) FROM jobs WHE
 | `UnknownTarget: ... (HTTP 404)` | Wrong slug | Fix the slug (copy it from the sidebar link) |
 | `UnknownTarget: /x/ redirected to /y/` | The slug is an alias or was renamed | Use `/y/` or the new slug |
 | A slice suddenly parses 0 products | Layout change (no `__STORE__`, renamed fields) | Save a fresh page into `tests/fixtures/jumia_category.html.gz` and fix the parser against it |
+
+## Product pages (30 Oct 2026)
+
+A product page carries a schema.org `Product` JSON-LD with `gtin14` (or `gtin13`) and an `additionalProperty`
+list: `SKU` (Jumia's own, e.g. `OP872MP2AYIUTNAFAMZ`), `GTIN Barcode`, `Model` (the maker's: `CPH2831`),
+`Production Country`. The barcode is on about 1 page in 4 (5 of 20 in the pilot), the model on most.
+Only the Safari TLS fingerprint gets the page (Chrome's got HTTP 403 twice in testing), as for listings.
+`details.parse_jumia` reads the JSON-LD only; the visible spec list also shows other products' codes.

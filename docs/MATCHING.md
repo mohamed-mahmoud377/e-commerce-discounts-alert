@@ -260,6 +260,37 @@ must treat as aliases, not conflicts; and generic text scraping picks up noise (
 products), so production needs a parser per shop for its spec table. The pilot also caught a title-reading bug
 (`12 GB 512 GB` read as code `GB512`), fixed the same day.
 
+## Reading product pages (live from 30 Oct 2026)
+
+Built from the pilot: `details.py` reads a product's own page for its barcode, the maker's model or part
+number and up to 25 spec pairs, with **one parser per shop that reads only that shop's structured product
+block** (Jumia's product JSON-LD, 2B's Magento spec table, B.TECH's spec pairs and its description's "Model
+Number", Cairo Sales' data sheet and `itemprop="mpn"`, Amazon's product details table). Each parser is tested
+on a saved real page (`tests/fixtures/*_product*.html.gz`). Jumia's and 2B's pages for the OPPO A6 give the
+same barcode, `6932169394079`: a certain match for a phone with no code in either title.
+
+How it stays safe (`detailq.py`, `[details]` in the config):
+
+- **Only when idle.** A page is offered in the lease reply only when no crawl job is due on that shop for at
+  least 10 seconds; the worker reads it and then waits out the rest. Price crawling is never delayed, and the
+  crawl jobs, leases and blocks are not touched.
+- **Slow and capped.** One page per shop per IP every `every_seconds` (30), at most `daily_cap` (1,500) a day.
+  Shops: 2B, Jumia, B.TECH, Cairo Sales. Amazon has a parser but is off (the most block-prone shop); noon has
+  none (its pages are behind a bot wall).
+- **Never fights a challenge.** The worker uses the shop's own crawler session (its TLS fingerprint and
+  cookies: Jumia only answers Safari's, as the pilot showed with two 403s). At the first 403/429/503, challenge
+  marker or truncated page it reports a refusal and does not retry; the coordinator then offers no pages of that
+  shop to that IP for `pause_hours` (24). A shop already refusing an IP's crawling gets no pages from it either.
+- **Once per product.** `product_details` keeps what each page gave; a page is read again only if the title
+  changes (or a failed read, after a week). The queue (`detail_queue`, refilled by every matching pass) puts
+  unmatched products first, then probable and line matches; used, accessory and bundle listings are skipped.
+- **Off switch:** `[details] enabled = false`, or remove a shop from `sites`. `make models` shows pages read
+  per shop, barcodes and model numbers found, the queue and any pause.
+
+What matching does with it: page barcodes go to `product_barcodes` (source `page`) and join the barcode tier;
+page model numbers rank after the title's own codes as candidates for the model code (so a title without a
+code gets one, and an unshared title code can give way to a page model number another shop has).
+
 ## Matches by hand
 
 When you see a wrong or missing match: the product page in the web UI has a **Not the same** button on each

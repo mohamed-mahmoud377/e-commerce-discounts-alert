@@ -206,6 +206,55 @@ def block(conn: sqlite3.Connection, site: str, ip: str, reason: str, now: dateti
     return until
 
 
+MAX_PAUSE = timedelta(days=7)  # a pause always ends by itself; nobody forgets crawling switched off
+
+
+def pause(conn: sqlite3.Connection, now: datetime, *, worker: str = "*", site: str = "*", hours: float = 2,
+          pages: bool = False, reason: str | None = None) -> int:
+    """Stop leasing crawl jobs to `worker` ('*': every device) for `site` ('*': every shop) for `hours`.
+    A job already running finishes. With `pages`, product-page reading stops too. Returns the pause id."""
+    if not 0 < hours <= MAX_PAUSE.total_seconds() / 3600:
+        raise ValueError(f"a pause lasts between a minute and {MAX_PAUSE.days} days, not {hours} hours")
+    with conn:
+        return conn.execute(
+            "INSERT INTO crawl_pauses (worker, site, pages, until, reason, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (worker or "*", site or "*", int(pages), iso(now + timedelta(hours=hours)), reason, iso(now))).lastrowid
+
+
+def resume(conn: sqlite3.Connection, now: datetime, *, worker: str | None = None, site: str | None = None,
+           pause_id: int | None = None) -> int:
+    """End pauses now: one by id, or every active one matching worker / site (None = any). Returns how many."""
+    where, args = ["until > ?"], [iso(now)]
+    if pause_id is not None:
+        where.append("id = ?"); args.append(pause_id)
+    if worker is not None:
+        where.append("worker = ?"); args.append(worker)
+    if site is not None:
+        where.append("site = ?"); args.append(site)
+    with conn:
+        return conn.execute(f"UPDATE crawl_pauses SET until = ? WHERE {' AND '.join(where)}", (iso(now), *args)).rowcount
+
+
+def paused(conn: sqlite3.Connection, worker: str, site: str, now: datetime) -> sqlite3.Row | None:
+    """The active pause covering this device on this shop, if any (one that also stops pages first)."""
+    return conn.execute(
+        """SELECT * FROM crawl_pauses WHERE until > ? AND worker IN (?, '*') AND site IN (?, '*')
+           ORDER BY pages DESC, until DESC LIMIT 1""", (iso(now), worker, site)).fetchone()
+
+
+def active_pauses(conn: sqlite3.Connection, now: datetime) -> list[dict]:
+    return [dict(r) for r in conn.execute("SELECT * FROM crawl_pauses WHERE until > ? ORDER BY until", (iso(now),))]
+
+
+def site_paused(conn: sqlite3.Connection, site: str, now: datetime) -> sqlite3.Row | None:
+    """A pause that stops every device that crawls this shop (seen in the last day), if any: the shop
+    is meant to be quiet, so no 'stalled' alarm."""
+    workers = [r["name"] for r in conn.execute("SELECT name, sites FROM workers WHERE last_seen_at > ?",
+                                               (iso(now - timedelta(days=1)),)) if site in (r["sites"] or "").split(",")]
+    found = [paused(conn, w, site, now) for w in workers] or [paused(conn, "*", site, now)]
+    return found[0] if all(found) else None
+
+
 def unblock(conn: sqlite3.Connection, site: str, ip: str) -> None:
     conn.execute("DELETE FROM blocks WHERE site = ? AND ip = ?", (site, ip))
 

@@ -170,3 +170,9 @@ SELECT kind, count(*), sum(failures > 0) failing, min(next_due_at) FROM jobs WHE
 | `UnknownTarget: no category with slug 'x'` | Wrong slug | `deals categories btech_eg <department>` and copy the slug |
 | `ValueError: btech_eg: API answered HTTP 422 ...` | The API rejected a field (renamed or new validation) | Read the `detail`; adjust `build_body`; save a fresh answer into `tests/fixtures/btech_products.json.gz` |
 | `ValueError: no category filter in the page` | The category page no longer embeds the filter tree | Save a fresh page into `tests/fixtures/btech_category.html.gz`; adjust `parse_category_tree` (or switch validation to the API's `categories` endpoint if it starts returning children) |
+
+## Product pages (30 Oct 2026)
+
+The page's React data has spec pairs as `{"key": ..., "value": ...}` (Brand, Display Type, Model Name...); the
+maker's model number is often not among them but is in the product description meta ("Model Number:
+L43HYNDA630") and in the URL slug. No barcodes seen (0 of 25 in the pilot). `details.parse_btech` reads both.

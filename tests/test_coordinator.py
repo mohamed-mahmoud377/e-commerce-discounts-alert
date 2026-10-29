@@ -307,3 +307,69 @@ def test_feed_barcodes_are_kept_and_old_workers_dont_erase_them(client):
         "lease_token": job["lease_token"], "page": 1, "listings": [old], "done": True})
     assert r.status_code == 200 and client.conn.execute("SELECT COUNT(*) FROM product_barcodes").fetchone()[0] == 2
     assert client.conn.execute("SELECT price FROM products WHERE sku = 'A1'").fetchone()[0] == 400000  # price still recorded
+
+
+def test_an_idle_lease_offers_one_product_page_and_takes_the_report(client):
+    from deals import detailq
+    with client.conn:
+        pid = db.record(client.conn, Listing("jumia_eg", "J1", "Oppo A6 5G 256GB", "https://x/J1", 2_000_000, None,
+                                             "EGP", True), now=utcnow()).product_id
+    detailq.refill(client.conn, utcnow())
+    reply = client.post("/api/lease", json={"sites": ["jumia_eg"]}, headers=W1).json()
+    assert reply["job"] is None and reply["detail"] == {"product_id": pid, "site": "jumia_eg", "url": "https://x/J1"}
+    again = client.post("/api/lease", json={"sites": ["jumia_eg"]}, headers=W1).json()
+    assert "detail" not in again  # paced: not twice in a row
+    r = client.post(f"/api/details/{pid}", headers=W1, json={"site": "jumia_eg", "status": "ok",
+                                                            "gtins": ["6932169394079"], "mpns": ["CPH2831"]})
+    assert r.json() == {"ok": True}
+    assert tuple(client.conn.execute("SELECT gtins, codes FROM product_details").fetchone()) == ("6932169394079", "CPH2831")
+    assert client.conn.execute("SELECT source FROM product_barcodes").fetchone()[0] == "page"
+    assert client.post(f"/api/details/{pid}", json={"site": "jumia_eg", "status": "ok"}).status_code == 401
+
+
+def test_pausing_crawling_by_device_and_shop(client, cfg):
+    from deals import detailq, health, scheduler
+    now = utcnow()
+    plan_amazon(client)  # crawl jobs now exist for amazon
+    scheduler.pause(client.conn, now, worker="w1", site="amazon_eg", hours=1, reason="test")
+    assert client.post("/api/lease", json={"sites": ["amazon_eg"]}, headers=W1).json()["job"] is None  # w1 paused
+    assert client.post("/api/lease", json={"sites": ["amazon_eg"]}, headers=W2).json()["job"] is not None  # w2 is not
+    with pytest.raises(ValueError):
+        scheduler.pause(client.conn, now, hours=24 * 30)  # a pause always ends within a week
+    assert scheduler.resume(client.conn, now, worker="w1") == 1
+    assert scheduler.paused(client.conn, "w1", "amazon_eg", now) is None
+
+    # paused crawling still reads product pages when idle, unless the pause says pages too
+    with client.conn:
+        db.record(client.conn, Listing("jumia_eg", "J1", "Kettle", "https://x/J1", 100_000, None, "EGP", True), now=now)
+    detailq.refill(client.conn, now)
+    scheduler.pause(client.conn, now, site="jumia_eg", hours=1)
+    assert "detail" in client.post("/api/lease", json={"sites": ["jumia_eg"]}, headers=W1).json()
+    scheduler.resume(client.conn, now, site="jumia_eg")
+    scheduler.pause(client.conn, now, site="jumia_eg", hours=1, pages=True)
+    detailq.refill(client.conn, now)
+    with client.conn:
+        client.conn.execute("DELETE FROM detail_state")
+    assert "detail" not in client.post("/api/lease", json={"sites": ["jumia_eg"]}, headers=W1).json()
+
+    # a shop paused for every device that crawls it: health says so, no 'stalled' alarm
+    scheduler.pause(client.conn, now, site="amazon_eg", hours=1, reason="testing pages")
+    checks = {c.name: c for c in health.run_checks(client.conn, cfg, now)}
+    assert checks["crawl amazon_eg"].level == "warn" and "paused by hand" in checks["crawl amazon_eg"].detail
+    assert scheduler.site_paused(client.conn, "amazon_eg", now) is not None
+    later = now + timedelta(hours=2)
+    assert scheduler.paused(client.conn, "w1", "amazon_eg", later) is None  # it ended by itself
+
+
+def test_pause_controls_are_admin_only(cfg):
+    from dataclasses import replace
+    app = create_app(replace(cfg, admin_token="admin-secret"), background=False)
+    with TestClient(app) as c:
+        assert c.post("/api/pauses", json={"site": "jumia_eg"}, headers=W1).status_code == 403
+        c.post("/ui/login", data={"token": "admin-secret"}, follow_redirects=False)
+        assert c.post("/api/pauses", json={"site": "nope"}).status_code == 422
+        pid = c.post("/api/pauses", json={"worker": "mac", "site": "jumia_eg", "hours": 3}).json()["id"]
+        assert [p["id"] for p in c.get("/api/pauses").json()["pauses"]] == [pid]
+        assert c.post(f"/api/pauses/{pid}/resume").json() == {"ok": True}
+        assert c.get("/api/pauses").json()["pauses"] == []
+        assert c.post(f"/api/pauses/{pid}/resume").status_code == 404

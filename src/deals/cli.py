@@ -284,8 +284,40 @@ def cmd_models(args) -> None:
         "SELECT status, COUNT(*) FROM product_models GROUP BY status ORDER BY COUNT(*) DESC")))
     print("models by status:   " + ", ".join(f"{r[0]} {r[1]:,} ({r[2]:,} on 2+ shops)" for r in q(
         "SELECT status, COUNT(*), SUM(sites >= 2) FROM models GROUP BY status ORDER BY COUNT(*) DESC")))
+    from deals import detailq
+    pages = detailq.stats(conn, utcnow())
+    if pages:
+        print(f"\nproduct pages read (config [details]: {'on' if cfg.details.enabled else 'OFF'}, "
+              f"shops {', '.join(cfg.details.sites)}):")
+        for r in pages:
+            paused = f"  PAUSED: {'; '.join(r['paused'])}" if r["paused"] else ""
+            print(f"  {r['site']:<14} {r['pages']:>6,} read ({r['barcodes'] or 0:,} with a barcode, {r['models'] or 0:,} "
+                  f"with a model number), {r['queued']:,} queued, last {_ago(r['last'])}{paused}")
     last = q("SELECT MAX(updated_at) FROM product_models")[0][0]
     print(f"last change {_ago(last)}; `deals models --sample 10` to check matches by eye, `deals models <code>` for one")
+
+
+def cmd_pause(args) -> None:
+    """Pause crawling by hand: a device, a shop, or both; it ends by itself."""
+    from deals import scheduler
+    cfg = _config(args)
+    conn = db.connect(cfg.db_path)
+    now = utcnow()
+    if args.list:
+        pass
+    elif args.resume:
+        n = scheduler.resume(conn, now, worker=args.device, site=args.site)
+        print(f"{n} pause(s) ended" + ("" if n else " (nothing matched: see `deals pause --list`)"))
+    else:
+        scheduler.pause(conn, now, worker=args.device or "*", site=args.site or "*", hours=args.hours,
+                        pages=args.pages, reason=args.reason or "cli")
+        print(f"crawling paused: device {args.device or 'all'}, shop {args.site or 'all'}, for {args.hours:g} h"
+              + ("; product pages too" if args.pages else "; product pages still read when idle"))
+    pauses = scheduler.active_pauses(conn, now)
+    print("\nactive pauses:" if pauses else "\nno active pauses")
+    for p in pauses:
+        print(f"  #{p['id']}  device {p['worker']:<10} shop {p['site']:<14} until {p['until'][:16]} UTC"
+              f"{'  (pages too)' if p['pages'] else ''}  {p['reason'] or ''}")
 
 
 # --- setup helpers ------------------------------------------------------------------
@@ -508,6 +540,14 @@ def main() -> None:
     p.add_argument("--different", nargs=2, type=int, metavar=("A", "B"), help="product ids A and B are different products")
     p.add_argument("--forget", nargs=2, type=int, metavar=("A", "B"), help="drop a hand-made match between A and B")
     p.add_argument("--overrides", action="store_true", help="list the hand-made matches")
+    p = add("pause", cmd_pause, "pause crawling for a device and/or shop (ends by itself); --resume, --list")
+    p.add_argument("--device", help="a worker name (mac, droplet...); default all")
+    p.add_argument("--site", choices=sorted(SITES), help="default all shops")
+    p.add_argument("--hours", type=float, default=2, help="how long (default 2, at most 168)")
+    p.add_argument("--pages", action="store_true", help="also stop reading product pages")
+    p.add_argument("--reason")
+    p.add_argument("--resume", action="store_true", help="end the matching pauses now")
+    p.add_argument("--list", action="store_true", help="only list active pauses")
     p = add("product", cmd_product, "price history and stats of one product")
     p.add_argument("site", choices=sorted(SITES))
     p.add_argument("sku")

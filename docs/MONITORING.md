@@ -208,3 +208,12 @@ longer needed.
 **Too many or too few alerts.** Change `[alerts]` in `/etc/deals/config.toml` (for example
 `min_drop = 0.25`), or a group's own `min_drop` / `min_price` under its `[[watch]]`, then
 `systemctl restart deals-coordinator`.
+
+## Pausing crawling by hand
+
+To stop a device or a shop for a while (testing, a shop acting up, the Mac needs its bandwidth): web UI →
+Devices → "Paused crawling" (admin token), or `make pause DEVICE=mac SITE=jumia_eg HOURS=3` (`PAGES=1` stops
+product-page reading too). A pause always ends by itself (2 hours by default, a week at most); `make resume`
+ends it early. A job already running finishes. While every device that crawls a shop is paused, the watchdog
+sends no "stalled" alert for it and `make health` shows "paused by hand" (a warning, not a failure).
+

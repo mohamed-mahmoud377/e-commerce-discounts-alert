@@ -29,6 +29,8 @@ owns one job.
 | `bot.py` | 292 | The Telegram conversation: /start, /stop, approvals, subscribers; `decide()` is shared with the web UI | alerts, db |
 | `health.py` | 207 | Health checks and the daily report | db, alerts |
 | `matching.py` | 590 | The same product on different shops: model codes read from titles once (`product_codes`), the hourly grouping streamed through SQL into `models` / `product_models` (in a `nice 19` subprocess), `same_model()` for the views. See [MATCHING.md](MATCHING.md) | db |
+| `details.py` | 150 | Product page parsers per shop (barcode, model number, specs) and `fetch_details`, which never retries a challenge | models |
+| `detailq.py` | 170 | The coordinator's side of product pages: offer one to an idle worker (paced, capped, paused after a refusal), record what it gave, refill the queue | db, config |
 | `monitor.py` | 166 | Device states, events (logs), the dashboard page | db, scheduler |
 | `webui.py` | 1182 | The web UI page (one HTML + CSS + JS string, light and dark themes) and its queries | health, monitor, alerts |
 | `coordinator.py` | 570 | The FastAPI app (all endpoints) and the watchdog thread (which also starts the hourly matching) | everything above |
@@ -134,6 +136,8 @@ many have run, and `db.connect()` runs the missing ones in a transaction on star
 | 12 | `product_codes.line`, `.attrs`: the second identity (brand + product line + variant) for titles without a code |
 | 13 | `product_codes.ptype`, `.specs`, `.flags`, `.toks` (the spec signature, for the probable tier); `match_overrides` (matches set by hand) |
 | 14 | `product_barcodes` (barcodes from a shop's own data: Dream 2000's variant SKUs; source `feed`) |
+| 15 | `product_details`, `detail_queue`, `detail_state` (product pages read for barcodes and model numbers) |
+| 16 | `crawl_pauses` (crawling paused by hand per device and/or shop, with an end time) |
 
 **Tables and columns** (prices are integer piastres; times are UTC ISO text, which sorts correctly as text):
 
@@ -155,6 +159,10 @@ many have run, and `db.connect()` runs the missing ones in a transaction on star
 | `models` | `model` (`<brand> <code>[ <capacity>]`); index `(status, sites)` | One product across shops: `kind` (`gtin`, `mpn`, `line`, `similar`, `manual`), `code`, `capacity`, `brand`, `status` (`ok`, `probable`, `conflict`, `spec`), `products`, `sites`, `site_list`, `low`/`median`/`high`, `note`, `version`, `updated_at`. Rebuilt hourly |
 | `product_models` | `product_id` (cascade delete); index `(model)` | `model`, `status` (`model`, `no_code`, `accessory`, `used`, `bundle`, `ambiguous_brand`, `ambiguous_variant`, `price_outlier`, `split`), `brand`, `brand_from`, `codes`, `note`, `version`, `updated_at` |
 | `product_barcodes` | `(product_id, gtin)` (cascade delete); index `(gtin)` | `source` (`feed`; `page` later), `seen_at`. Written by the page upload when a listing carries `gtins`; read only by matching |
+| `product_details` | `product_id` (cascade delete) | What the product's own page gave: `status` (ok, gone, failed), `title` (re-read when it changes), `gtins`, `mpns`, `codes` (normalised), `model_name`, `specs` (JSON) |
+| `detail_queue` | `(site, product_id)` | The next product pages to read per shop, refilled by every matching pass |
+| `detail_state` | `(site, ip)` | Pace and pause of page reading: `last_at`, `day`, `count`, `paused_until`, `reason` |
+| `crawl_pauses` | `id` | `worker` and `site` (`*` = all), `pages` (product pages stop too), `until` (always set, at most a week), `reason`, `created_at`. The lease skips paused shops for that device; a shop paused for every device that crawls it raises no "stalled" alarm and shows as "paused by hand" in health |
 | `match_overrides` | `(a, b)` (cascade delete) | `verdict` (`same`: b joins a's model; `different`: b leaves it), `note`, `created_at`. Set from the web UI product page or `deals models --same/--different/--forget` |
 
 **Adding a migration:** append a new SQL string to `MIGRATIONS` (never edit an old one), use

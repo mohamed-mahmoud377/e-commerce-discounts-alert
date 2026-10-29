@@ -171,3 +171,8 @@ SELECT kind, count(*), sum(failures > 0) failing, min(next_due_at) FROM jobs WHE
 | `UnknownTarget: /en/x/ redirected to /en/` | Wrong slug (the shop answers with its homepage) | Copy the slug from `deals categories cairosales_eg <parent>` or the sitemap |
 | A slice suddenly parses 0 products | Layout change (no `ul.product_list`, renamed classes) | Save a fresh page into `tests/fixtures/cairosales_category.html.gz` and fix the parser |
 | Every product of a slice is out of stock | Normal for phones, tablets, laptops and consoles on this shop | Nothing to do; the crawl stops after the first all-unpriced page |
+
+## Product pages (30 Oct 2026)
+
+PrestaShop's `table.table-data-sheet` (`<td>` label, `<td>` value) has `Model` (`OLED65CS6VA-S30A`), and the
+markup has `itemprop="mpn"`. No barcodes seen (0 of 25 in the pilot). `details.parse_cairosales` reads both.

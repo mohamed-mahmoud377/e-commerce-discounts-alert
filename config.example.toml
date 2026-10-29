@@ -18,6 +18,16 @@ local = "change-me"
 bot_token = ""          # from @BotFather
 chat_id = ""            # run 'deals telegram' after sending your bot a message
 
+[details]
+# Reading each product's page once for its barcode and model number (better cross-shop matching; prices never
+# come from here). Only when a device has nothing to crawl for that shop, slowly, with a daily cap; a refusal
+# pauses that shop's pages for that IP. See docs/MATCHING.md.
+enabled = true
+sites = ["2b_eg", "jumia_eg", "btech_eg", "cairosales_eg"]  # add "amazon_eg" only after watching the others
+every_seconds = 30
+daily_cap = 1500
+pause_hours = 24
+
 [alerts]
 min_drop = 0.20               # alert when >= 20% below the product's typical (90-day) price (3+ days of history)
 early_min_drop = 0.30         # with only 1 to 3 days of history, a drop must be >= 30% (and below everything seen)

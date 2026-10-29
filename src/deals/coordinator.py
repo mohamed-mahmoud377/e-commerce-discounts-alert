@@ -24,11 +24,12 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
-from deals import alerts, bot, db, health, matching, monitor, scheduler, webui
+from deals import alerts, bot, db, detailq, health, matching, monitor, scheduler, webui
 from deals.config import Config
 from deals.db import iso, utcnow
 from deals.models import Listing, Slice
 from deals.planner import PlannedSlice
+from deals.sites import SITES
 
 log = logging.getLogger(__name__)
 VERSION = pkg_version("deals")
@@ -187,11 +188,23 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
         with conn:
             scheduler.worker_seen(conn, worker, ip, now, sites=body.worker_sites or body.sites,
                                   version=body.version)
-        job = scheduler.lease(conn, cfg, worker, ip, body.sites, now)
+        # Shops whose crawling is paused for this device (by hand, crawl_pauses) get no crawl jobs.
+        holds = {s: scheduler.paused(conn, worker, s, now) for s in body.sites}
+        active = [s for s in body.sites if holds[s] is None]
+        job = scheduler.lease(conn, cfg, worker, ip, active, now) if active else None
         if job is None:
-            due = scheduler.next_due(conn, body.sites) if body.sites else None
+            due = scheduler.next_due(conn, active) if active else None
             wait = 30 if due is None else (due - now).total_seconds()
-            return {"job": None, "retry_after": int(min(60, max(5, wait)))}
+            reply = {"job": None, "retry_after": int(min(60, max(5, wait)))}
+            # Nothing to crawl on this shop now: maybe one product page to read meanwhile (details.py).
+            # Never lets a problem here cost the worker its answer.
+            if len(body.sites) == 1 and not (holds[body.sites[0]] and holds[body.sites[0]]["pages"]):
+                try:
+                    if page := detailq.offer(conn, cfg, ip, body.sites[0], now, reply["retry_after"]):
+                        reply["detail"] = page
+                except Exception:
+                    log.exception("product page offer for %s", body.sites[0])
+            return reply
         site = cfg.site(job["site"])
         return {"job": {
             "id": job["id"], "kind": job["kind"], "site": job["site"], "target": job["target"],
@@ -396,7 +409,8 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
     def overview_api(request: Request):
         revision = revision_file.read_text().split(" deployed")[0] if revision_file.exists() else ""
         with closing(read_conn()) as rc:
-            return {**webui.overview(rc, cfg, utcnow(), revision), "admin": is_admin(request)}
+            return {**webui.overview(rc, cfg, utcnow(), revision), "admin": is_admin(request),
+                    "pauses": scheduler.active_pauses(rc, utcnow())}
 
     @app.get("/api/alerts", dependencies=[Depends(viewer)])
     def alerts_api(days: float = 1, kind: str | None = None, limit: int = 300):
@@ -464,6 +478,57 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
                 raise HTTPException(409, "only active subscribers can be helper admins")
             tg = alerts.Telegram(cfg.telegram_token) if cfg.telegram_token else None
             bot.decide(wc, tg, sub, action, utcnow())
+        return {"ok": True}
+
+    class DetailIn(BaseModel):
+        site: str
+        status: str  # ok | gone | failed | blocked
+        gtins: list[str] = []
+        mpns: list[str] = []
+        model_name: str | None = None
+        specs: dict[str, str] = {}
+        reason: str | None = None
+
+    @app.post("/api/details/{product_id}")
+    async def detail_done(product_id: int, body: DetailIn, request: Request, worker: str = Depends(worker_name)):
+        """What a worker read from a product page (or that the shop refused it: pauses that shop's pages)."""
+        detailq.record(conn, cfg, product_id, body.site, client_ip(request), body.model_dump(), utcnow())
+        return {"ok": True}
+
+    class PauseIn(BaseModel):
+        worker: str = "*"  # a device name, or '*' for all
+        site: str = "*"  # a shop, or '*' for all
+        hours: float = 2
+        pages: bool = False  # also stop product-page reading
+        reason: str | None = None
+
+    @app.get("/api/pauses", dependencies=[Depends(viewer)])
+    def pauses_api():
+        with closing(read_conn()) as rc:
+            return {"pauses": scheduler.active_pauses(rc, utcnow())}
+
+    @app.post("/api/pauses", dependencies=[Depends(admin)])
+    def pause_api(body: PauseIn):
+        """Pause crawling by hand (ends by itself after `hours`)."""
+        if body.site != "*" and body.site not in SITES:
+            raise HTTPException(422, f"unknown shop {body.site!r}")
+        with closing(db.connect(cfg.db_path)) as wc:
+            try:
+                pid = scheduler.pause(wc, utcnow(), worker=body.worker, site=body.site, hours=body.hours,
+                                      pages=body.pages, reason=body.reason or "web UI")
+            except ValueError as e:
+                raise HTTPException(422, str(e))
+        log.info("crawling paused by hand: device %s, shop %s, %.1f h%s", body.worker, body.site, body.hours,
+                 " (product pages too)" if body.pages else "")
+        return {"ok": True, "id": pid}
+
+    @app.post("/api/pauses/{pause_id}/resume", dependencies=[Depends(admin)])
+    def resume_api(pause_id: int):
+        with closing(db.connect(cfg.db_path)) as wc:
+            n = scheduler.resume(wc, utcnow(), pause_id=pause_id)
+        if not n:
+            raise HTTPException(404, "no such active pause")
+        log.info("crawling resumed by hand (pause %d)", pause_id)
         return {"ok": True}
 
     class MatchIn(BaseModel):
@@ -544,6 +609,8 @@ class Watchdog(threading.Thread):
             for row in conn.execute(
                     """SELECT site, MIN(next_due_at) AS oldest_due, MAX(last_done_at) AS last_done
                        FROM jobs GROUP BY site""").fetchall():
+                if scheduler.site_paused(conn, row["site"], now):
+                    continue  # paused by hand: quiet on purpose
                 overdue = now - db.parse_iso(row["oldest_due"])
                 last_done = db.parse_iso(row["last_done"]) if row["last_done"] else None
                 if overdue > timedelta(minutes=45) and (last_done is None or now - last_done > timedelta(hours=1)):

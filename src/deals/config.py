@@ -91,6 +91,16 @@ class Watch:
 
 
 @dataclass(frozen=True)
+class DetailRules:
+    """Reading product pages for barcodes and model numbers (deals/details.py, docs/MATCHING.md)."""
+    enabled: bool = True
+    sites: tuple[str, ...] = ("2b_eg", "jumia_eg", "btech_eg", "cairosales_eg")  # amazon_eg: off until watched
+    every_seconds: int = 30  # at most one product page per shop per IP this often, and only when idle
+    daily_cap: int = 1500  # product pages per shop per IP per day
+    pause_hours: float = 24  # after a refusal, no product pages from that shop to that IP for this long
+
+
+@dataclass(frozen=True)
 class Config:
     host: str = "127.0.0.1"
     port: int = 8787
@@ -101,6 +111,7 @@ class Config:
     admin_token: str = ""  # logs in to the web UI (/ui); worker tokens work too
     alerts: AlertRules = AlertRules()
     schedule: Schedule = Schedule()
+    details: DetailRules = DetailRules()
     sites: dict[str, SiteSettings] = field(default_factory=dict)
     watches: list[Watch] = field(default_factory=list)
 
@@ -162,6 +173,7 @@ def load(path: Path) -> Config:
         admin_token=server.get("admin_token", ""),
         alerts=AlertRules(**raw.get("alerts", {})),
         schedule=Schedule(**raw.get("schedule", {})),
+        details=DetailRules(**{k: tuple(v) if k == "sites" else v for k, v in raw.get("details", {}).items()}),
         sites={name: SiteSettings(**s) for name, s in raw.get("sites", {}).items()},
         watches=watches,
     )

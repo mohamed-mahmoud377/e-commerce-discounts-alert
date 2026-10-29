@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from deals import db
+from deals import db, scheduler
 from deals.alerts import KIND_TITLE, SITE_NAME
 from deals.config import Config
 from deals.db import iso, parse_iso
@@ -94,7 +94,11 @@ def run_checks(conn: sqlite3.Connection, cfg: Config, now: datetime) -> list[Che
         detail = (f"last slice finished {'never' if ago is None else f'{ago:.0f} min ago'}, {r['slices']} slices "
                   f"({r['never']} not crawled yet), most overdue {max(0, overdue):.0f} min")
         name_ar = SITE_NAME.get(site, site)
-        if ago is None or ago > 180:
+        if hold := scheduler.site_paused(conn, site, now):
+            add(Check(f"crawl {site}", WARN, f"paused by hand until {hold['until'][:16]} UTC"
+                      + (f" ({hold['reason']})" if hold["reason"] else "") + f"; {detail}",
+                      f"{name_ar}: الجمع متوقف يدويًا حتى {hold['until'][11:16]}"))
+        elif ago is None or ago > 180:
             add(Check(f"crawl {site}", FAIL, detail, f"{name_ar}: لم يكتمل أي جمع منذ أكثر من 3 ساعات"))
         elif ago > 60 or overdue > 120:
             add(Check(f"crawl {site}", WARN, detail, f"{name_ar}: الجمع متأخر"))

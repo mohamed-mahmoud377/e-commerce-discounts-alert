@@ -621,9 +621,20 @@ def _group(conn: sqlite3.Connection, now: datetime) -> None:
                 yield pid, shop_brand, "shop" if shop_brand else None, 0
     _chunked(conn, "INSERT INTO pb VALUES (?, ?, ?, ?)", brands())
 
+    # Codes: the title's (product_code_index) and those the product's own page gave (product_details),
+    # which rank after the title's.
+    conn.executescript("""
+        CREATE TEMP TABLE idx AS SELECT product_id, code, rank FROM product_code_index;
+        CREATE INDEX idx_code ON idx (code);""")
+    page_codes = {}
+    for pid, codes in conn.execute("SELECT product_id, codes FROM product_details WHERE status = 'ok' AND codes != ''"):
+        page_codes[pid] = codes.split()
+    _chunked(conn, "INSERT INTO idx VALUES (?, ?, ?)",
+             ((pid, c, 100 + n) for pid, cs in page_codes.items() for n, c in enumerate(cs)))
+
     # 2. Spec words, learned: a code that many brands use is not a model ("1355U", "DCIP3").
     spec = {}
-    pairs = conn.execute("""SELECT i.code, pb.brand, COUNT(*) FROM product_code_index i JOIN pb USING (product_id)
+    pairs = conn.execute("""SELECT i.code, pb.brand, COUNT(*) FROM idx i JOIN pb USING (product_id)
                             WHERE pb.brand IS NOT NULL GROUP BY i.code, pb.brand ORDER BY i.code""")
     for code, rows in groupby(pairs, key=lambda r: r[0]):
         counts = Counter({b: n for _, b, n in rows})
@@ -632,7 +643,7 @@ def _group(conn: sqlite3.Connection, now: datetime) -> None:
             if len(groups) >= SPEC_BRANDS and groups.most_common(1)[0][1] < DOMINANT * sum(groups.values()):
                 spec[code] = f"used by {len(groups)} brands: " + ", ".join(b for b, _ in groups.most_common(4))
     shared = {r[0] for r in conn.execute(
-        """SELECT i.code FROM product_code_index i JOIN products p ON p.id = i.product_id
+        """SELECT i.code FROM idx i JOIN products p ON p.id = i.product_id
            GROUP BY i.code HAVING COUNT(DISTINCT p.site) >= 2""")}
 
     # 3. Each product's code: its best one that is not a spec word or a brand's name ("V2COM" is the
@@ -643,6 +654,7 @@ def _group(conn: sqlite3.Connection, now: datetime) -> None:
                 """SELECT pc.product_id, pc.own, pc.mentions, pc.before, pc.used, pc.accessory, pb.brand
                    FROM product_codes pc JOIN pb USING (product_id)"""):
             own, mentions = own.split(), mentions.split()
+            own += [c for c in page_codes.get(pid, ()) if c not in own]  # the page's model numbers, after the title's
             if used:
                 yield pid, None, "", "used", "renewed / refurbished / used listing"
             elif accessory:
@@ -1035,7 +1047,14 @@ def rebuild(conn: sqlite3.Connection, now: datetime) -> Summary:
     extracted = extract(conn)
     _group(conn, now)
     changed = _write(conn, now)
-    conn.executescript("DROP TABLE pb; DROP TABLE pick; DROP TABLE lines; DROP TABLE assign; DROP TABLE new_pm; DROP TABLE new_m")
+    conn.executescript("DROP TABLE pb; DROP TABLE pick; DROP TABLE lines; DROP TABLE assign; DROP TABLE new_pm; "
+                       "DROP TABLE new_m; DROP TABLE idx")
+    try:  # the next product pages to read (details.py); never fails the matching pass
+        from deals import detailq
+        detailq.refill(conn, now)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("product page queue")
     n = conn.execute(
         """SELECT COUNT(*), SUM(pm.status = 'model'), SUM(pm.status = 'model' AND m.status = 'ok' AND m.sites >= 2),
                   (SELECT COUNT(*) FROM models WHERE status != 'spec')

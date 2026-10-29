@@ -352,6 +352,52 @@ MIGRATIONS = [
     );
     CREATE INDEX product_barcodes_gtin ON product_barcodes (gtin);
     """,
+    """
+    -- Product pages (details.py): what each product's own page says about its identity, read once.
+    CREATE TABLE product_details (
+        product_id INTEGER PRIMARY KEY REFERENCES products(id) ON DELETE CASCADE,
+        fetched_at TEXT NOT NULL,
+        status     TEXT NOT NULL,  -- ok | gone | failed
+        title      TEXT,           -- the title when read: a changed title is read again
+        gtins      TEXT NOT NULL DEFAULT '',
+        mpns       TEXT NOT NULL DEFAULT '',  -- as written on the page
+        codes      TEXT NOT NULL DEFAULT '',  -- the mpns normalised as model codes (matching uses these)
+        model_name TEXT,
+        specs      TEXT            -- JSON, at most 25 label/value pairs
+    );
+    -- The next pages to read per shop (unmatched products first); refilled by every matching pass.
+    CREATE TABLE detail_queue (
+        site       TEXT NOT NULL,
+        product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+        priority   INTEGER NOT NULL,
+        PRIMARY KEY (site, product_id)
+    );
+    CREATE INDEX detail_queue_next ON detail_queue (site, priority, product_id);
+    -- Pace, daily count and pause of product-page reading per shop and IP.
+    CREATE TABLE detail_state (
+        site         TEXT NOT NULL,
+        ip           TEXT NOT NULL,
+        last_at      TEXT,
+        day          TEXT,
+        count        INTEGER NOT NULL DEFAULT 0,
+        paused_until TEXT,
+        reason       TEXT,
+        PRIMARY KEY (site, ip)
+    );
+    """,
+    """
+    -- Crawling paused by hand (scheduler.pause): per device, per shop, or both ('*' = all). Always ends
+    -- by itself at `until`; `pages` = product-page reading stops too.
+    CREATE TABLE crawl_pauses (
+        id         INTEGER PRIMARY KEY,
+        worker     TEXT NOT NULL DEFAULT '*',
+        site       TEXT NOT NULL DEFAULT '*',
+        pages      INTEGER NOT NULL DEFAULT 0,
+        until      TEXT NOT NULL,
+        reason     TEXT,
+        created_at TEXT NOT NULL
+    );
+    """,
 ]
 
 # Price moves smaller than this are noise (amazon.eg prices creep by a piastre per

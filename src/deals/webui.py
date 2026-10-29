@@ -586,7 +586,8 @@ const views = {
         ${d.devices.flatMap(x => x.sites.map(s => `<tr><td>${esc(x.name)}</td><td>${esc(shop(s.site))}</td><td>${pill(s.state, s.state, 1)}</td>
           <td class='muted'>${esc(s.detail)}${s.last_error && s.state !== 'failing' ? `<div class='sub'>last problem ${esc((s.last_error_at || '').slice(11, 16))}: ${esc(s.last_error)}</div>` : ''}</td>
           <td class='num r'>${s.pages.toLocaleString()}</td><td class='num r'>${s.products.toLocaleString()}</td><td class='num r'>${s.blocks}</td></tr>`)).join('')}</table></div></section>
-      <section class='card' style='overflow:hidden'><div class='cardhead'><h2>Shops</h2></div><div class='scroll'><table><tr><th>Shop</th><th class='r'>Products</th><th>Last pass</th><th class='r'>Running</th><th class='r'>Failing</th></tr>${shopRows(d.sites, d.checks)}</table></div></section>`;
+      <section class='card' style='overflow:hidden'><div class='cardhead'><h2>Shops</h2></div><div class='scroll'><table><tr><th>Shop</th><th class='r'>Products</th><th>Last pass</th><th class='r'>Running</th><th class='r'>Failing</th></tr>${shopRows(d.sites, d.checks)}</table></div></section>
+      ${pausesCard(d)}`;
   },
 
   // ---------------------------------------------------------------- Jobs
@@ -849,6 +850,29 @@ async function productPage(id) {
       ${d.history.slice().reverse().map((h, i, arr) => { const prev = arr[i + 1], ch = prev && prev.price && h.price ? h.price - prev.price : null;
         return `<tr><td class='num nw'>${hhmm(h.observed_at)}</td><td class='num r'>${money(h.price)}</td><td class='num r muted'>${money(h.list_price)}</td><td>${h.in_stock ? 'in stock' : 'sold out'}</td>
         <td class='num r nw ${ch < 0 ? 'down' : 'up'}'>${ch ? (ch < 0 ? '▼ ' : '▲ ') + money(Math.abs(ch)) + ' · ' + changePct(ch / prev.price) : ''}</td></tr>`; }).join('')}</table></div></section>`;
+}
+// Crawling paused by hand: the active pauses, and (admin) a form to pause or resume. A pause ends by itself.
+function pausesCard(d) {
+  const ps = d.pauses || [];
+  const rows = ps.map(p => `<tr><td>${p.worker === '*' ? 'all devices' : esc(p.worker)}</td><td>${p.site === '*' ? 'all shops' : esc(shop(p.site))}</td>
+    <td class='num nw'>${esc(p.until.slice(5, 16).replace('T', ' '))} UTC</td><td>${p.pages ? 'crawling + product pages' : 'crawling'}</td><td class='muted'>${esc(p.reason || '')}</td>
+    <td class='r'>${d.admin ? `<button class='btn small' type='button' onclick="resumePause(${p.id})">Resume now</button>` : ''}</td></tr>`).join('');
+  const form = d.admin ? `<div class='row' style='gap:8px;padding:12px 18px;border-top:1px solid var(--line2);flex-wrap:wrap'>
+    <select id='pw' class='field'><option value='*'>all devices</option>${(d.devices || []).map(x => `<option>${esc(x.name)}</option>`).join('')}</select>
+    <select id='ps' class='field'><option value='*'>all shops</option>${SITES.map(s => `<option value='${s[0]}'>${s[1]}</option>`).join('')}</select>
+    <select id='ph' class='field'>${[1, 2, 4, 8, 24].map(h => `<option value='${h}' ${h === 2 ? 'selected' : ''}>${h} h</option>`).join('')}</select>
+    <label class='row' style='gap:6px'><input type='checkbox' id='pp'> product pages too</label>
+    <button class='btn' type='button' onclick='addPause()'>Pause crawling</button><span class='sub'>ends by itself</span></div>` : '';
+  return `<section class='card' style='overflow:hidden'><div class='cardhead'><h2>Paused crawling</h2><span class='sub'>${ps.length ? ps.length + ' active' : 'nothing paused'}</span></div>
+    ${ps.length ? `<div class='scroll'><table><tr><th>Device</th><th>Shop</th><th>Until</th><th>Stops</th><th>Why</th><th></th></tr>${rows}</table></div>` : ''}${form}</section>`;
+}
+async function addPause() {
+  const v = id => document.getElementById(id);
+  try { await api('/api/pauses', 'POST', {worker: v('pw').value, site: v('ps').value, hours: +v('ph').value, pages: v('pp').checked});
+        toast('Paused'); render(); } catch (e) { toast(e.message); }
+}
+async function resumePause(id) {
+  try { await api(`/api/pauses/${id}/resume`, 'POST'); toast('Resumed'); render(); } catch (e) { toast(e.message); }
 }
 // Listings of the same model at every shop (matching.py), or why this one has no model.
 function sameModel(sm, p, admin) {
