@@ -132,6 +132,7 @@ many have run, and `db.connect()` runs the missing ones in a transaction on star
 | 10 | `models`, `product_models` (cross-shop matching; written only by `matching.rebuild`) |
 | 11 | `product_codes`, `product_code_index` (codes read once per title, incremental); `models` / `product_models` recreated with brand-scoped keys and `models.kind` |
 | 12 | `product_codes.line`, `.attrs`: the second identity (brand + product line + variant) for titles without a code |
+| 13 | `product_codes.ptype`, `.specs`, `.flags`, `.toks` (the spec signature, for the probable tier); `match_overrides` (matches set by hand) |
 
 **Tables and columns** (prices are integer piastres; times are UTC ISO text, which sorts correctly as text):
 
@@ -150,8 +151,9 @@ many have run, and `db.connect()` runs the missing ones in a transaction on star
 | `kv` | `key` | `telegram_offset` (last Telegram update handled) |
 | `product_codes` | `product_id` (cascade delete) | The codes read from one title, kept so a pass re-reads only changed titles: `title_hash`, `version`, `heads`, `shop_brand`, `own`, `mentions`, `before`, `capacity`, `used`, `accessory` ([MATCHING.md](MATCHING.md)) |
 | `product_code_index` | `(product_id, code)`; index `(code)` | One row per code of a product (`rank`), for the SQL counts |
-| `models` | `model` (`<brand> <code>[ <capacity>]`); index `(status, sites)` | One product across shops: `kind`, `code`, `capacity`, `brand`, `status` (`ok`, `conflict`, `spec`), `products`, `sites`, `site_list`, `low`/`median`/`high`, `note`, `version`, `updated_at`. Rebuilt hourly |
-| `product_models` | `product_id` (cascade delete); index `(model)` | `model`, `status` (`model`, `no_code`, `accessory`, `used`, `bundle`, `ambiguous_brand`, `ambiguous_variant`, `price_outlier`), `brand`, `brand_from`, `codes`, `note`, `version`, `updated_at` |
+| `models` | `model` (`<brand> <code>[ <capacity>]`); index `(status, sites)` | One product across shops: `kind` (`gtin`, `mpn`, `line`, `similar`, `manual`), `code`, `capacity`, `brand`, `status` (`ok`, `probable`, `conflict`, `spec`), `products`, `sites`, `site_list`, `low`/`median`/`high`, `note`, `version`, `updated_at`. Rebuilt hourly |
+| `product_models` | `product_id` (cascade delete); index `(model)` | `model`, `status` (`model`, `no_code`, `accessory`, `used`, `bundle`, `ambiguous_brand`, `ambiguous_variant`, `price_outlier`, `split`), `brand`, `brand_from`, `codes`, `note`, `version`, `updated_at` |
+| `match_overrides` | `(a, b)` (cascade delete) | `verdict` (`same`: b joins a's model; `different`: b leaves it), `note`, `created_at`. Set from the web UI product page or `deals models --same/--different/--forget` |
 
 **Adding a migration:** append a new SQL string to `MIGRATIONS` (never edit an old one), use
 `ALTER TABLE ... ADD COLUMN` or new tables, rehearse it on a copy (`make db`, then `db.connect()` on a copy

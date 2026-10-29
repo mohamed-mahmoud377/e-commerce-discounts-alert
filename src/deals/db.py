@@ -321,6 +321,22 @@ MIGRATIONS = [
     ALTER TABLE product_codes ADD COLUMN line TEXT NOT NULL DEFAULT '';   -- '1:iphone 2:16' (word index: word)
     ALTER TABLE product_codes ADD COLUMN attrs TEXT NOT NULL DEFAULT '';  -- 'storage=128GB ram=8GB net=5G'
     """,
+    """
+    -- Matching: the spec signature of a title, for the 'probable' tier (products with neither a code
+    -- nor a named line: "Fresh Air Fryer 5.5 L 1800 W"), and matches set by hand.
+    ALTER TABLE product_codes ADD COLUMN ptype TEXT NOT NULL DEFAULT '';  -- product type: 'air fryer'
+    ALTER TABLE product_codes ADD COLUMN specs TEXT NOT NULL DEFAULT '';  -- '1800W 5.5L'
+    ALTER TABLE product_codes ADD COLUMN flags TEXT NOT NULL DEFAULT '';  -- decisive features: 'digital inverter'
+    ALTER TABLE product_codes ADD COLUMN toks TEXT NOT NULL DEFAULT '';   -- the title's words, for similarity
+    CREATE TABLE match_overrides (
+        a          INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+        b          INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+        verdict    TEXT NOT NULL CHECK (verdict IN ('same', 'different')),
+        note       TEXT,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (a, b)
+    );
+    """,
 ]
 
 # Price moves smaller than this are noise (amazon.eg prices creep by a piastre per

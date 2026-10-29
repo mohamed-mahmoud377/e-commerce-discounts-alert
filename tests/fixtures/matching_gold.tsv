@@ -130,3 +130,28 @@ x	noon_eg	Sony	82500	PS5 Slim Console With Marvel’s Spider-Man 2 Bundle
 46	noon_eg	HP	46656	Envy X360 2-in-1 Laptop With 14-Inch Display, Core Ultra 5 120U Processor/8GB RAM/512GB SSD
 47	jumia_eg	Fresh	2248	Fresh Chopper 6 Liter 1500 Watt - Black
 48	jumia_eg	Fresh	2949	Fresh Chopper 6 Liter 1500 Watt Stainless - Silver
+# --- barcodes, spaced and plain-number codes ---
+50	cairosales_eg	Hervy	3409	Hervy Food Processor 1000 Watt 1.5 L 6223007910729
+50	noon_eg	Hervy	3300	Hervy Food Processor 1000W 6223007910729
+x	amazon_eg		1349	Zahran 8 Cups Yogurt Maker , 2724761319031
+51	amazon_eg		7449	Beko Stand Mixer - 1500 Watts - 6 Speeds + Pulse - 5 Liters Stainless Steel Bowl - Red - MM 5371
+51	jumia_eg	Beko	7449	Beko Stand Mixer -1500 Watts - 5 Liters Capacity -6 Speeds+Pulse -MM 5371
+52	amazon_eg		5452	Touch Elzenouki 40566 Stand Mixer Stainless steel bowl 5 Liters 1200 Watt Black
+52	noon_eg	Touch Elzenouki	5499	Touch Elzenouki 40566 Stand Mixer Stainless steel bowl 5 Liters 1200 Watt Black
+53	btech_eg	Touch	1549	Touch Electric Chopper 2 Liter , 700 Watt Black - 40562
+53	carrefour_eg	Touch	1549	Touch Meat Chopper 700 Watt 2 Liters - Black - 40562
+54	btech_eg	Elba	22179	Elba Gas Built in Hob ,75 Centimeter 5 Burners ,Stainless Steel - ELIO 75-545 L
+54	noon_eg	Elba	22469	Elba Stainless Steel Built-In 5 Gas Burners Hob- 75 Cm ELIO 75-545 L-S Silver
+55	amazon_eg		1999	TORNADO Electric Blender 500 Watt 1.5 Liter 2 Mills Pink MX5200/2-PINK
+55	jumia_eg	Tornado	1700	TornadoCountertop Blender 500W 1.5L Jar with 2 Grinder Mills - Pink - Model MX5200/2-PINK
+# --- probable tier: brand + type + exact specs, one product per shop ---
+56	amazon_eg	ATA	4262	ATA Microwave 20 Liter Capacity- Digital- 1200W, 220-240V, Silver Black
+56	jumia_eg	ATA	4150	Ata Microwave 20 Liter Capacity- Digital- 1200W, 220-240V, Silver Black
+57	amazon_eg	Fresh	6250	Fresh Stand mixer 8Litres 1900 W, Beige
+57	jumia_eg	Fresh	6899	Fresh Stand mixer 8Litres 1900 W, Beige
+58	amazon_eg	Hervy	815	Hervy Hand Mixer 400W, 5 Speed, 2 Stainless Whisks & Doughs, Black
+58	noon_eg	Hervy	750	Hervy Hand Mixer 400W, 5 Speed, 2 Stainless Whisks & Doughs, Black
+# generic ACs: several Haier 1.5 HP cooling-only models exist, the signature can't tell them apart
+60	jumia_eg	Haier	19400	Haier Split Air Conditioner, 1.5 HP, Cooling Only, White
+61	jumia_eg	Haier	26000	Haier Turbo Split Air Conditioner Eco 1.5 HP Cooling Only Gray
+62	noon_eg	Haier	19500	Haier Split Air Conditioner 1.5 HP Cooling Only

@@ -394,14 +394,15 @@ const options = (list, cur, all) => `<option value=''>${esc(all)}</option>` + li
 const shopOptions = cur => options(SITES.map(s => [s[0], s[1]]), cur, 'All shops');
 let inflight = 0;
 function busy(on) { inflight += on ? 1 : -1; document.body.classList.toggle('loading', inflight > 0); }
-async function api(path, method = 'GET') {
+async function api(path, method = 'GET', body = undefined) {
   busy(true);
   try {
-    const r = await fetch(path, {method, credentials: 'same-origin'});
+    const r = await fetch(path, {method, credentials: 'same-origin', ...(body === undefined ? {} :
+      {headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)})});
     if (r.status === 401) { location.href = '/ui/login'; throw new Error('logged out'); }
-    const body = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(body.detail || path + ': HTTP ' + r.status);
-    return body;
+    const out = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error((typeof out.detail === 'string' && out.detail) || path + ': HTTP ' + r.status);
+    return out;
   } finally { busy(false); }
 }
 function toast(text) { const t = $('#toast'); t.textContent = text; t.style.display = 'block'; clearTimeout(toastTimer); toastTimer = setTimeout(() => t.style.display = 'none', 3500); }
@@ -842,7 +843,7 @@ async function productPage(id) {
         ${d.other_sellers.map(o => `<tr class='click' onclick='openProduct(${o.id})'><td>${esc(o.seller || '?')}</td><td class='num r'>${money(o.price)}</td><td>${o.in_stock ? pill('ok', 'in stock') : pill('idle', 'sold out')}</td>
           <td class='num r ${o.price > p.price ? 'up' : 'down'}'>${o.price && p.price ? (o.price > p.price ? '+' : '') + money(o.price - p.price) : ''}</td></tr>`).join('')}</table></div></section>` : ''}
     </div>
-    ${sameModel(d.same_model, p)}
+    ${sameModel(d.same_model, p, d.admin)}
     <section class='card' style='overflow:hidden'><div class='cardhead'><h2>Recorded changes</h2><span class='sub'>only changes are stored, not every visit</span></div><div class='scroll'><table>
       <tr><th>When</th><th class='r'>Price</th><th class='r'>Crossed-out</th><th>Stock</th><th class='r'>Change</th></tr>
       ${d.history.slice().reverse().map((h, i, arr) => { const prev = arr[i + 1], ch = prev && prev.price && h.price ? h.price - prev.price : null;
@@ -850,22 +851,36 @@ async function productPage(id) {
         <td class='num r nw ${ch < 0 ? 'down' : 'up'}'>${ch ? (ch < 0 ? '▼ ' : '▲ ') + money(Math.abs(ch)) + ' · ' + changePct(ch / prev.price) : ''}</td></tr>`; }).join('')}</table></div></section>`;
 }
 // Listings of the same model at every shop (matching.py), or why this one has no model.
-function sameModel(sm, p) {
+function sameModel(sm, p, admin) {
   if (!sm) return '';
   const m = sm.model, why = {no_code: 'no model code found in the title', used: 'a renewed / used listing', accessory: 'an accessory',
     ambiguous_brand: 'several brands use its code and the title names none', ambiguous_variant: 'several variants of this line fit it (storage, RAM...)',
-    bundle: 'a bundle (console + game, phone + earbuds), priced as a set', price_outlier: 'its price is far from the other listings'};
-  if (!m || !sm.others.length) return `<section class='card' style='padding:12px 18px'><span class='sub'>Same product at other shops: ${m ? `model <b>${esc(m.code)}</b> is only listed here` : 'not matched, ' + esc(why[sm.me.status] || sm.me.status)}${sm.me.note ? ' (' + esc(sm.me.note) + ')' : ''}.</span></section>`;
+    bundle: 'a bundle (console + game, phone + earbuds), priced as a set', price_outlier: 'its price is far from the other listings',
+    split: 'set by hand: not the same product'};
+  const how = {mpn: 'brand and the model code in the titles', gtin: 'the barcode in the titles', line: 'brand, product line and variant (storage, RAM, network...)',
+    similar: 'brand, product type and identical specs (probable: check before relying on it)', manual: 'set by hand'};
+  if (!m || !sm.others.length) return `<section class='card' style='padding:12px 18px'><span class='sub'>Same product at other shops: ${m ? `model <b>${esc(m.code)}</b> is only listed here` : 'not matched, ' + esc(why[sm.me.status] || sm.me.status)}${sm.me.note ? ' (' + esc(sm.me.note) + ')' : ''}.</span>${linkForm(p, admin)}</section>`;
   const head = `${m.brand ? esc(m.brand) + ' ' : ''}<b>${esc(m.code)}</b>${m.capacity ? ' ' + esc(m.capacity) : ''} · ${m.sites} shop${m.sites === 1 ? '' : 's'}`
     + (sm.me.status !== 'model' ? ` · this listing is left out: ${esc(why[sm.me.status] || sm.me.status)}` : '')
     + (m.status !== 'ok' ? ` · <span class='up'>${esc(m.status)}: ${esc(m.note || '')}</span>` : '');
-  return `<section class='card' style='overflow:hidden'><div class='cardhead'><h2>Same product at other shops</h2><span class='sub'>${head}; matched by ${m.kind === 'line' ? 'brand, product line and variant (storage, RAM, network...)' : 'brand and the model code in the titles'}</span></div><div class='scroll'><table>
-    <tr><th>Shop</th><th>Listing</th><th class='r'>Price</th><th>Stock</th><th class='r'>vs this</th><th class='r'>Seen</th></tr>
+  return `<section class='card' style='overflow:hidden'><div class='cardhead'><h2>Same product at other shops</h2><span class='sub'>${head}; matched by ${how[m.kind] || m.kind}</span>${m.status === 'probable' ? ' ' + pill('warn', 'probable') : ''}</div><div class='scroll'><table>
+    <tr><th>Shop</th><th>Listing</th><th class='r'>Price</th><th>Stock</th><th class='r'>vs this</th><th class='r'>Seen</th>${admin ? '<th></th>' : ''}</tr>
     ${sm.others.map(o => `<tr class='click' onclick='openProduct(${o.id})'><td class='nw'>${esc(shop(o.site))}</td>
       <td>${esc(o.title)}${o.seller ? `<div class='sub'>${esc(o.seller)}</div>` : ''}${o.status !== 'model' ? ' ' + pill('idle', 'left out: ' + (o.note || o.status)) : ''}</td>
       <td class='num r nw'>${money(o.price)}</td><td>${o.in_stock ? pill('ok', 'in stock') : pill('idle', 'sold out')}</td>
       <td class='num r nw ${o.price > p.price ? 'up' : 'down'}'>${o.price && p.price ? (o.price > p.price ? '+' : '') + money(o.price - p.price) : ''}</td>
-      <td class='num r muted nw'>${ago(o.last_seen_at)}</td></tr>`).join('')}</table></div></section>`;
+      <td class='num r muted nw'>${ago(o.last_seen_at)}</td>${admin ? `<td class='r nw'><button class='btn small' type='button' title='These two are not the same product' onclick="event.stopPropagation();matchOverride(${p.id},${o.id},'different')">Not the same</button></td>` : ''}</tr>`).join('')}</table></div>
+    ${linkForm(p, admin)}</section>`;
+}
+// Admin: link this listing to another by its id (from its page URL), or undo hand-made matches.
+const linkForm = (p, admin) => admin ? `<div class='row' style='gap:8px;padding:10px 18px;border-top:1px solid var(--line2)'><span class='sub'>Missing a shop?</span>
+  <input id='linkid' class='field' style='width:110px' placeholder='product id' inputmode='numeric'><button class='btn small' type='button' onclick="matchOverride(${p.id},+document.getElementById('linkid').value,'same')">Same product</button>
+  <button class='btn small' type='button' onclick="matchOverride(${p.id},+document.getElementById('linkid').value,null)">Undo for that id</button><span class='sub'>applies within a minute</span></div>` : '';
+async function matchOverride(id, other, verdict) {
+  if (!other) return toast('Enter the other product id (the number in its page link)');
+  if (verdict === 'different' && !confirm('Mark these two as different products?')) return;
+  try { await api(`/api/products/${id}/match`, 'POST', {other, verdict}); toast('Saved; the matching updates within a minute'); }
+  catch (e) { toast(e.message); }
 }
 // Step chart of the recorded prices (a price holds until the next row), with the 90-day typical
 // price dashed, out-of-stock stretches left blank, and a dot where an alert went out. Hover for the value.
@@ -1137,7 +1152,7 @@ QUERIES: dict[str, dict] = {
                  "cheapest listing, the dearest price, and how far apart they are. Click a title for every shop's listing.",
         "sql": f"""WITH l AS (SELECT pm.model, {_PRODUCT}, p.price
                              FROM product_models pm JOIN products p ON p.id = pm.product_id
-                             JOIN models m ON m.model = pm.model AND m.status = 'ok' AND m.sites >= 2
+                             JOIN models m ON m.model = pm.model AND m.status IN ('ok', 'probable') AND m.sites >= 2
                              WHERE pm.status = 'model' AND p.in_stock = 1 AND p.price IS NOT NULL AND p.last_seen_at >= ?),
                         g AS (SELECT model, COUNT(DISTINCT site) AS shops, MIN(price) AS lo, MAX(price) AS hi
                               FROM l GROUP BY model HAVING shops >= 2),
@@ -1155,7 +1170,7 @@ QUERIES: dict[str, dict] = {
         "sql": f"""SELECT pm.model, m.kind, {_PRODUCT}, p.price AS now, p.in_stock
                    FROM models m JOIN product_models pm ON pm.model = m.model AND pm.status = 'model'
                    JOIN products p ON p.id = pm.product_id
-                   WHERE m.status = 'ok' AND m.sites >= 2 AND ? IS NOT NULL
+                   WHERE m.status IN ('ok', 'probable') AND m.sites >= 2 AND ? IS NOT NULL
                    ORDER BY (m.rowid * 7919) % 10007, m.model, p.price LIMIT 300""",
     },
     "match_left_out": {
@@ -1177,6 +1192,7 @@ QUERIES: dict[str, dict] = {
                  "neither a code nor a named line in the title, or are used, accessories or bundles.",
         "sql": """SELECT p.site, COUNT(*) AS listings, SUM(pm.status = 'model') AS with_model,
                          SUM(pm.status = 'model' AND m.kind = 'line') AS by_line,
+                         SUM(pm.status = 'model' AND m.status = 'probable') AS probable,
                          SUM(pm.status = 'model' AND m.status = 'ok' AND m.sites >= 2) AS on_other_shops,
                          ROUND(100.0 * SUM(pm.status = 'model' AND m.status = 'ok' AND m.sites >= 2) / COUNT(*), 1) AS matched_pct,
                          SUM(pm.status = 'used') AS used, SUM(pm.status = 'accessory') AS accessories,

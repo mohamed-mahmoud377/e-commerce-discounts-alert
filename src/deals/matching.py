@@ -26,6 +26,7 @@ Precision comes first: a wrong "same product" is worse than none. Each rule only
 """
 
 import json
+import math
 import os
 import re
 import sqlite3
@@ -45,7 +46,7 @@ from pathlib import Path
 from deals import db
 from deals.db import iso
 
-VERSION = 4  # bump when the title rules change: every title is then read again at the next pass
+VERSION = 5  # bump when the title rules change: every title is then read again at the next pass
 
 MIN_CODE = 5  # shorter codes ("A16", "G502", "M5") are too often shared by unrelated products ...
 _SHORT = re.compile(r"^(?:[A-Z]\d{3}|[A-Z]{2}\d{2}|[A-Z]\d{2}[A-Z]|\d[A-Z]\d{2}|[A-Z]\d[A-Z]\d)$")  # ... but these 4-char shapes are codes when brand-scoped: C75X, H390, Q20I
@@ -59,13 +60,25 @@ _DASHES = dict.fromkeys(map(ord, "‐‑‒–—―−－"), "-")
 _TOKEN = re.compile(r"[A-Za-z0-9]+(?:[-.][A-Za-z0-9]+)*")
 # A code written with spaces, "CFB 9433 XFE", "MQ 5200", "Fp 3132 Bk": joined before tokenising. Not a
 # unit after a number ("HP 1500 W", "2.25 HP 18000 BTU") and not a product line ("iPhone 16", "Note 14").
-_SPACED = re.compile(r"(?<![A-Za-z0-9-])([A-Za-z]{1,3})[ -](\d{3,5})(?:[ -]([A-Za-z]{1,3})(?![A-Za-z]))?(?![A-Za-z0-9.-])")
-_UNIT_WORDS = {"HP", "W", "V", "A", "L", "ML", "KG", "G", "GB", "TB", "MB", "MM", "CM", "M", "AC", "DC", "USB", "RAM", "SSD",
-               "HDD", "TV", "PS", "LED", "LCD", "HD", "UHD", "FHD", "QHD", "HZ", "MAH", "KW", "BTU", "RPM", "DPI", "IN",
-               "X", "EU", "UK", "US", "AND", "OR", "OF", "THE", "FOR", "TO", "BY", "PRO", "MAX", "AIR", "PAD", "TAB", "NOTE",
-               "GEN", "SIM", "TYPE", "WIFI", "CAT", "WIN", "IOS", "FT", "LBS", "PCS", "SET", "PACK", "BAR", "CUP", "MIN",
-               "PIN", "CORE", "ULTRA", "IPAD", "PLUS", "LITE", "MINI", "NEO", "XL", "XXL", "NO", "CODE", "MODEL", "ITEM",
-               "YEAR", "YEARS", "ONE", "TWO", "ZOOM", "VOL", "VER", "REV", "SIZE", "AGE"}
+_SPACED = re.compile(r"(?<![A-Za-z0-9])([A-Za-z]{1,4})(?:\s?-\s?|\s)(\d{2,5}(?:-\d{2,4})?)"
+                     r"(?:(\s?-\s?|\s)([A-Za-z]{1,3})(?![A-Za-z]))?(?![A-Za-z0-9.])")
+# words that come before a number without being part of a code ("TV 32", "RAM 16", "HP 15-fd...")
+_PREFIX_STOP = {"AC", "DC", "USB", "RAM", "ROM", "SSD", "HDD", "TV", "PS", "LED", "LCD", "HD", "UHD", "FHD", "QHD", "OLED",
+                "QLED", "IPS", "VA", "TN", "HZ", "BTU", "RPM", "DPI", "HP", "EU", "UK", "US", "AND", "OR", "OF", "THE",
+                "FOR", "TO", "BY", "PRO", "MAX", "AIR", "PAD", "TAB", "NOTE", "GEN", "SIM", "TYPE", "WIFI", "CAT", "WIN",
+                "IOS", "PCS", "SET", "PACK", "BAR", "CUP", "PIN", "CORE", "ULTRA", "IPAD", "PLUS", "LITE", "MINI", "NEO",
+                "XL", "XXL", "NO", "CODE", "MODEL", "ITEM", "YEAR", "ONE", "TWO", "ZOOM", "VOL", "VER", "REV", "SIZE",
+                "AGE", "X", "IN", "ON", "AT", "UP", "M", "A", "G", "S", "V", "W", "L", "OS", "GPU", "CPU", "NEW", "BIG",
+                "EGP", "LE", "TOP", "LOW", "HOT", "BOX", "KIT", "DUO", "ANC", "ENC", "ECO", "FAN", "GAS", "OIL", "LTE",
+                "DELL", "ACER", "ASUS", "SONY", "MSI", "LG", "JBL", "ZTE", "OPPO", "VIVO", "IBM",  # a brand, then its number
+                "RGB", "ARGB", "TWS", "BT", "IPX", "CL", "MS", "NM", "SN"}
+# units after a number ("1500 W"): the tail is not part of the code
+_UNIT_TAIL = {"W", "L", "ML", "KG", "G", "MM", "CM", "V", "A", "HZ", "K", "P", "M", "IN", "GB", "TB", "MAH", "BTU", "HP",
+              "RPM", "PCS", "PC", "LTR", "LT", "MB", "KW", "DB", "FT", "MP", "X", "BAR", "CC", "OZ"}
+_NUMBER_CODE = re.compile(r"(?<![\d.,/\w-])(\d{5,9}|\d{4,6}-\d{2,3})(?![\d.,/]|-\d)"
+                          r"(?!\s*\(?\s*(?:w|watts?|v|volts?|mah|btu|rpm|l|ltr|liters?|litres?|ml|g|kg|mm|cm|hz|k|p|egp|le|"
+                          r"pcs|pieces|x|bar|cc|sq|m2|lumens?)\b)", re.I)  # plain-number model codes: 40566, 9710-24
+_GTIN = re.compile(r"(?<![\d.,])(\d{12,14})(?![\d.,])")
 _NUMBERED = re.compile(r"\b(?:model|code|item|no|number|mpn|art|ref|sku)\.?\s*:?\s*#?\s*(\d{4,8})\b", re.I)  # "Code 20605"
 _UNITS = ("GB|TB|MB|KB|MAH|WH|MHZ|GHZ|HZ|KW|W|WATT|WATTS|V|VOLT|A|AMP|L|LTR|LITER|LITERS|LITRE|LITRES|ML|KG|G|"
           "GM|GRAM|CM|MM|M|IN|INCH|INCHE|INCHES|HP|BTU|BTUH|BTUHR|K|P|FPS|MS|DB|PIN|PINS|CORE|CORES|THREAD|THREADS|"
@@ -85,7 +98,7 @@ _SPEC = re.compile(
     r"|\d{4,5}(?:H|HX|HS|HK|U|G[1-7]|KF|F|X3D|XT)"  # bare CPU numbers: 1355U, 14650HX, 5600X3D
     r"|R[3579]\d{4}[A-Z]{0,3}"  # R74800H (Ryzen)
     r"|(?:CORE|ULTRA|RYZEN|CELERON|PENTIUM|ATHLON|SNAPDRAGON|HELIO|DIMENSITY|EXYNOS|TENSOR)[A-Z0-9]*\d[A-Z0-9]*"
-    r"|(?:RTX|GTX|RX|MX|GT|ARC|QUADRO|RADEON|IRIS|UHD)\d{2,5}[A-Z]{0,3}"
+    r"|(?:RTX|GTX|RX|GT|ARC|QUADRO|RADEON|IRIS|UHD)\d{2,5}[A-Z]{0,3}|MX\d{3}[A-Z]?"  # not MX5200 (a Tornado blender)
     r"|(?:LP)?G?DDR\d[A-Z]?\d*[A-Z]*"  # DDR5, DDR3L, GDDR6, LPDDR5X
     r"|PC\d{1,2}L?\d{4,5}[A-Z]?"  # PC425600
     r"|\d+RX\d+"  # 1RX16
@@ -96,7 +109,7 @@ _SPEC = re.compile(
     r"ASPIRE|LEGION|IDEAPAD|THINKPAD|VICTUS|STRIX|KATANA|CYBORG|LATITUDE|INSPIRON|VOSTRO|XPS|ELITEBOOK|PROBOOK|"
     r"OMNIBOOK|MATEBOOK|MAGICBOOK|AIRPODS|FREEBUDS|PLAYSTATION|SWITCH|XBOX)\d{1,2}[A-Z]?"  # product lines, not models: PRESTIGE13, NOTE14, BUDS3
     r"|\d{2}[IA][A-Z]{1,3}\d{1,2}"  # Lenovo generations, shared by many laptops: 15IRH10, 15ARP9, 16IAX10
-    r"|[A-Z]{4,}\d+(?:MM|CM|W|V|H|HZ|MAH|L|ML|IN|INCH)"  # a word glued to a spec: EARBUDS10MM
+    r"|[A-Z]{6,}\d+(?:MM|CM|HZ|MAH|ML|INCH)"  # a word glued to a spec: EARBUDS10MM (not SIFW24H)
     r"|(?:USB|HDMI|WIFI|BT|BLUETOOTH|IPX|IP|CAT|HDR|WIN|WINDOWS|ANDROID|IOS|PCIE|NVME|SATA|QI|DOLBY|DTS|LGA|AM|"
     r"ATX|EATX|MATX|ITX|PD|QC|"
     r"VER|VERSION|GEN|MODEL|TYPE|CLASS|GRADE|SIZE|NO|NUMBER|AOSP|WEBOS|TIZEN|VIDAA|EMUI|HYPEROS|MIUI|ONEUI|"
@@ -189,17 +202,33 @@ def is_code(code: str) -> bool:
 
 
 def _join_spaced(t: str) -> str:
-    """'Beko Hood CFB 9433 XFE' -> 'Beko Hood CFB9433XFE' (a code the shop wrote with spaces)."""
+    """'Beko Hood CFB 9433 XFE' -> 'Beko Hood CFB9433XFE', 'ELIO 75-545' -> 'ELIO75-545', 'MM 5371' ->
+    'MM5371' (a code the shop wrote with spaces). Only an upper-case word (or one of 1-2 letters)
+    before the number, never a stop word ('TV 32', 'HP 15'), a year, or a 2-digit number after a
+    one-letter or mixed-case word."""
     def join(m: re.Match) -> str:
-        a, digits, b = m.group(1), m.group(2), m.group(3) or ""
-        if a.upper() in _UNIT_WORDS or (b and b.upper() in _UNIT_WORDS) or len(digits) == 4 and digits[:2] in ("19", "20") and not b:
+        a, digits, sep, b = m.group(1), m.group(2), m.group(3) or "", m.group(4) or ""
+        if a.upper() in _PREFIX_STOP or not (a.isupper() or len(a) <= 2):
             return m.group(0)
-        if b.lower() in ("w", "l", "ml", "kg", "g", "mm", "cm", "v", "a", "hz", "k", "p", "m", "in"):  # 1500 W
-            return m.group(0)
-        if not (a.isupper() or len(a) <= 2):  # 'Duo 2399', 'Note 14': a word before a number, not a code
-            return m.group(0)
+        if len(digits) == 4 and digits[:2] in ("19", "20") and not b:
+            return m.group(0)  # a year
+        if len(digits) == 2 and (len(a) < 2 or not a.isupper()):
+            return m.group(0)  # 'Note 14', 'X 15'
+        if not b or b.upper() in _UNIT_TAIL or not (b.isupper() or len(b) <= 2):
+            return a + digits + sep + b  # 'WKM 4215 W': the code is WKM4215, the W stays
         return a + digits + b
     return _SPACED.sub(join, t)
+
+
+def gtin(title: str) -> str:
+    """A barcode (GTIN-12/13/14, checksum verified) in the title, as 13 digits, or ''."""
+    for d in _GTIN.findall(title):
+        total = sum(int(x) * (3 if i % 2 == 0 else 1) for i, x in enumerate(reversed(d[:-1])))
+        if (10 - total % 10) % 10 == int(d[-1]):
+            g = d.zfill(13)[-13:] if len(d) <= 13 else d[1:] if d[0] == "0" else d
+            if not g.startswith(("2", "02")):  # GS1 'restricted circulation': a store's own number, not global
+                return g
+    return ""
 
 
 def _pieces(token: str) -> list[str]:
@@ -277,18 +306,19 @@ def read_line(title: str) -> tuple[list[tuple[int, str]], dict[str, str]]:
     ([(0,'samsung'), (1,'galaxy'), (2,'a16')], {'storage': '128GB', 'ram': '4GB', 'net': '4G'})."""
     t = title.translate(_DASHES)
     head = re.split(r"\s[-|/]\s|[,()\[\]|/:;]|\s[-–]\s*|\s{2,}", t, maxsplit=1)[0]  # up to the first separator
-    words, line, named = re.findall(r"[A-Za-z0-9+]+", head), [], False
+    words, line, named = re.findall(r"[A-Za-z0-9+]+(?:\.\d+[A-Za-z]*)?", head), [], False  # '2.5L' stays one word
     for i, w in enumerate(words):
         lw, nxt = w.lower(), words[i + 1].lower() if i + 1 < len(words) else ""
+        num = re.fullmatch(r"\d+(?:\.\d+)?", lw) is not None
         if _LINE_STOP.match(lw) or is_code(norm_code(w)) and len(w) >= 5 or len(line) >= 5 or lw in _UNITS_AFTER:
             break
-        if lw.isdigit() and (nxt in _UNITS_AFTER or nxt.isdigit() or len(lw) >= 4):
+        if num and (nxt in _UNITS_AFTER or nxt.isdigit() or len(lw) >= 4 and "." not in lw):
             break  # '6 liter', '1.5 hp' (split as 1, 5), a year
         if lw in _FILLER:
             continue
         # the line is a name when a word mixes letters and digits ('a16', 'x9d', 's11') or a short
         # number follows a word ('iphone 16', 'momentum 4'); digits from specs don't count
-        if lw.isdigit() and line or any(c.isdigit() for c in lw) and any(c.isalpha() for c in lw):
+        if num and line or any(c.isdigit() for c in lw) and any(c.isalpha() for c in lw):
             named = True
         line.append((i, lw.replace("+", "plus")))
     if not named:
@@ -313,6 +343,104 @@ def read_line(title: str) -> tuple[list[tuple[int, str]], dict[str, str]]:
     if _BUNDLE_WORD.search(t):
         attrs["bundle"] = "1"
     return line, attrs
+
+
+# The spec signature: for products with neither a code nor a named line ("Fresh Air Fryer 5.5 L
+# 1800 W"). The product type (most specific first), every number with its unit, and the features
+# that make two otherwise equal products different (inverter, cooling only, no frost, built-in...).
+_TYPES = [(c, re.compile(p, re.I)) for c, p in [
+    ("chest freezer", r"chest (?:deep )?freezer|horizontal (?:deep )?freezer"),
+    ("upright freezer", r"upright (?:deep )?freezer|vertical (?:deep )?freezer"),
+    ("deep freezer", r"freezer"),
+    ("mini bar", r"mini ?bar|mini fridge|compact refrigerator"),
+    ("refrigerator", r"refrigerator|fridge"),
+    ("air conditioner", r"air ?conditioner|split (?:ac|air)|\bac\b"),
+    ("hob", r"\bhob\b|cooktop|cook top"),
+    ("built-in oven", r"built[- ]?in\b.{0,20}\boven"),
+    ("rice cooker", r"rice cooker"),
+    ("cooker", r"\bcooker\b|\bstove\b|gas range"),
+    ("hood", r"\bhood\b|chimney"),
+    ("dishwasher", r"dish ?washer"),
+    ("washing machine", r"washing machine|washer dryer"),
+    ("microwave", r"micro ?wave"),
+    ("air fryer oven", r"air fryer oven|oven air fryer"),
+    ("air fryer", r"air ?fryer|oil[- ]?free fryer|\bfryer\b"),
+    ("electric oven", r"electric oven|toaster oven|\boven\b"),
+    ("stand mixer", r"stand mixer|kitchen machine|dough mixer"),
+    ("hand mixer", r"hand mixer|egg beater"),
+    ("hand blender", r"hand blender|stick blender"),
+    ("food processor", r"food processor"),
+    ("chopper", r"chopper|meat grinder|mincer"),
+    ("blender", r"blender"),
+    ("juicer", r"juicer|juice extractor|citrus press"),
+    ("kettle", r"kettle"),
+    ("toaster", r"toaster"),
+    ("sandwich maker", r"sandwich|panini|waffle"),
+    ("grill", r"\bgrill\b|griddle"),
+    ("coffee machine", r"espresso|coffee (?:machine|maker)|cappuccino|barista"),
+    ("coffee grinder", r"grinder|coffee mill"),
+    ("hot plate", r"hot ?plate|cooking plate"),
+    ("garment steamer", r"steamer"),
+    ("iron", r"\biron\b"),
+    ("water dispenser", r"water dispenser|water cooler"),
+    ("vacuum", r"vacuum"),
+    ("heater", r"heater"),
+    ("fan", r"\bfan\b"),
+]]
+_NUM = r"(\d+(?:[.,]\d+)?)"
+_SPECS = [(re.compile(_NUM + rx, re.I), fmt) for rx, fmt in [
+    (r"\s*(?:hp|h\.p|horse ?power|horse)\b", "{:g}HP"),
+    (r"\s*k?\s*btu", "BTU"),
+    (r"\s*(?:l|liter|liters|litre|litres|ltr|lt)\b", "{:g}L"),
+    (r"\s*(?:w|watt|watts)\b", "{:.0f}W"),
+    (r"\s*(?:cm|centimeters?)\b", "{:.0f}CM"),
+    (r"\s*(?:burners?)\b", "{:.0f}BURNERS"),
+    (r"\s*speeds?\b", "{:.0f}SPEEDS"),
+    (r"\s*cups?\b", "{:.0f}CUPS"),
+    (r"\s*(?:feet|ft|foot)\b", "{:g}FT"),
+    (r"\s*kg\b", "{:g}KG"),
+    (r"\s*(?:place settings?|persons?)\b", "{:.0f}PLACES"),
+    (r"\s*drawers?\b", "{:.0f}DRAWERS"),
+    (r"\s*doors?\b", "{:.0f}DOORS"),
+    (r"\s*(?:bars?)\b", "{:.0f}BAR"),
+]]
+_FLAGS = [(n, re.compile(rx, re.I)) for n, rx in [
+    ("inverter", r"inverter"),
+    ("heat", r"\bheat|hot\s*(?:and|&|/)\s*cold|cool\s*(?:and|&|/|-)\s*h"),
+    ("coolonly", r"cool(?:ing)? only|cold only"),
+    ("nofrost", r"no[- ]?frost"),
+    ("defrost", r"\bdefrost"),
+    ("digital", r"digital"),
+    ("builtin", r"built[- ]?in"),
+    ("glass", r"\bglass\b"),
+    ("fan", r"\bwith fan\b|\bfan\b"),
+    ("grill", r"\bgrill\b"),
+    ("steam", r"\bsteam\b"),
+    ("smart", r"\bsmart\b|wi-?fi"),
+]]
+_SIM_STOP = set("the a an and with for of in on to by from new original warranty year years official egypt version middle "
+                "east international black white silver grey gray blue red green pink gold golden beige cream stainless "
+                "steel inox titanium navy purple brown orange yellow".split())
+
+
+def read_signature(title: str) -> tuple[str, list[str], list[str], list[str]]:
+    """(type, specs, flags, words) of a title: 'Fresh Air Fryer without oil, 5.5 litres, 1800 watt'
+    -> ('air fryer', ['1800W', '5.5L'], [], ['fresh', 'air', 'fryer', 'without', 'oil', ...])."""
+    t = title.translate(_DASHES)
+    ptype = next((c for c, rx in _TYPES if rx.search(t)), "")
+    specs = set()
+    for rx, fmt in _SPECS:
+        for m in rx.finditer(t):
+            n = float(m.group(1).replace(",", "."))
+            if fmt == "BTU":
+                specs.add(f"{n * 1000 if n < 100 else n:.0f}BTU")
+            else:
+                specs.add(fmt.format(n))
+    flags = {n for n, rx in _FLAGS if rx.search(t)}
+    if "coolonly" in flags:
+        flags.discard("heat")
+    words = [w for w in re.findall(r"[a-z0-9]+", t.lower()) if w not in _SIM_STOP and len(w) > 1]
+    return ptype, sorted(specs), sorted(flags), words
 
 
 @dataclass(slots=True)
@@ -367,6 +495,17 @@ def read_title(title: str) -> TitleCodes:
     for m in _NUMBERED.finditer(t):  # "Model 20605": a plain number is a code when the title says so
         if m.start() < cut and m.group(1) not in own:
             own.append(m.group(1))
+    # plain-number codes (Egyptian brands: "Touch Elzenouki 40566", "Hans 9710-24"): weaker than any
+    # lettered code, so last, and only ever used with the listing's brand (see the assignment)
+    for m in _NUMBER_CODE.finditer(t):
+        code = m.group(1).replace("-", "")
+        if re.search(r"(?:\bi[3579]|core|ryzen|ultra|celeron|pentium|athlon|gen|intel|amd)\W{0,4}$", t[:m.start()], re.I):
+            continue  # "Core i3 - 12100": a CPU number
+        if m.start() < cut and not any(a <= m.start() < b for a, b in clauses) and code not in own \
+                and not (len(code) == 8 and code[:2] in ("19", "20")) and not gtin(m.group(1)):
+            own.append(code)
+    if barcode := gtin(t[:cut]):  # a barcode names exactly one product: the last resort when nothing else does
+        own.append("GTIN" + barcode)
     caps = sorted({f"{float(n):g}{u.upper()}" for n, u in _CAPACITY.findall(t)},
                   key=lambda c: (c[-2:], float(c[:-2])))
     # A TV series code ("Samsung U8000H") covers every screen size, so the size is part of the model;
@@ -425,14 +564,19 @@ def extract(conn: sqlite3.Connection) -> int:
             if shop_brand and shop_brand == norm_brand(seller):
                 shop_brand = None  # the seller's own name, not the maker's
             line, attrs = read_line(title)
+            ptype, specs, flags, words = read_signature(title)
             codes.append((pid, _hash(title, brand, seller), VERSION, "|".join(f"{k}:{b}" for k, b in title_heads(title)),
                           shop_brand, " ".join(t.own), " ".join(t.mentions),
                           " ".join(f"{c}={w}" for c, w in t.before.items()), t.capacity, int(t.used), int(t.accessory),
-                          " ".join(f"{i}:{w}" for i, w in line), " ".join(f"{k}={v}" for k, v in sorted(attrs.items()))))
+                          " ".join(f"{i}:{w}" for i, w in line), " ".join(f"{k}={v}" for k, v in sorted(attrs.items())),
+                          ptype, " ".join(specs), " ".join(flags), " ".join(words)))
             index += [(pid, c, rank) for rank, c in enumerate(t.own)]
         with conn:
             conn.executemany("DELETE FROM product_code_index WHERE product_id = ?", [(c[0],) for c in codes])
-            conn.executemany("INSERT OR REPLACE INTO product_codes VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", codes)
+            conn.executemany(
+                """INSERT OR REPLACE INTO product_codes (product_id, title_hash, version, heads, shop_brand, own, mentions,
+                       before, capacity, used, accessory, line, attrs, ptype, specs, flags, toks)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", codes)
             conn.executemany("INSERT OR REPLACE INTO product_code_index VALUES (?, ?, ?)", index)
         n += len(codes)
     return n
@@ -577,8 +721,9 @@ def _group(conn: sqlite3.Connection, now: datetime) -> None:
                 capacity = capacity.rsplit("+", 1)[0] if "+" in capacity else ""  # 'UA43U8000H' holds the 43
             if brand:
                 brand = canon.get(code, {}).get(brand, brand)
-            elif len(code) == 4:
-                yield (pid, None, "no_code", None, None, codes, f"{code} is too short a code to trust without a brand",
+            elif len(code) == 4 or code.isdigit():
+                yield (pid, None, "no_code", None, None, codes,
+                       f"{code} is too {'plain' if code.isdigit() else 'short'} a code to trust without a brand",
                        site, price, fresh)
                 continue
             elif code in owner:
@@ -589,8 +734,11 @@ def _group(conn: sqlite3.Connection, now: datetime) -> None:
                 brand, brand_from = owner[code], "model"
             model = f"{brand or '-'} {code}" + (f" {capacity}" if capacity else "")
             yield pid, model, "model", brand, brand_from, codes, None, site, price, fresh
-    _chunked(conn, "INSERT INTO assign VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'mpn')", assignments())
+    _chunked(conn, "INSERT INTO assign VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             (r + ("gtin" if r[1] and " GTIN" in r[1] else "mpn",) for r in assignments()))
     _lines(conn, fresh_after)
+    _similar(conn)
+    _overrides(conn)
 
     # 7. Price checks per model (its listings come in model order): a listing far from the model's
     #    median price is left out (a 100,000 EGP placeholder, a case at 300 EGP); a model whose
@@ -611,7 +759,7 @@ def _group(conn: sqlite3.Connection, now: datetime) -> None:
                     if not OUTLIER_LOW * median <= m[8] <= OUTLIER_HIGH * median:
                         m[2], m[6] = "price_outlier", f"{m[8] / median:.1f}x the model's median price"
             kept = sorted(m[8] for m in members if m[2] == "model" and m[9] and m[8])
-            status, note = "ok", None
+            status, note = "probable" if members[0][10] == "similar" else "ok", None
             if len(kept) >= 2 and kept[-1] > OUTLIER_HIGH * kept[0]:
                 status, note = "conflict", f"prices {kept[0] // 100:,}-{kept[-1] // 100:,} EGP can't be one product"
             listed = [m for m in members if m[2] == "model"]
@@ -693,6 +841,96 @@ def _lines(conn: sqlite3.Connection, fresh_after: str) -> None:
                 model = f"{brand} {line}" + "".join(f" {full[k]}" for k in ("storage", "ram", "net", "cpu", "gpu") if k in full)
                 yield pid, model, "model", brand, None, codes, None, site, price, fresh
     _chunked(conn, "INSERT OR REPLACE INTO assign VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'line')", assignments())
+
+
+SIM_TYPES_EXCLUDED = {""}  # every listing needs a product type
+SIM_MIN_SPECS = 2  # "1800W 5.5L": one number alone ("1500W") names too many products
+SIM_SAME_SHOP = 0.6  # one shop's listings of a signature must be this alike (else the shop sells several such products)
+SIM_CROSS_SHOP = 0.35  # listings on different shops must be at least this alike ...
+SIM_PRICE = 1.4  # ... and priced within this factor
+
+
+def _cosine(a: list[str], b: list[str], idf: dict[str, float]) -> float:
+    va, vb = Counter(a), Counter(b)
+    dot = sum(va[w] * vb[w] * idf.get(w, 1.0) ** 2 for w in va.keys() & vb.keys())
+    na = math.sqrt(sum((n * idf.get(w, 1.0)) ** 2 for w, n in va.items()))
+    nb = math.sqrt(sum((n * idf.get(w, 1.0)) ** 2 for w, n in vb.items()))
+    return dot / (na * nb) if na and nb else 0.0
+
+
+def _similar(conn: sqlite3.Connection) -> None:
+    """6b. The 'probable' tier, for listings with a brand but neither a code nor a named line: same
+    brand, product type, exact set of specs and decisive features (blocking, so only near-identical
+    candidates are compared). A signature must be one product on each shop (all of one shop's listings
+    alike and priced alike: the uniqueness constraint), and the shops' listings must look alike (TF-IDF
+    cosine of the title words) and be priced alike. Shown as 'probable', never used by alerts."""
+    query = """SELECT a.product_id, pb.brand, pc.ptype, pc.specs, pc.flags, pc.toks, a.site, a.price, a.codes
+               FROM assign a JOIN pb USING (product_id) JOIN product_codes pc USING (product_id)
+               WHERE a.status = 'no_code' AND pb.brand IS NOT NULL AND pc.ptype != '' AND a.price IS NOT NULL
+                 AND a.fresh AND length(pc.specs) - length(replace(pc.specs, ' ', '')) + 1 >= ?"""
+    df, n = Counter(), 0
+    for row in conn.execute(query, (SIM_MIN_SPECS,)):
+        df.update(set(row[5].split()))
+        n += 1
+    if not n:
+        return
+    idf = {w: math.log(n / k) for w, k in df.items()}
+    del df
+
+    def assignments():
+        rows = conn.execute(query + " ORDER BY pb.brand, pc.ptype, pc.specs, pc.flags", (SIM_MIN_SPECS,))
+        for (brand, ptype, specs, flags), group in groupby(rows, key=lambda r: r[1:5]):
+            members = [(r[0], r[5].split(), r[6], r[7], r[8]) for r in group]
+            by_site = defaultdict(list)
+            for m in members:
+                by_site[m[2]].append(m)
+            if len(by_site) < 2:
+                continue
+            unique = all(_cosine(a[1], b[1], idf) >= SIM_SAME_SHOP and max(a[3], b[3]) <= 1.15 * min(a[3], b[3])
+                         for ms in by_site.values() for i, a in enumerate(ms) for b in ms[i + 1:])
+            reps = [ms[0] for ms in by_site.values()]
+            alike = all(_cosine(a[1], b[1], idf) >= SIM_CROSS_SHOP for i, a in enumerate(reps) for b in reps[i + 1:])
+            prices = [m[3] for m in members]
+            if not unique or not alike or max(prices) > SIM_PRICE * min(prices):
+                continue
+            model = f"{brand} ~{ptype.replace(' ', '')} {specs.replace(' ', '+')}" + (f" {flags.replace(' ', '+')}" if flags else "")
+            for pid, _, site, price, codes in members:
+                yield pid, model, "model", brand, None, codes, None, site, price, 1, "similar"
+    _chunked(conn, "INSERT OR REPLACE INTO assign VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", assignments())
+
+
+def _overrides(conn: sqlite3.Connection) -> None:
+    """Matches set by hand (match_overrides), applied last. 'same' (a, b): b joins a's model, or both
+    form a new hand-made model when a has none. 'different' (a, b): b leaves a's model."""
+    for a, b, verdict in conn.execute("SELECT a, b, verdict FROM match_overrides ORDER BY verdict DESC, created_at").fetchall():
+        ra = conn.execute("SELECT model, kind, brand FROM assign WHERE product_id = ?", (a,)).fetchone()
+        rb = conn.execute("SELECT model FROM assign WHERE product_id = ?", (b,)).fetchone()
+        if ra is None or rb is None:
+            continue
+        with conn:
+            if verdict == "same":
+                model, kind = (ra[0], ra[1]) if ra[0] else (f"{ra[2] or '-'} #{min(a, b)}", "manual")
+                conn.execute("UPDATE assign SET model = ?, kind = ?, status = 'model', note = NULL WHERE product_id = ?",
+                             (model, kind, a))
+                conn.execute("UPDATE assign SET model = ?, kind = ?, status = 'model', note = ? WHERE product_id = ?",
+                             (model, kind, f"linked by hand to #{a}", b))
+            elif ra[0] is not None and ra[0] == rb[0]:
+                conn.execute("UPDATE assign SET model = NULL, status = 'split', note = ? WHERE product_id = ?",
+                             (f"not the same as #{a} (set by hand)", b))
+
+
+def set_override(conn: sqlite3.Connection, a: int, b: int, verdict: str | None, note: str | None, now: datetime) -> None:
+    """Record (or with verdict None, forget) a hand-made match between two products; it applies from
+    the next rebuild."""
+    if a == b:
+        raise ValueError("a product is always the same as itself")
+    with conn:
+        conn.execute("DELETE FROM match_overrides WHERE (a = ? AND b = ?) OR (a = ? AND b = ?)", (a, b, b, a))
+        if verdict is not None:
+            if verdict not in ("same", "different"):
+                raise ValueError(f"verdict must be 'same' or 'different', not {verdict!r}")
+            conn.execute("INSERT INTO match_overrides (a, b, verdict, note, created_at) VALUES (?, ?, ?, ?, ?)",
+                         (a, b, verdict, note, iso(now)))
 
 
 def _write(conn: sqlite3.Connection, now: datetime) -> int:

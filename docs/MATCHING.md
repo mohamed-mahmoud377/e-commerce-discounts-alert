@@ -7,6 +7,19 @@ is the cheapest). **It never changes what is alerted**: the section is appended 
 decided, the lookup is read-only, and if it fails the alert goes out without it (`alerts.show_other_shops`
 turns it off).
 
+## The identities, strongest first
+
+| Tier | Key | Example | Status | In alerts |
+| --- | --- | --- | --- | --- |
+| Barcode | a GTIN-12/13/14 in the title, checksum verified; numbers starting with 2 (GS1 "restricted circulation": a store's own) are not barcodes | `hervy GTIN6223007910729` | ok | yes |
+| Model code | brand + the maker's code | `sharp AHXP12BME`, `touchelzenouki 40566` | ok | yes |
+| Product line | brand + line + variant (storage, RAM, network, CPU, GPU) | `samsung galaxya16 128GB 4GB 4G` | ok | yes |
+| Spec signature | brand + product type + exact specs + decisive features, one product per shop, similar titles, close prices | `ata ~microwave 1200W+20L digital` | **probable** | **no** |
+| By hand | your "same" / "not the same" | `- #12345` | ok | yes |
+
+Each listing gets the strongest identity it has; a barcode is used when the title has no lettered code
+(lettered codes are far more common, and choosing them keeps barcode and non-barcode listings together).
+
 ## Why model codes
 
 The identifiers retailers match on are, in order: a barcode (GTIN/EAN), then **brand + manufacturer part
@@ -84,8 +97,12 @@ listings out.
 
 When a title has several codes, it prefers one that another shop also has, then by length, position (after
 "Model", "-", "(") and not after "+/with" (a bundle). Codes are also read when a shop writes them with spaces
-(`CFB 9433 XFE`, `MQ 5200`), as a plain number after "Model"/"Code" (`model 3065`), and in 4-character shapes
-(`C75X`, `H390`, `Q20I`) when the listing has a brand (an unbranded 4-character code is too weak).
+(`CFB 9433 XFE`, `MQ 5200`, `BGGR 11228 GXA`, `ELIO 75-545`, `KSD 25`), as a plain number after "Model"/"Code"
+(`model 3065`), as a plain 5-9 digit number that is not a spec, a CPU or a store number (`Touch Elzenouki 40566`,
+`Hans 9710-24`, `Fresh 17511`: Egyptian brands number their products), and in 4-character shapes (`C75X`, `H390`,
+`Q20I`). Plain-number and 4-character codes are only used with the listing's brand (unbranded, they are too
+weak). A word before the number is never part of the code when it is a stop word (`TV 32`, `RAM 16`), a brand
+(`DELL 7020`) or a spec (`ARGB 240`); a unit after it stays out (`WKM 4215 W` is `WKM4215`).
 
 ## The second identity: brand + product line + variant
 
@@ -186,12 +203,42 @@ at least 90% of the labelled pairs to be found (100% today, 77 rows). **When a w
 add its titles to the file first**, then change the rules; the file is how the rules stay honest as
 categories are added.
 
-## Coverage after the second identity (29 Oct 2026)
+## The probable tier: spec signatures
+
+For listings with a brand but neither a code nor a named line ("Fresh Stand mixer 8Litres 1900 W, Beige"),
+`read_signature` gives the product type (40 types, most specific first: chest freezer before freezer), every
+number with its unit (W, L, HP, BTU, cm, burners, speeds, cups, drawers, places...), and the features that make
+two otherwise equal products different (inverter, cooling only vs heat, no frost, built-in, digital, glass, fan,
+grill, steam, smart). Listings with the same brand, type, specs (2 or more) and features form a block, and the
+block becomes a model only when:
+
+- **it is one product on each shop** (all of a shop's listings in the block are alike, TF-IDF cosine ≥ 0.6,
+  and priced within 15%): a shop selling two Haier 1.5 HP cooling-only ACs makes the signature name nothing;
+- **the shops' listings look alike** (cosine ≥ 0.35) **and are priced alike** (within 1.4x).
+
+It is the record-linkage pattern of blocking, then a uniqueness constraint, then pairwise similarity. It is
+labelled *probable* in the web UI and the CLI, and `other_shops` (the alert section) only uses `ok` models, so
+a probable match never reaches an alert. 69 such products on 2+ shops; all 25 sampled were right.
+
+## Matches by hand
+
+When you see a wrong or missing match: the product page in the web UI has a **Not the same** button on each
+listing of the model, and a field to link another listing by its product id (the number in its page link),
+for the admin token only; or `deals models --same A B`, `--different A B`, `--forget A B`, `--overrides`. They
+are kept in `match_overrides` and applied at the end of every pass (a "same" B joins A's model, or both start a
+model of their own; a "different" B leaves A's model, status `split`); the web UI starts a pass within a minute.
+Add the titles to the gold set too, so the rules learn the case.
+
+## Coverage (29 Oct 2026)
 
 | | Listings in a model | On 2+ shops |
 | --- | --- | --- |
 | Codes only | 39,334 (47%) | 23,739 |
 | Codes + lines | 52,803 (63%) | 31,389 |
+| + barcodes, spaced and number codes, probable tier | 54,577 (65%) | 32,524 |
+
+Per shop, listings on 2+ shops: Carrefour 75%, 2B 70%, Dream 2000 67%, B.TECH 62%, Jumia 59%, Cairo Sales 45%,
+Amazon 30%, noon 26%.
 
 Line models found on 2+ shops: 469. Reviewed by eye: 60 random line models with all their listings,
 56 right; the wrong ones (bundles read as the product, a decimal screen size, `X360` as a code) were fixed
@@ -199,10 +246,11 @@ and added to the gold set.
 
 ## Limits and next steps
 
-1. **Titles with neither a code nor a named line** (appliances described by type and specs: "Fresh Jumbo Gas
-   Cooker 90x60 5 Burners"): the remaining tier would be title similarity inside a (brand, group) block,
-   with every number having to agree. It is the least precise tier; worth doing only with a lower-confidence
-   label in the UI.
-2. **Fresher matches for new listings**: an alert for a product first seen minutes ago can match it on demand
+1. **Fresher matches for new listings**: an alert for a product first seen minutes ago can match it on demand
    (`read_title` plus a lookup of its code in `models`) instead of waiting for the hourly pass.
-3. **Manual fixes**: a small table of "same"/"not the same" overrides, applied at assignment.
+2. **What is left unmatched** (24,800 listings): mostly titles with no brand at all (noon and Amazon's
+   "Wireless Earbuds, 2025 New Bluetooth 5.4..."), single-spec titles ("Haier Split AC 1.5 HP Cooling Only",
+   where several real products share the words), and products only one shop sells.
+3. **Attaching codeless listings to code models** (a noon listing that drops the code of a product other shops
+   list by code) by spec signature: possible, but every wrong attach would show a wrong price in an alert;
+   the hand-made "same" covers the cases you care about.

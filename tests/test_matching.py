@@ -204,6 +204,8 @@ def test_used_accessory_seller_brand_and_brand_name_codes():
      {"storage": "256GB", "ram": "16GB", "cpu": "I58265U"}),
     ("Carrier 3 Horse Power Inverter Cooling Only", "", {}),  # a spec number is not a name
     ("Fresh Chopper 6 Liter 1500 Watt", "", {}),
+    ("Sokany Blender 2.5L 5000 Watt with Mill", "", {}),  # '2.5L' is a spec, not 'Blender 2'
+    ("Sennheiser Momentum 4.0 Wireless", "sennheiser momentum 4.0", {}),
     ("Haier 50 Inch Smart TV , 4K UHD QLED", "", {}),
     ("Magic Pad 4 Tablet Gray 12GBRAM 256GB WiFi with Keyboard", "magic pad 4", {"storage": "256GB", "ram": "12GB", "bundle": "1"}),
     ("Honor Magic Pad 4 Tablet Gray 12GBRAM 256GB WiFi", "honor magic pad 4", {"storage": "256GB", "ram": "12GB"}),
@@ -326,3 +328,73 @@ def test_gold_set_precision_and_recall():
     found = sum(1 for a, b in same if predicted.get(a) is not None and predicted.get(a) == predicted.get(b))
     assert found / len(same) >= 0.9, f"recall {found}/{len(same)}: " + str(
         [(a, b, products[a][:2], products[b][:2]) for a, b in same if predicted.get(a) != predicted.get(b)][:10])
+
+
+@pytest.mark.parametrize("title, own", [
+    ("Beko BGGR 11228 GXA Cooker, 90 cm", ["BGGR11228GXA"]),
+    ("Elba Built in Gas Cooker 75 CM -ELIO 75-545(Mad", ["ELIO75545"]),
+    ("Beko Electric Kettle, 1.7 Liter, 2200 Watt, White, WKM 4215 W", ["WKM4215"]),
+    ("Fresh Air Conditioner 3 HP Cool and Heat Inverter Plasma Digital SIFW24H/IP-AG-SIFW24H/O-X4", ["SIFW24H"]),
+    ("Touch Elzenouki 40566 Stand Mixer 5 Liters 1200 Watt", ["40566"]),
+    ("Hans 9710\u201124 Built\u2011in Gas Hob 90cm", ["971024"]),
+    ("Hervy Food Processor 1000 Watt 1.5 L 6223007910729", ["GTIN6223007910729"]),
+    ("TORNADO Electric Blender 500 Watt 1.5 Liter 2 Mills Pink MX5200/2-PINK", ["MX5200"]),
+    # not codes: units, CPUs, store numbers, specs, brand + number
+    ("Sharp Split AC 1.5 HP 12000 (BTU/H) Inverter", []),
+    ("DELL 7020 CORE I3 - 12100 - 8G - 512 SSD", []),
+    ("Zahran 8 Cups Yogurt Maker , 2724761319031", []),
+    ("Cougar POSEIDON ELITE ARGB 240 AIO Liquid Cooler", []),
+    ("Samsung 55 inch TV 2025 model", []),
+])
+def test_more_code_shapes(title, own):
+    assert read_title(title).own[:len(own) or None] == own
+
+
+def test_plain_number_codes_need_a_brand():
+    products, _ = built([row(1, "jumia_eg", "Touch Elzenouki 40566 Stand Mixer", 545_000, "Touch Elzenouki"),
+                         row(2, "noon_eg", "Touch Elzenouki 40566 Stand Mixer 5L", 549_900, "Touch Elzenouki"),
+                         row(3, "noon_eg", "Stand Mixer 5 Liters 40566", 549_900)])  # no brand: not trusted
+    assert products[1][0] == products[2][0] == "touchelzenouki 40566" and products[3][1] == "no_code"
+
+
+def test_probable_tier_needs_one_product_per_shop():
+    products, models = built([
+        row(1, "amazon_eg", "ATA Microwave 20 Liter Capacity- Digital- 1200W, Silver Black", 426_200, "ATA"),
+        row(2, "jumia_eg", "Ata Microwave 20 Liter Capacity- Digital- 1200W, Silver Black", 415_000, "ATA"),
+        # two different Haier ACs with the same specs on one shop: the signature names no single product
+        row(3, "jumia_eg", "Haier Split Air Conditioner, 1.5 HP, Cooling Only, White", 1_940_000, "Haier"),
+        row(4, "jumia_eg", "Haier Turbo Split Air Conditioner Eco 1.5 HP Cooling Only Gray", 2_600_000, "Haier"),
+        row(5, "noon_eg", "Haier Split Air Conditioner 1.5 HP Cooling Only", 1_950_000, "Haier"),
+        # same specs, very different prices: not one product
+        row(6, "amazon_eg", "Sokany Blender 2.5L 5000 Watt with Mill", 196_200, "Sokany"),
+        row(7, "jumia_eg", "Sokany Blender 2.5 Liters 5000 Watts", 450_000, "Sokany"),
+    ])
+    assert products[1][0] == products[2][0] == "ata ~microwave 1200W+20L digital"
+    assert models["ata ~microwave 1200W+20L digital"][3] == "probable"
+    assert all(products[i][0] is None for i in (3, 4, 5, 6, 7))
+
+
+def test_hand_made_matches(cfg):
+    conn = db.connect(cfg.db_path)
+    with conn:
+        ids = [db.record(conn, listing(site, sku, title, price, brand), now=NOW).product_id for site, sku, title, price, brand in (
+            ("jumia_eg", "J1", "Sharp AC AH-XP12BME", 3_000_000, "Sharp"),
+            ("noon_eg", "N1@s", "Sharp AC AH-XP12BME", 3_050_000, "Sharp"),
+            ("amazon_eg", "A1", "Sharp split air conditioner 1.5 HP", 2_990_000, None),  # no code: missed
+            ("btech_eg", "B1", "Kettle", 50_000, None),
+            ("2b_eg", "T1", "Electric kettle 1.7", 52_000, None))]
+    j1, n1, a1, b1, t1 = ids
+    matching.set_override(conn, j1, a1, "same", None, NOW)  # join an existing model
+    matching.set_override(conn, j1, n1, "different", None, NOW)  # leave it
+    matching.set_override(conn, b1, t1, "same", None, NOW)  # two unmatched listings: a new model
+    matching.rebuild(conn, NOW)
+    pm = {r[0]: r[1:] for r in conn.execute("SELECT product_id, model, status, note FROM product_models")}
+    assert pm[a1][:2] == ("sharp AHXP12BME", "model") and "by hand" in pm[a1][2]
+    assert pm[n1][:2] == (None, "split")
+    assert pm[b1][0] == pm[t1][0] == f"- #{b1}" and tuple(conn.execute(
+        "SELECT kind, status FROM models WHERE model = ?", (pm[b1][0],)).fetchone()) == ("manual", "ok")
+    matching.set_override(conn, n1, j1, None, None, NOW)  # forget, in either order
+    matching.rebuild(conn, NOW)
+    assert conn.execute("SELECT model FROM product_models WHERE product_id = ?", (n1,)).fetchone()[0] == "sharp AHXP12BME"
+    with pytest.raises(ValueError):
+        matching.set_override(conn, j1, j1, "same", None, NOW)

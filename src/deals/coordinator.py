@@ -118,6 +118,7 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         threads = [alerts.AlertSender(cfg, stop), Watchdog(cfg, stop)] if background else []
+        app.state.watchdog = next((t for t in threads if isinstance(t, Watchdog)), None)
         if background:  # the coordinator's own log lines show up on the dashboard too
             handler = monitor.EventLogHandler(cfg.db_path)
             logging.getLogger("deals").addHandler(handler)
@@ -433,12 +434,12 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
             return {"groups": webui.groups(rc)}
 
     @app.get("/api/products/{product_id}", dependencies=[Depends(viewer)])
-    def product_api(product_id: int):
+    def product_api(product_id: int, request: Request):
         with closing(read_conn()) as rc:
             found = webui.product(rc, product_id, utcnow())
         if found is None:
             raise HTTPException(404, "no such product")
-        return found
+        return {**found, "admin": is_admin(request)}
 
     @app.get("/api/subscribers", dependencies=[Depends(viewer)])
     def subscribers_api(request: Request):
@@ -460,6 +461,26 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
                 raise HTTPException(409, "only active subscribers can be helper admins")
             tg = alerts.Telegram(cfg.telegram_token) if cfg.telegram_token else None
             bot.decide(wc, tg, sub, action, utcnow())
+        return {"ok": True}
+
+    class MatchIn(BaseModel):
+        other: int
+        verdict: str | None  # 'same', 'different', or None to forget a hand-made match
+
+    @app.post("/api/products/{product_id}/match", dependencies=[Depends(admin)])
+    def match_override(product_id: int, body: MatchIn):
+        """Set by hand that two listings are (or are not) the same product; re-matched within a minute."""
+        if product_id == body.other:
+            raise HTTPException(422, "a product is always the same as itself")
+        with closing(db.connect(cfg.db_path)) as wc:
+            if wc.execute("SELECT COUNT(*) FROM products WHERE id IN (?, ?)", (product_id, body.other)).fetchone()[0] != 2:
+                raise HTTPException(404, "no such product")
+            try:
+                matching.set_override(wc, product_id, body.other, body.verdict, "web UI", utcnow())
+            except ValueError as e:
+                raise HTTPException(422, str(e))
+        if getattr(app.state, "watchdog", None):
+            app.state.watchdog.next_match = None  # the next watchdog round (within a minute) re-matches
         return {"ok": True}
 
     @app.post("/api/report", dependencies=[Depends(admin)])

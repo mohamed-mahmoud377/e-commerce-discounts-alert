@@ -81,7 +81,7 @@ def test_product_page_data_and_filters(client):
     client.post("/ui/login", data={"token": "admin-secret"}, follow_redirects=False)
     pid = client.get("/api/products?q=samsung").json()["products"][0]["id"]
     d = client.get(f"/api/products/{pid}").json()
-    assert set(d) == {"product", "stats", "history", "alerts", "other_sellers", "same_model"}
+    assert set(d) == {"product", "stats", "history", "alerts", "other_sellers", "same_model", "admin"} and d["admin"]
     assert "share_at_or_below" in d["stats"] and "drop_vs_typical" in d["stats"] and len(d["history"]) == 1
     r = client.get("/api/products?limit=0").json()
     assert r["products"] == [] and r["groups"] == ["TVs"]
@@ -231,3 +231,24 @@ def test_products_carry_their_previous_price(client):
                   grp="TVs", now=utcnow() + timedelta(minutes=10))  # a stock change at the same price
     p = client.get("/api/products?q=samsung").json()["products"][0]
     assert (p["price"], p["prev_price"]) == (1_600_000, 2_000_000)  # the last *different* price
+
+
+def test_match_override_is_admin_only_and_applies_at_the_next_rebuild(client):
+    conn = client.app.state.conn
+    with conn:
+        for sku, title in (("K1", "Fresh Kettle 1.7L 2200W"), ("K2", "Fresh Electric Kettle 1.7 Liter")):
+            db.record(conn, Listing("jumia_eg" if sku == "K1" else "noon_eg", sku, title, f"https://x/{sku}", 100_000,
+                                    None, "EGP", True), grp="TVs", now=utcnow())
+    a, b = (r[0] for r in conn.execute("SELECT id FROM products WHERE sku IN ('K1', 'K2') ORDER BY sku"))
+    assert client.post(f"/api/products/{a}/match", json={"other": b, "verdict": "same"},
+                       params={"token": "token-1"}).status_code == 403  # a worker token can only look
+    client.post("/ui/login", data={"token": "admin-secret"}, follow_redirects=False)
+    assert client.post(f"/api/products/{a}/match", json={"other": a, "verdict": "same"}).status_code == 422
+    assert client.post(f"/api/products/{a}/match", json={"other": 999999, "verdict": "same"}).status_code == 404
+    assert client.post(f"/api/products/{a}/match", json={"other": b, "verdict": "same"}).json() == {"ok": True}
+    matching.rebuild(conn, utcnow())
+    same = client.get(f"/api/products/{a}").json()["same_model"]
+    assert same["model"]["kind"] == "manual" and [o["id"] for o in same["others"]] == [b]
+    assert client.post(f"/api/products/{a}/match", json={"other": b, "verdict": None}).json() == {"ok": True}
+    matching.rebuild(conn, utcnow())
+    assert client.get(f"/api/products/{a}").json()["same_model"]["model"] is None

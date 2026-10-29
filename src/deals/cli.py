@@ -223,6 +223,18 @@ def cmd_models(args) -> None:
     cfg = _config(args)
     conn = db.connect(cfg.db_path)
     q = lambda sql, *a: conn.execute(sql, a).fetchall()  # noqa: E731
+    if args.same or args.different or args.forget:
+        a, b = args.same or args.different or args.forget
+        verdict = "same" if args.same else "different" if args.different else None
+        matching.set_override(conn, a, b, verdict, "cli", utcnow())
+        print(f"#{a} and #{b}: " + (f"{verdict} product" if verdict else "hand-made match forgotten") +
+              "; applies at the next rebuild (the server's is hourly; --rebuild runs one now)")
+    if args.overrides:
+        for r in q("""SELECT o.a, o.b, o.verdict, o.note, o.created_at, pa.site sa, pa.title ta, pb.site sb, pb.title tb
+                      FROM match_overrides o JOIN products pa ON pa.id = o.a JOIN products pb ON pb.id = o.b
+                      ORDER BY o.created_at"""):
+            print(f"{r['created_at'][:16]}  {r['verdict']:<9} #{r['a']} {r['sa']}: {r['ta'][:50]}  |  #{r['b']} {r['sb']}: {r['tb'][:50]}")
+        return
     if args.rebuild:
         s = matching.rebuild(conn, utcnow())
         print(f"rebuilt in {s.seconds}s: {s.extracted:,} titles read; {s.in_model:,} of {s.products:,} products in a "
@@ -231,7 +243,9 @@ def cmd_models(args) -> None:
     def show(model: str) -> None:
         m = q("SELECT * FROM models WHERE model = ?", model)[0]
         price = f"EGP {m['low'] / 100:,.0f}-{m['high'] / 100:,.0f}" if m["low"] else "no fresh price"
-        print(f"\n{m['model']}  (by {'model code' if m['kind'] == 'mpn' else 'product line + variant'}; "
+        how = {"mpn": "model code", "gtin": "barcode", "line": "product line + variant", "similar": "PROBABLE: type + specs",
+               "manual": "set by hand"}.get(m["kind"], m["kind"])
+        print(f"\n{m['model']}  (by {how}; "
               f"{m['sites']} shops, {m['products']} listings, {price})"
               f"{'  ' + m['status'].upper() + ': ' + m['note'] if m['status'] != 'ok' else ''}")
         for r in q("""SELECT p.site, p.sku, p.price, p.in_stock, p.title, pm.status, pm.note FROM product_models pm
@@ -490,6 +504,10 @@ def main() -> None:
     p.add_argument("find", nargs="?", help="a model code (WH-1000XM5) or title words")
     p.add_argument("--sample", type=int, metavar="N", help="N random models on 2+ shops with all their listings")
     p.add_argument("--rebuild", action="store_true", help="recompute the matches now (the server does it hourly)")
+    p.add_argument("--same", nargs=2, type=int, metavar=("A", "B"), help="product ids A and B are the same product (B joins A)")
+    p.add_argument("--different", nargs=2, type=int, metavar=("A", "B"), help="product ids A and B are different products")
+    p.add_argument("--forget", nargs=2, type=int, metavar=("A", "B"), help="drop a hand-made match between A and B")
+    p.add_argument("--overrides", action="store_true", help="list the hand-made matches")
     p = add("product", cmd_product, "price history and stats of one product")
     p.add_argument("site", choices=sorted(SITES))
     p.add_argument("sku")
