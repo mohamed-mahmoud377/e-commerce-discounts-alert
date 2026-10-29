@@ -29,6 +29,7 @@ class AlertRules:
     confirm_minutes: int = 90  # ...but send anyway after this long (worker asleep, slice slow)
     realert_after_days: float = 7
     realert_extra_drop: float = 0.05  # re-alert sooner if the price falls this much further
+    show_other_shops: bool = True  # end each alert with the same product's price on the other shops (text only)
 
 
 @dataclass(frozen=True)

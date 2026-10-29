@@ -14,7 +14,7 @@ from deals.models import LIMITED_DEAL, Listing
 
 
 def listing(site="noon_eg", sku="N1@shop-a", price_egp=5000, **kw):
-    return Listing(site, sku, f"TV {sku}", f"https://x/{sku}", price_egp * 100, kw.pop("list_price", None),
+    return Listing(site, sku, kw.pop("title", f"TV {sku}"), f"https://x/{sku}", price_egp * 100, kw.pop("list_price", None),
                    "EGP", kw.pop("in_stock", True), **kw)
 
 
@@ -169,3 +169,47 @@ def test_list_price_change_does_not_move_the_recorded_price(conn):
         row = conn.execute("SELECT price, list_price, last_change_at FROM products WHERE sku = 'A9'").fetchone()
         assert row["price"] == 10000 and row["list_price"] == 1300000 and row["last_change_at"] == db.iso(t)
         assert [h["price"] for h in db.history(conn, p.product_id)] == [10000, 10000]
+
+
+def test_other_shops_are_appended_without_touching_the_decision(cfg, conn, monkeypatch):
+    from deals import matching
+
+    cfg = replace(cfg, alerts=AlertRules(confirm_low_confidence=False))
+    t = utcnow()
+    with conn:
+        a = db.record(conn, listing("amazon_eg", "A9", 5000, title="Sharp AC AH-XP12BME"), grp="TVs", now=t - timedelta(days=10))
+        db.record(conn, listing("noon_eg", "N9@s", 3600, title="Sharp AC AH-XP12BME"), grp="TVs", now=t)
+        db.record(conn, listing("jumia_eg", "J9", 4100, title="Sharp AC AH-XP12BME"), grp="TVs", now=t)
+        db.record(conn, listing("amazon_eg", "A9", 3900, title="Sharp AC AH-XP12BME"), grp="TVs", now=t)
+    matching.rebuild(conn, t)
+    with conn:
+        deal = check_product(conn, cfg, a.product_id, bootstrap=False, now=t)
+    assert deal is not None and deal.kind == "price_drop"
+    message = conn.execute("SELECT message FROM alerts").fetchone()[0]
+    assert "نفس المنتج في محلات تانية" in message and "نون مصر" in message and "جوميا مصر" in message
+    assert "أرخص عند نون مصر بفارق 300 جنيه" in message and message.index("🏪") < message.index("🔖")
+
+    # the same decision, byte for byte, with the section off, and when the lookup blows up
+    def again(cfg):
+        with conn:
+            conn.execute("DELETE FROM alerts")
+            d = check_product(conn, cfg, a.product_id, bootstrap=False, now=t)
+        return d, conn.execute("SELECT message FROM alerts").fetchone()[0]
+    off, plain = again(replace(cfg, alerts=replace(cfg.alerts, show_other_shops=False)))
+    assert off == deal and "🏪" not in plain and plain == message.split("\n\n🏪")[0] + "\n\n🔖" + message.rpartition("\n\n🔖")[2]
+
+    def boom(conn, product_id, now):
+        raise RuntimeError("matching tables gone")
+    monkeypatch.setattr(matching, "other_shops", boom)
+    crashed, text = again(cfg)
+    assert crashed == deal and text == plain  # alerted all the same, without the section
+
+
+def test_alert_for_an_unmatched_product_has_no_other_shops_section(cfg, conn):
+    cfg = replace(cfg, alerts=AlertRules(confirm_low_confidence=False))
+    t = utcnow()
+    with conn:
+        a = db.record(conn, listing("amazon_eg", "A8", 5000, title="Kettle"), grp="TVs", now=t - timedelta(days=10))
+        db.record(conn, listing("amazon_eg", "A8", 3900, title="Kettle"), grp="TVs", now=t)
+        assert check_product(conn, cfg, a.product_id, bootstrap=False, now=t) is not None
+    assert "🏪" not in conn.execute("SELECT message FROM alerts").fetchone()[0]

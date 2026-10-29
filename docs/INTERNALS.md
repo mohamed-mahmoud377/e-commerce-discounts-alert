@@ -28,7 +28,7 @@ owns one job.
 | `alerts.py` | 279 | Judging a changed product, writing alerts, formatting the Arabic message, the Telegram client and the delivery loop | db, pricing |
 | `bot.py` | 292 | The Telegram conversation: /start, /stop, approvals, subscribers; `decide()` is shared with the web UI | alerts, db |
 | `health.py` | 207 | Health checks and the daily report | db, alerts |
-| `matching.py` | 470 | The same product on different shops: model codes read from titles, the hourly rebuild of `models` / `product_models` (in a `nice 19` subprocess), `same_model()` for the views. See [MATCHING.md](MATCHING.md) | db |
+| `matching.py` | 590 | The same product on different shops: model codes read from titles once (`product_codes`), the hourly grouping streamed through SQL into `models` / `product_models` (in a `nice 19` subprocess), `same_model()` for the views. See [MATCHING.md](MATCHING.md) | db |
 | `monitor.py` | 166 | Device states, events (logs), the dashboard page | db, scheduler |
 | `webui.py` | 1182 | The web UI page (one HTML + CSS + JS string, light and dark themes) and its queries | health, monitor, alerts |
 | `coordinator.py` | 570 | The FastAPI app (all endpoints) and the watchdog thread (which also starts the hourly matching) | everything above |
@@ -130,6 +130,8 @@ many have run, and `db.connect()` runs the missing ones in a transaction on star
 | 8 | `alerts.confirm_until` (low-confidence alerts held until the price is seen again) |
 | 9 | `subscribers.is_manager` (helper admins) |
 | 10 | `models`, `product_models` (cross-shop matching; written only by `matching.rebuild`) |
+| 11 | `product_codes`, `product_code_index` (codes read once per title, incremental); `models` / `product_models` recreated with brand-scoped keys and `models.kind` |
+| 12 | `product_codes.line`, `.attrs`: the second identity (brand + product line + variant) for titles without a code |
 
 **Tables and columns** (prices are integer piastres; times are UTC ISO text, which sorts correctly as text):
 
@@ -146,8 +148,10 @@ many have run, and `db.connect()` runs the missing ones in a transaction on star
 | `subscribers` | `chat_id` | `name`, `username`, `status` (`pending`, `active`, `rejected`, `removed`, `stopped`, `blocked`), `is_admin` (the owner), `is_manager` (helper admin: also gets system alerts and the daily report), `approved_at` |
 | `events` | `id`; indexes on time and source | `at`, `source`, `level`, `message`; pruned after 7 days |
 | `kv` | `key` | `telegram_offset` (last Telegram update handled) |
-| `models` | `model`; index `(status, sites)` | One product across shops: `code`, `capacity`, `brand`, `status` (`ok`, `conflict`, `spec`), `products`, `sites`, `site_list`, `low`/`median`/`high`, `note`, `version`, `updated_at`. Rebuilt hourly from `products` ([MATCHING.md](MATCHING.md)) |
-| `product_models` | `product_id` (cascade delete); index `(model)` | `model`, `status` (`model`, `no_code`, `accessory`, `used`, `brand_conflict`, `price_outlier`), `brand`, `brand_from`, `codes`, `note`, `version`, `updated_at` |
+| `product_codes` | `product_id` (cascade delete) | The codes read from one title, kept so a pass re-reads only changed titles: `title_hash`, `version`, `heads`, `shop_brand`, `own`, `mentions`, `before`, `capacity`, `used`, `accessory` ([MATCHING.md](MATCHING.md)) |
+| `product_code_index` | `(product_id, code)`; index `(code)` | One row per code of a product (`rank`), for the SQL counts |
+| `models` | `model` (`<brand> <code>[ <capacity>]`); index `(status, sites)` | One product across shops: `kind`, `code`, `capacity`, `brand`, `status` (`ok`, `conflict`, `spec`), `products`, `sites`, `site_list`, `low`/`median`/`high`, `note`, `version`, `updated_at`. Rebuilt hourly |
+| `product_models` | `product_id` (cascade delete); index `(model)` | `model`, `status` (`model`, `no_code`, `accessory`, `used`, `bundle`, `ambiguous_brand`, `ambiguous_variant`, `price_outlier`), `brand`, `brand_from`, `codes`, `note`, `version`, `updated_at` |
 
 **Adding a migration:** append a new SQL string to `MIGRATIONS` (never edit an old one), use
 `ALTER TABLE ... ADD COLUMN` or new tables, rehearse it on a copy (`make db`, then `db.connect()` on a copy
@@ -271,6 +275,7 @@ commented template.
 | `[alerts] confirm_minutes` | 90 | ...but send anyway after this long if nobody rechecked it (the hold is at least 3x the group's interval + 10 min, so a slow group can actually be rechecked) |
 | `[alerts] realert_after_days` | 7 | No repeat alert within this many days... |
 | `[alerts] realert_extra_drop` | 0.05 | ...unless the price fell this much more |
+| `[alerts] show_other_shops` | true | End each alert with the same product's price on the other shops ([MATCHING.md](MATCHING.md)); text only, appended after the decision |
 | `[schedule] min_interval_minutes` | 10 | Fastest revisit of a busy slice |
 | `[schedule] max_interval_factor` | 3.0 | Quiet slices slow down to group interval times this |
 | `[schedule] feed_max_interval_minutes` | 10 | Cap for shop deal-feed roots (`deals:`, `p_n_deal_type`, noon's `min_offer_price`, Jumia's `flash-sales`) |

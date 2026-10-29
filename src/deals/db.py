@@ -257,6 +257,70 @@ MIGRATIONS = [
     );
     CREATE INDEX product_models_model ON product_models (model);
     """,
+    """
+    -- Matching v2 (matching.py): codes are read from a title once and kept here, so an hourly pass
+    -- re-reads only new or changed titles (title_hash covers title, brand and seller), and the
+    -- grouping streams through SQL instead of holding every product in memory. Model keys are now
+    -- brand-scoped ('sharp AHXP12BME'), so the matched tables are recreated.
+    CREATE TABLE product_codes (
+        product_id INTEGER PRIMARY KEY REFERENCES products(id) ON DELETE CASCADE,
+        title_hash INTEGER NOT NULL,
+        version    INTEGER NOT NULL,   -- matching.VERSION the codes were read with
+        heads      TEXT NOT NULL,      -- the title's first 1-4 words as brand candidates, longest first, '|'-joined
+        shop_brand TEXT,               -- the shop's brand field, normalised (NULL when it is the seller's name)
+        own        TEXT NOT NULL,      -- codes of this product, best first, space-joined
+        mentions   TEXT NOT NULL,      -- codes of other products the title names (accessory for, bundle)
+        before     TEXT NOT NULL,      -- 'CODE=WORD' pairs: the word before a short code ('660NC=TUNE')
+        capacity   TEXT NOT NULL,      -- '16GB+512GB', '55IN'
+        used       INTEGER NOT NULL,
+        accessory  INTEGER NOT NULL
+    );
+    CREATE TABLE product_code_index (
+        product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+        code       TEXT NOT NULL,
+        rank       INTEGER NOT NULL,
+        PRIMARY KEY (product_id, code)
+    );
+    CREATE INDEX product_code_index_code ON product_code_index (code);
+    DROP TABLE product_models;
+    DROP TABLE models;
+    CREATE TABLE models (
+        model      TEXT PRIMARY KEY,  -- '<brand> <code>[ <capacity>]': 'sharp AHXP12BME', 'hp 15FD0015NE 8GB+512GB'; brand '-' when unknown
+        kind       TEXT NOT NULL,     -- how the key was made: 'mpn' (brand + model code); later 'attrs' for phones
+        code       TEXT NOT NULL,
+        capacity   TEXT,
+        brand      TEXT,
+        status     TEXT NOT NULL,     -- ok | conflict (prices can't be one product) | spec (a spec word, not a model)
+        products   INTEGER NOT NULL,  -- listings in the model (status 'model')
+        sites      INTEGER NOT NULL,
+        site_list  TEXT NOT NULL,
+        low        INTEGER,           -- price range of its listings seen in the last 14 days
+        median     INTEGER,
+        high       INTEGER,
+        note       TEXT,
+        version    INTEGER NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE INDEX models_sites ON models (status, sites);
+    CREATE TABLE product_models (
+        product_id INTEGER PRIMARY KEY REFERENCES products(id) ON DELETE CASCADE,
+        model      TEXT,              -- models.model
+        status     TEXT NOT NULL,     -- model | no_code | accessory | used | ambiguous_brand | price_outlier
+        brand      TEXT,
+        brand_from TEXT,              -- title | shop | model (taken from the model's other listings)
+        codes      TEXT,              -- every code read from the title, best first
+        note       TEXT,              -- why it is not in a model, when it isn't
+        version    INTEGER NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE INDEX product_models_model ON product_models (model);
+    """,
+    """
+    -- Matching: a second identity for products with no model code (phones, tablets, consoles,
+    -- headphones): brand + product line + variant attributes, read from the title (matching.py).
+    ALTER TABLE product_codes ADD COLUMN line TEXT NOT NULL DEFAULT '';   -- '1:iphone 2:16' (word index: word)
+    ALTER TABLE product_codes ADD COLUMN attrs TEXT NOT NULL DEFAULT '';  -- 'storage=128GB ram=8GB net=5G'
+    """,
 ]
 
 # Price moves smaller than this are noise (amazon.eg prices creep by a piastre per

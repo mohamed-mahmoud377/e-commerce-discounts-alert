@@ -1,0 +1,132 @@
+group	site	brand	price_egp	title
+# Sharp AC: cool-only vs cool/heat are different models
+1	2b_eg	Sharp	32900	Sharp Air Conditioner Split 1.5 HP Cool Inverter Digital Plasmacluster - White - AH-XP12BME
+1	amazon_eg		29499	SHARP Split Air Conditioner 1.5 HP 12000 (BTU/H) Inverter Cooling Only, Digital, Plasmacluster, White AH-XP12BME
+1	btech_eg	Sharp	30465	Sharp Inverter Split Air Conditioner ,1.5 horsepower Inverter Motor Only Cooling ,White - AH-XP12BME
+1	carrefour_eg	Sharp	36449	Sharp Split Air Conditioner, 1.5 HP, Cooling Only, Inverter, White, AH-XP12BME
+1	jumia_eg	Sharp	31000	Sharp Split Air Conditioner 1.5 HP Cool Only Inverter - Model AH-XP12BME
+1	noon_eg		29999	Air Conditioner 1.5 HP Cool Digital Inverter AH-XP12BME white
+2	jumia_eg	Sharp	33250	Sharp Split Air Conditioner 1.5 HP Cool - Heat Inverter Digital Plasma Cluster White AY-XP12BME
+2	btech_eg	Sharp	33100	Sharp Split Air Conditioner ,1.5 horsepower Inverter Motor Cooling and Heating ,White - AY-XP12BME
+# Sony headphones: XM5 across shops and spellings; XM4 and XM6 are other models; ear pads are an accessory
+3	amazon_eg		14888	Sony WH-1000XM5 Wireless Industry Leading Noise Canceling Headphones with Auto Noise Canceling Optimizer, Black
+3	noon_eg	Sony	14999	WH-1000XM5 Wireless Noise-Cancelling Headphones Black
+3	noon_eg	Sony	17106	Over-Ear Wireless Noise-Cancelling Headphones WH-1000XM5/LM Midnight Blue
+3	2b_eg	Sony	18499	Sony WH-1000XM5 Wireless Noise Cancelling Headphones - Black
+3	amazon_eg		21899	Sony WH1000XM5 SM Wh 1000Xm5 Wireless Noise Cancelling Headphones, SILVER, Standard, WH-1000XM5
+3	btech_eg	Sony	23528	Sony Wireless Over Ear Headphones , Blue - WH-1000XM5
+4	jumia_eg	Sony	13200	Sony WH-1000XM4 Noise Cancelling Wireless Headphones
+4	noon_eg	Sony	13000	WH-1000XM4 Premium Wireless Headphone Black
+5	amazon_eg		16400	Sony WH-1000XM6 The Best Noise Canceling Wireless Headphones, HD NC Processor QN3, 12 Microphones, Black
+5	carrefour_eg	Sony	18200	Sony WH-1000XM6 The Best Wireless Noise Canceling Headphones, HD NC Processor QN3, 12 Microphones
+x	noon_eg		450	Ear Pads Cushions for Sony WH-1000XM5 Headphones, Protein Leather, Black
+# JBL: Tune 660NC and Live 660NC are different headphones; 670NC likewise
+6	amazon_eg		4355	JBL Tune 660NC, On-ear wireless Noice Cancelling headphones, Bluetooth, On-earcup controls, Blue
+6	jumia_eg	JBL	4599	JBL Tune 660NC Wireless On-Ear Headphones with Active Noise Cancelling - Black
+7	btech_eg	JBL	6699	Jbl Live 660NC Wireless Over Ear Headphones with Microphone , Black
+7	noon_eg	JBL	8999	Live 660NC Wireless Over-Ear Noise Cancelling Headphones White
+8	amazon_eg		4000	JBL Tune 670NC - Adaptive Noise Cancelling with Smart Ambient Wireless On-Ear Headphones, Up to 70H Battery Life
+8	jumia_eg	JBL	4599	Jbl Tune 670NC Wireless Headphones - White
+9	noon_eg	JBL	4999	Live 670NC Wireless Over-Ear Noise Cancelling Headphones - Sandal
+9	noon_eg	JBL	5695	JBL Live 670NC Wireless Over-Ear Noise Cancelling Headphones - Blue Blue
+# laptops: the HP model code plus RAM/SSD; the Lenovo generation (15IRH10) is not a model, the order code is
+10	2b_eg	HP	39599	HP 15-fd0015ne Laptop - Intel Core i5-1334U - 8GB - 512GB SSD - Intel Iris Xe Graphics - 15.6 FHD - Win11 - Natural Silver
+10	amazon_eg		37666	HP Laptop 15-fd0015ne, Intel Core i5-1334U 8GB, 512GB, Intel Iris Xe Graphics,Windows 11, 15.6'', Natural Silver
+10	btech_eg	HP	39671	Hp 15-fd0015ne Laptop ,Intel Core i5-1334U 15.6 Inch ,512 GB SSD ,8 GB ,Intel Iris XE Graphics ,Windows 11 - Natural Silver
+10	carrefour_eg	HP	40569	HP 15-fd0015ne Laptop - Intel Core i5-1334U - 512 GB SSD - 8 GB RAM - 15.6-Inch FHD Display - Integrated Intel Iris Xe
+11	btech_eg	Lenovo	43000	Lenovo IdeaPad Slim 3 15IRH10 - 83K100FMED Laptop ,Intel Core i5-13420H 15.3 Inch ,512 GB SSD ,16 GB ,Intel UHD Graphics
+11	dream2000_eg	Lenovo	47290	Lenovo Slim 3 Laptop Intel Core i5-13420H, 16GB RAM, 512GB SSD, UHD, 15.3" WUXGA, Windows 11, 83K100FMED
+12	amazon_eg		45999	Lenovo IdeaPad Slim 3 15IRH10 Intel Core i5-13420H 16GB DDR5-4800 RAM 512GB M.2 SSD 15.3-Inch WUXGA Windows 11 83K101EUED
+12	dream2000_eg	Lenovo	50990	Lenovo IdeaPad Slim 3 15IRH10 Laptop Intel Core i5-13420H 16GB 512GB SSD Windows 11 - 83K101EUED - Grey
+13	btech_eg	Asus	35999	Asus Vivobook 15 X1504VA-BQ4615W Laptop ,Intel Core 5 120U 15.6 Inch ,512 GB SSD ,8 GB ,Intel Graphics ,Windows 11
+13	noon_eg		38999	Vivobook 15 X1504VA-BQ4615W Laptop With 15.6-Inch Display, Core 5-120U Processor/8GB RAM/512GB SSD/Intel Graphics
+x	noon_eg	Dell	28000	Renewed - Latitude 5490 Laptop With 14-Inch Display, Core i5 Processor, 8GB RAM/256GB SSD/Intel UHD Graphics 620
+x	amazon_eg		1800	Replacement Keyboard for HP EliteBook 735-G5 735-G6 830-G5 830-G6 836-G6 with Backlit & with Mouse
+x	noon_eg		2591	CPU Fan Compatible With Lenovo ThinkPad E14 E15 Gen 2 From OS Store
+# a bundle's monitor code is not the PC's; the monitor itself is another product
+x	noon_eg		34383	DELL 7020 CORE I3 - 12100 - 8G - 512 SSD + MONITOR DELL - P2425H -3YEARS
+14	amazon_eg		8650	Dell P Series P2425H Computer Monitor 61 Cm (24) 1920 X 1080, 100Hz, IPS, 5ms, 99% sRGB, USB-C, DisplayPort
+14	jumia_eg	Dell	8900	Dell P2425H 24 Inch FHD IPS Monitor 100Hz - Black
+# RAM compatible with a NAS is not the NAS; '+' is a different monitor
+x	amazon_eg		14968	PHS-memory 32 GB RAM Memory Compatible with Synology DiskStation DS1621+ DDR4 SO DIMM ECC 2666MHz PC4-21300
+15	amazon_eg		59990	BenQ ZOWIE XL2586X+ 24" FHD New Fast TN 600Hz Esports Gaming Monitor, DyAc2, Auto Game Mode by XL Setting to Share
+15	btech_eg	Benq	59990	Benq 24.1 Inch Gaming Monitor , 600 Hertz 0.5 Millisecond , Black - XL2586X+
+16	noon_eg		49990	XL2586X 24.1" FHD 540Hz Esports Gaming Monitor, Fast TN 0.5ms, Motion Clarity DyAc2, XL Setting to Share, S Switch
+16	amazon_eg		49990	BenQ ZOWIE XL2586X 24.1" FHD 540Hz Esports Gaming Monitor, Fast TN 0.5ms, Motion Clarity DyAc2
+# TV series code: sizes are different products
+17	2b_eg	Samsung	19500	Samsung U8000H TV 43 Inch 4K UHD Smart LED Built In Receiver - UA43U8000H
+17	jumia_eg	Samsung	19356	Samsung 43 Inch Crystal UHD 4K Smart TV U8000H
+18	2b_eg	Samsung	33600	Samsung U8000H TV 65 Inch 4K UHD Smart LED Built In Receiver
+18	noon_eg	Samsung	26750	Samsung 65 Inch U8000H Crystal UHD 4K Smart TV
+# appliances across shops, with spellings
+19	amazon_eg		5845	Black & Decker 400W Juice Extractor With Wide Chute - White, JE400-B5
+19	noon_eg	Black+Decker	7500	High-Speed Juice Extractor, 65mm XL Feed Chute, 1.3L Pulp Container, 350ml Juice Cup, BPA Free, JE400-B5
+20	btech_eg	Black + Decker	2500	Black + Decker Electricity Handheld Iron , 1500 Watt Purple - HST1500-B5
+20	jumia_eg	BLACK+DECKER	2599	BLACK+DECKER 1500W Handheld Handy Garment Steamer, Purple - HST1500-B5
+20	jumia_eg	BLACK AND DECKER	3089	BLACK AND DECKER 1500W Handheld Handy Garment Steamer, Purple - Hst1500-B5
+20	noon_eg		2299	Handheld Steam Iron 260 ml 1500 W HST1500-B5 Multicolour
+21	amazon_eg		1612	Kenwood SMP01.A0WH Sandwich Maker with Grill, 2 in 1-700 Watts
+21	jumia_eg	Kenwood	2799	Kenwood Smp01.A0Wh Sandwich Maker with Grill, 2 In 1-700 Watts
+21	noon_eg	Kenwood	1699	Sandwich Maker, 2 in 1, Grill, 2 Multi functional Plates, Non Stick, 750 W SMP01.A0WH White
+22	btech_eg	Toshiba	8479	Toshiba Solo Microwave , 36 Liter 1200 Watt , Silver - ML3-EM36PFI(MB)
+22	cairosales_eg	Toshiba	8244	Toshiba Microwave 36 Liter 1200 Watt Inverter Black ML3-EM36PFI(MB)
+22	amazon_eg		8499	Toshiba Microwave ML3-EM36PFI(MB) ORIGIN INVERTER, SMART SENSOR COOK, 1200W MICROWAVE POWER OUTPUT, 36 Liter
+23	jumia_eg	Arzum	5099	Arzum Okka Minio Turkish Coffee Machine - OK0026K
+23	btech_eg	Arzum Okka	6545	Arzum Okka Minio Turkish Coffee Machine , Black - OK0026K
+24	carrefour_eg	Tornado	4237	Tornado Air Fryer 1550 Watt 4 Liter - Creamy/Silver - THF-1554D-XL-CS
+24	jumia_eg	Tornado	4469	TORNADO Oil-Free Fryer, 4 Liters, 1550 Watts, THF1554DXLCS - Cream
+# spec words and product lines are not models: nothing here may match anything
+x	noon_eg	Dell	25000	Dell Laptop Core i5 1335U 8GB RAM 256GB SSD Windows 11
+x	noon_eg	HP	26000	HP Laptop Core i5 1335U 8GB RAM 256GB SSD Windows 11
+x	noon_eg	Lenovo	27000	Lenovo Laptop Core i5 1335U 8GB RAM 256GB SSD Windows 11
+x	noon_eg		4500	8GB DDR4 3200MHz Laptop RAM - PC4-25600 SODIMM, 260-Pin, CL22
+x	amazon_eg		7499	XPG ADATA, ATX3.1 and PCIe5.1 850W 80+ Gold Power Supply with Connector
+x	2b_eg	V2com	16999	V2com 14 inch Triple Laptop Screen Extender S2
+x	amazon_eg		899	Anker soundcore R50i VI White (TWS) Earbuds10mm Drivers with BigBass, Bluetooth5.3, 30H Playtime
+# the same code from two makers: two products
+25	jumia_eg	Sokany	1400	Sokany Electric Kettle 1.7L Stainless SK-2010
+26	noon_eg	DSP	1450	DSP Electric Kettle 1.7L Stainless SK-2010
+# --- line tier: brand + product line + variant attributes (no model code in the title) ---
+# iPhone 16 128GB across shops; 256GB and Plus are other products; Apple RAM claims are ignored
+30	jumia_eg	Apple	63000	Apple iPhone 16 (128 GB) - Black with Face ID  Tax Paid  2 Years Official Warranty
+30	btech_eg	Apple	64400	Apple iPhone 16 , 128 GB , 6 GB , 5G , Single SIM - Teal
+30	btech_eg	Apple	64380	Apple iPhone 16 , 128 GB , 8 GB , 5G , Single SIM - Black
+30	2b_eg	Apple	73299	Apple iPhone 16 - 128GB - Pink
+30	dream2000_eg	Apple	74990	Apple iPhone 16 (8GB / 128GB)
+30	jumia_eg	Apple	66660	Apple iPhone 16 - 128GB, 5G - Ultramarine
+31	dream2000_eg	Apple	59990	Apple iPhone 16 (8GB / 256GB)
+31	btech_eg	Apple	72900	Apple iPhone 16 , 256 GB , 8 GB , 5G , Single SIM - Black
+32	amazon_eg		78000	Apple iPhone 16 Plus (128 GB) - Pink with Face ID, (2 years Official Warranty)
+32	dream2000_eg	Apple	58190	Apple iPhone 16 Plus (8GB / 128GB)
+# Galaxy A16: 4/128 4G across shops; 8/256 is another variant; a listing without RAM joins the only fitting one
+33	jumia_eg	Samsung	9500	Samsung Mobile Galaxy A16 , 128GB, 4GB RAM, 4G - Grey
+33	btech_eg	Samsung	9299	Samsung Galaxy A16 , 128 GB , 4 GB , 4G , Dual-SIM - Light Green
+33	noon_eg		9450	Galaxy A16 Dual SIM Grey 4GB RAM 128GB 4G - Middle East Version
+33	carrefour_eg	Samsung	9599	Samsung Mobile Galaxy A16, 128GB, 4G, Grey
+34	jumia_eg	Samsung	12500	Samsung Galaxy A16 Dual SIM, 256GB, 8GB RAM, 4G - Black
+# Honor X9d and X9c are different phones; Redmi/Xiaomi naming folds
+35	2b_eg	Honor	25999	Honor X9d 5G - 12GB RAM - 256GB - Reddish Brown
+35	jumia_eg	Honor	24500	Honor X9d Dual SIM 5G, 256GB, 12GB RAM - Black
+36	jumia_eg	Honor	22999	Honor X9c Dual SIM 5G, 256GB, 12GB RAM - Jade Cyan
+37	jumia_eg	Xiaomi	11000	Xiaomi Redmi Note 14 Dual SIM 4G, 128GB, 8GB RAM - Black
+37	noon_eg	Redmi	10049	Redmi Note 14 Dual SIM Midnight Black 8GB RAM 128GB 4G - Middle East Version
+# tablets and consoles: editions are part of the line, bundles are kept apart
+38	noon_eg	Samsung	49054	Galaxy Tab S11 AI Tablet Gray 5G 12GB RAM 128GB - Middle East Version
+38	jumia_eg	Samsung	48999	Samsung Galaxy Tab S11, 5G, 128GB, 12GB RAM - Gray
+x	btech_eg	Sony	56999	Sony Playstation 5 Slim Disc Edition 1 TB ,2 Controllers ,White Blue
+39	2b_eg	Sony	55999	Sony PlayStation 5 Slim Disc Edition Console 1TB - White
+39	noon_eg		55500	PlayStation 5 Slim Disc Edition Console 1TB - International Version
+x	noon_eg	Sony	82500	PS5 Slim Console With Marvel’s Spider-Man 2 Bundle
+# headphones by line
+40	amazon_eg		15990	Sennheiser Momentum 4 Wireless Bluetooth Headset Over Ear for Crystal-Clear Calls
+40	noon_eg	Sennheiser	16500	Sennheiser MOMENTUM 4 Wireless Headphones - Black
+41	2b_eg	Samsung	5500	Samsung Galaxy Buds 3 - Silver
+41	jumia_eg	Samsung	4998	Samsung Galaxy Buds3 True Wireless Earbuds - White
+42	jumia_eg	Samsung	7550	Samsung Galaxy Buds 3 Pro - Silver
+# specs in a line are not an identity: these are different products that must stay apart
+43	amazon_eg	Carrier	52000	Carrier 3 Horse Power Inverter Cooling and Heating
+44	amazon_eg	Carrier	51026	Carrier 3 Horse Power Inverter Cooling Only
+45	noon_eg	HP	27500	Pavilion x360 2 in 1 Laptop With 14-Inch Display, Core i5 1335U Processor/8GB RAM/512GB SSD
+46	noon_eg	HP	46656	Envy X360 2-in-1 Laptop With 14-Inch Display, Core Ultra 5 120U Processor/8GB RAM/512GB SSD
+47	jumia_eg	Fresh	2248	Fresh Chopper 6 Liter 1500 Watt - Black
+48	jumia_eg	Fresh	2949	Fresh Chopper 6 Liter 1500 Watt Stainless - Silver

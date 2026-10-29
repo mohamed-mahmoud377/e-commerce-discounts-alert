@@ -696,12 +696,14 @@ badge, or the shop's own "lowest price" badge, then multiplied by 1.0 (high conf
 
 ## Algorithm 6: the same product on different shops
 
-Every hour the watchdog starts `python -m deals.matching` at the lowest CPU priority. It reads every title,
-pulls out the maker's model code (`AH-XP12BME`, `WH-1000XM5`), drops spec words, accessories, renewed
-listings and prices that can't belong to the product, and writes the result to `models` and
-`product_models`. Listings with the same code on several shops are one product. It doesn't touch crawling
-or the alert rules; the web UI's product page and `make models` show the result. The rules, why model codes
-(no shop shows a barcode) and how accurate it is on our data are in [MATCHING.md](MATCHING.md).
+Every hour the watchdog starts `python -m deals.matching` at the lowest CPU priority. It reads the maker's
+model code (`AH-XP12BME`, `WH-1000XM5`) from each new or changed title, drops spec words, accessories,
+renewed listings and prices that can't belong to the product, and groups listings by brand + code into
+`models` and `product_models`, streaming through SQL so memory stays flat as the catalogue grows. It doesn't touch crawling
+or the alert rules; the web UI's product page and `make models` show the result, and each deal alert ends with
+the same product's price on the other shops (text appended after the decision; `alerts.show_other_shops`).
+The rules, why model codes (no shop shows a barcode) and how accurate it is on our data are in
+[MATCHING.md](MATCHING.md).
 
 ## Alerts and the Telegram bot
 

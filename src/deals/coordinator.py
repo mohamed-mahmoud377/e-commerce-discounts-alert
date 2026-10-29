@@ -512,8 +512,8 @@ class Watchdog(threading.Thread):
             return
         self.next_match = now + self.MATCH_EVERY
         s = matching.rebuild_in_process(self.cfg.db_path)
-        log.info("matching: %d of %d products in a model, %d of them on 2+ shops; %d rows changed in %.1fs",
-                 s.in_model, s.products, s.cross_shop, s.changed, s.seconds)
+        log.info("matching: %d titles read; %d of %d products in a model, %d of them on 2+ shops; %d rows changed in %.1fs",
+                 s.extracted, s.in_model, s.products, s.cross_shop, s.changed, s.seconds)
 
     def check(self, conn: sqlite3.Connection, now: datetime) -> None:
         with conn:

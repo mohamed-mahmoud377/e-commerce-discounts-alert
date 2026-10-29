@@ -98,7 +98,7 @@ def test_product_page_data_and_filters(client):
     matching.rebuild(conn, utcnow())
     tv2 = client.get("/api/products?q=UA55DU7000&sort=dear").json()["products"][0]["id"]
     same = client.get(f"/api/products/{tv2}").json()["same_model"]
-    assert same["model"]["model"] == "UA55DU7000" and [o["site"] for o in same["others"]] == ["noon_eg"]
+    assert same["model"]["code"] == "UA55DU7000" and [o["site"] for o in same["others"]] == ["noon_eg"]
     assert client.get(f"/api/products/{pid}").json()["same_model"]["me"]["status"] == "no_code"
 
 

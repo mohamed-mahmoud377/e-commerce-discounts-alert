@@ -34,18 +34,21 @@ import subprocess
 import sys
 import time
 import unicodedata
+import zlib
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 from functools import lru_cache
+from itertools import groupby
 from pathlib import Path
 
 from deals import db
 from deals.db import iso
 
-VERSION = 1  # bump when the rules change (kept on each row, to tell old assignments from new)
+VERSION = 4  # bump when the title rules change: every title is then read again at the next pass
 
-MIN_CODE = 5  # shorter codes ("A16", "G502", "M5") are too often shared by unrelated products
+MIN_CODE = 5  # shorter codes ("A16", "G502", "M5") are too often shared by unrelated products ...
+_SHORT = re.compile(r"^(?:[A-Z]\d{3}|[A-Z]{2}\d{2}|[A-Z]\d{2}[A-Z]|\d[A-Z]\d{2}|[A-Z]\d[A-Z]\d)$")  # ... but these 4-char shapes are codes when brand-scoped: C75X, H390, Q20I
 SPEC_BRANDS = 3  # a code seen under this many brands ...
 DOMINANT = 0.7  # ... none of which has this share of its listings, is a spec word, not a model
 OUTLIER_LOW, OUTLIER_HIGH = 0.5, 2.0  # a listing this far from the model's median price is left out
@@ -54,6 +57,16 @@ BATCH = 1000  # rows per write transaction: the coordinator's page uploads wait 
 
 _DASHES = dict.fromkeys(map(ord, "‐‑‒–—―−－"), "-")
 _TOKEN = re.compile(r"[A-Za-z0-9]+(?:[-.][A-Za-z0-9]+)*")
+# A code written with spaces, "CFB 9433 XFE", "MQ 5200", "Fp 3132 Bk": joined before tokenising. Not a
+# unit after a number ("HP 1500 W", "2.25 HP 18000 BTU") and not a product line ("iPhone 16", "Note 14").
+_SPACED = re.compile(r"(?<![A-Za-z0-9-])([A-Za-z]{1,3})[ -](\d{3,5})(?:[ -]([A-Za-z]{1,3})(?![A-Za-z]))?(?![A-Za-z0-9.-])")
+_UNIT_WORDS = {"HP", "W", "V", "A", "L", "ML", "KG", "G", "GB", "TB", "MB", "MM", "CM", "M", "AC", "DC", "USB", "RAM", "SSD",
+               "HDD", "TV", "PS", "LED", "LCD", "HD", "UHD", "FHD", "QHD", "HZ", "MAH", "KW", "BTU", "RPM", "DPI", "IN",
+               "X", "EU", "UK", "US", "AND", "OR", "OF", "THE", "FOR", "TO", "BY", "PRO", "MAX", "AIR", "PAD", "TAB", "NOTE",
+               "GEN", "SIM", "TYPE", "WIFI", "CAT", "WIN", "IOS", "FT", "LBS", "PCS", "SET", "PACK", "BAR", "CUP", "MIN",
+               "PIN", "CORE", "ULTRA", "IPAD", "PLUS", "LITE", "MINI", "NEO", "XL", "XXL", "NO", "CODE", "MODEL", "ITEM",
+               "YEAR", "YEARS", "ONE", "TWO", "ZOOM", "VOL", "VER", "REV", "SIZE", "AGE"}
+_NUMBERED = re.compile(r"\b(?:model|code|item|no|number|mpn|art|ref|sku)\.?\s*:?\s*#?\s*(\d{4,8})\b", re.I)  # "Code 20605"
 _UNITS = ("GB|TB|MB|KB|MAH|WH|MHZ|GHZ|HZ|KW|W|WATT|WATTS|V|VOLT|A|AMP|L|LTR|LITER|LITERS|LITRE|LITRES|ML|KG|G|"
           "GM|GRAM|CM|MM|M|IN|INCH|INCHE|INCHES|HP|BTU|BTUH|BTUHR|K|P|FPS|MS|DB|PIN|PINS|CORE|CORES|THREAD|THREADS|"
           "YEAR|YEARS|YR|YRS|MONTH|MONTHS|BURNER|BURNERS|PIECE|PIECES|PCS|PC|SPEED|SPEEDS|LEVEL|LEVELS|LAYER|LAYERS|"
@@ -77,13 +90,19 @@ _SPEC = re.compile(
     r"|PC\d{1,2}L?\d{4,5}[A-Z]?"  # PC425600
     r"|\d+RX\d+"  # 1RX16
     r"|\d{3,4}R"  # monitor curvature: 1500R
-    r"|[A-Z]{4,}\d{1,2}[A-Z]?"  # product lines, not models: PRESTIGE13, VIVOBOOK15, NOTE14, BUDS3
+    r"|(?:[A-Z]{6,}|NOTE|BUDS|PADS|TUNE|LIVE|FLIP|FOLD|MATE|NOVA|SPARK|CAMON|RENO|NARZO|ENCO|OMEN|ENVY|YOGA|SLIM|"
+    r"THIN|SWIFT|TUF|ROG|LOQ|MAG|PRO|MAX|PLUS|AIR|PAD|TAB|WATCH|BAND|GEN|SERIES|ZOOM|EDGE|HOT|SMART|POWER|PLAY|"
+    r"ULTRA|MINI|NEO|LITE|CORE|VIVO|OPPO|PIXEL|IPHONE|IPAD|REDMI|POCO|GALAXY|PRESTIGE|VIVOBOOK|ZENBOOK|NITRO|"
+    r"ASPIRE|LEGION|IDEAPAD|THINKPAD|VICTUS|STRIX|KATANA|CYBORG|LATITUDE|INSPIRON|VOSTRO|XPS|ELITEBOOK|PROBOOK|"
+    r"OMNIBOOK|MATEBOOK|MAGICBOOK|AIRPODS|FREEBUDS|PLAYSTATION|SWITCH|XBOX)\d{1,2}[A-Z]?"  # product lines, not models: PRESTIGE13, NOTE14, BUDS3
     r"|\d{2}[IA][A-Z]{1,3}\d{1,2}"  # Lenovo generations, shared by many laptops: 15IRH10, 15ARP9, 16IAX10
     r"|[A-Z]{4,}\d+(?:MM|CM|W|V|H|HZ|MAH|L|ML|IN|INCH)"  # a word glued to a spec: EARBUDS10MM
     r"|(?:USB|HDMI|WIFI|BT|BLUETOOTH|IPX|IP|CAT|HDR|WIN|WINDOWS|ANDROID|IOS|PCIE|NVME|SATA|QI|DOLBY|DTS|LGA|AM|"
     r"ATX|EATX|MATX|ITX|PD|QC|"
-    r"VER|VERSION|GEN|MODEL|TYPE|CLASS|GRADE|SIZE|NO|NUMBER)\d+[A-Z]?\d*"  # HDR10, WIN11, IPX4, PCIE4, LGA1700
+    r"VER|VERSION|GEN|MODEL|TYPE|CLASS|GRADE|SIZE|NO|NUMBER|AOSP|WEBOS|TIZEN|VIDAA|EMUI|HYPEROS|MIUI|ONEUI|"
+    r"COLOROS|FUNTOUCH|XOS|HIOS|MAGICOS)\d+[A-Z]?\d*"  # HDR10, WIN11, IPX4, PCIE4, LGA1700, AOSP12
     r"|R\d{2,3}A?"  # refrigerants: R32, R410A
+    r"|CL\d{2}|[A-Z]\d|X360|2IN1"  # memory latency CL22; a letter and a digit; laptop lines
     r"|(?:19|20)\d{2}[A-Z]{0,8}"  # years: 2026EDITION
     r"|\d{3,4}[PK]|[48]K\d+.*"  # 1080P, 4K120
     r")$"
@@ -106,7 +125,7 @@ _BUNDLE = re.compile(r"\s(?:\+|with|plus|&|and|bundle|free|gift)\s", re.I)
 _USED = re.compile(r"\b(?:renewed|refurbished|refurb|pre-?owned|open[ -]box|like new|second[ -]?hand)\b"
                    r"|\(used\)|\bused\s*[-|]|[-|]\s*used\b", re.I)
 _CAPACITY = re.compile(r"(\d+(?:\.\d+)?)\s*(GB|TB)\b", re.I)
-_SCREEN = re.compile(r"\b(\d{2,3})(?:\.\d)?\s*-?\s*(?:inch(?:es)?\b|in\b|\"|\u201d|'')", re.I)  # 55 Inch, 55", 55-inch
+_SCREEN = re.compile(r"(?<![\d.])(\d{2,3})(?:\.\d)?\s*-?\s*(?:inch(?:es)?\b|in\b|\"|\u201d|'')", re.I)  # 55 Inch, 55", 55-inch; not 6.83"
 _WEAK = re.compile(r"^\d[A-Z0-9]{0,5}$")  # '660NC', '255XF': a number a maker may reuse across series
 # Words shops put in the brand field that are not brands.
 _NOT_BRANDS = {"generic", "other", "others", "nobrand", "unbranded", "oem", "none", "na", "brand", "nobrandname",
@@ -143,13 +162,18 @@ def brand_groups(brands: Counter) -> Counter:
     return groups
 
 
+def title_heads(title: str) -> list[tuple[int, str]]:
+    """The title's first 1-4 words as brand candidates, longest first, with how many words each
+    uses: 'Black + Decker Air Fryer' -> [(4, 'blackdeckerairfryer'), (3, 'blackdeckerair'),
+    (2, 'blackdecker'), (1, 'black')]. The one that is a known brand is the title's brand; which
+    brands are known changes as shops are added, so the candidates are kept, not the answer."""
+    words = re.findall(r"[A-Za-z0-9&+'.]+", unicodedata.normalize("NFKD", title))[:4]
+    return [(k, b) for k in range(len(words), 0, -1) if (b := norm_brand(" ".join(words[:k])))]
+
+
 def guess_brand(title: str, known: set[str]) -> str | None:
     """The known brand a title starts with ('SHARP Split Air ...' -> 'sharp')."""
-    words = re.findall(r"[A-Za-z0-9&+'.]+", unicodedata.normalize("NFKD", title))[:4]
-    for k in range(len(words), 0, -1):
-        if (b := norm_brand(" ".join(words[:k]))) in known:
-            return b
-    return None
+    return next((h for _, h in title_heads(title) if h in known), None)
 
 
 def norm_code(token: str) -> str:
@@ -160,8 +184,22 @@ def norm_code(token: str) -> str:
 def is_code(code: str) -> bool:
     """Could this normalised word be a model code? (Its shape only: spec words that many brands
     use are found from the data.)"""
-    return (MIN_CODE <= len(code) <= 24 and not code.isdigit() and not code.isalpha()
+    return ((MIN_CODE <= len(code) <= 24 or _SHORT.match(code)) and not code.isdigit() and not code.isalpha()
             and not _SPEC.match(code))
+
+
+def _join_spaced(t: str) -> str:
+    """'Beko Hood CFB 9433 XFE' -> 'Beko Hood CFB9433XFE' (a code the shop wrote with spaces)."""
+    def join(m: re.Match) -> str:
+        a, digits, b = m.group(1), m.group(2), m.group(3) or ""
+        if a.upper() in _UNIT_WORDS or (b and b.upper() in _UNIT_WORDS) or len(digits) == 4 and digits[:2] in ("19", "20") and not b:
+            return m.group(0)
+        if b.lower() in ("w", "l", "ml", "kg", "g", "mm", "cm", "v", "a", "hz", "k", "p", "m", "in"):  # 1500 W
+            return m.group(0)
+        if not (a.isupper() or len(a) <= 2):  # 'Duo 2399', 'Note 14': a word before a number, not a code
+            return m.group(0)
+        return a + digits + b
+    return _SPACED.sub(join, t)
 
 
 def _pieces(token: str) -> list[str]:
@@ -184,12 +222,97 @@ def _pieces(token: str) -> list[str]:
     return out
 
 
-@lru_cache(maxsize=300_000)
+@lru_cache(maxsize=100_000)
 def _token_code(token: str) -> str | None:
     """The code a title word holds, if any (cached: the same words fill thousands of titles)."""
     if not any(ch.isdigit() for ch in token):
         return None
     return next((c for c in map(norm_code, _pieces(token)) if is_code(c)), None)
+
+
+# The product line: the words after the brand up to the first spec, minus filler and colours.
+# "Apple iPhone 16 Plus (128 GB) - Pink with Face ID" -> ['iphone', '16', 'plus']
+_FILLER = {"mobile", "smartphone", "phone", "phones", "cellphone", "tablet", "laptop", "notebook", "console", "gaming",
+           "new", "the", "a", "an", "official", "warranty", "international", "version", "middle", "east", "global",
+           "tax", "paid", "years", "year", "yr", "and", "by", "facetime", "ai", "face", "id", "edition", "model", "sim",
+           "dual", "single", "esim", "nano", "only", "device", "unlocked", "sealed", "original", "genuine", "brand",
+           "inch", "inches", "display", "screen", "wireless", "wired", "bluetooth", "headphones", "headphone", "earbuds",
+           "earphones", "headset", "tws", "anc", "in", "ear", "open", "over", "on", "true", "stereo", "wi", "fi", "lte",
+           "dual", "band", "cellular", "black", "white", "blue",
+           "red", "green", "pink", "purple", "grey", "gray", "silver", "gold", "golden", "yellow", "orange", "brown",
+           "beige", "cream", "ivory", "navy", "teal", "cyan", "violet", "lilac", "lavender", "mint", "olive", "graphite",
+           "titanium", "midnight", "starlight", "ultramarine", "coral", "rose", "sand", "sky", "ocean", "forest",
+           "charcoal", "platinum", "bronze", "copper", "space", "natural", "desert", "cosmic", "awesome", "phantom",
+           "mystic", "lunar", "stellar", "shadow", "mist", "aqua", "sage", "lemon", "peach", "denim", "marble", "icyblue",
+           "iceblue", "lightblue", "darkblue", "skyblue", "lightgreen", "darkgreen", "cypress", "jade", "ruby", "plum",
+           "burgundy", "glacier", "obsidian", "pistachio", "blueberry", "mocha", "latte", "amber", "emerald", "sapphire",
+           "onyx", "pearl", "slate", "steel", "crystal", "frost", "snow", "ice", "dawn", "dusk", "sunset", "sunrise",
+           "colour", "color", "colors", "colours", "matte", "glossy", "transparent", "clear"}
+_UNITS_AFTER = {"gb", "tb", "mb", "mah", "w", "watt", "watts", "hz", "mm", "cm", "m", "l", "liter", "liters", "litre",
+                "litres", "ltr", "kg", "g", "in", "inch", "inches", "hp", "k", "fps", "ms", "nit", "nits", "btu", "cups",
+                "cup", "pieces", "pcs", "burner", "burners", "feet", "ft", "speed", "speeds", "door", "doors", "slice",
+                "slices", "place", "persons", "person", "programs", "in1", "x", "core", "cores", "th", "st", "nd", "rd",
+                "gen", "generation", "years", "year", "v", "a", "amp", "bar", "rpm", "db", "kw", "mp", "horsepower", "ton",
+                "tons", "tier", "tiers", "stage", "stages", "level", "levels", "mode", "modes", "function", "functions",
+                "piece", "seater", "seats", "sets", "set", "pack", "packs", "channel", "channels", "zone", "zones",
+                "drawer", "drawers", "shelf", "shelves", "bottle", "bottles", "kcal", "ml", "oz", "lb", "lbs", "qt", "horse",
+                "horses", "hours", "hour", "h", "hr", "hrs", "minutes", "min", "days", "months", "degrees", "degree"}
+_LINE_STOP = re.compile(r"^(?:\d+(?:\.\d+)?(?:gb|tb|mb|mah|w|hz|mm|cm|l|kg|g|in|inch|hp|k|fps|ms|nits?)\w*|\d{2,3}(?:\.\d)?\"|"
+                        r"[45]g|lte|wifi|wi-fi|cellular|ram|rom|ssd|hdd|storage|memory|core|cpu|gpu|intel|amd|ryzen|"
+                        r"snapdragon|dimensity|helio|exynos|tensor|mediatek|unisoc|camera|battery|charger|case|cover|"
+                        r"price|offer|deal|free|gift|bundle|with|for|incl|includes|including|plus\+|\+)$", re.I)
+_RAM = re.compile(r"(\d+)\s*GB\s*(?:RAM|Ram|ram|memory|DDR\d\w*)", re.I)
+_NET = re.compile(r"\b([45])G\b", re.I)
+_CPU = re.compile(r"\b(?:i[3579][\s-]?\d{4,5}[A-Z]{0,3}|ultra\s?[5-9]\s?-?\d{3}[A-Z]{0,2}|ryzen\s?(?:ai\s?)?[3579]\s?-?\d{3,4}[A-Z]{0,3}|"
+                  r"m[1-5](?:\s?(?:pro|max|ultra))?\b(?=.*(?:mac|ipad|imac))|snapdragon\s?\w+|dimensity\s?\d+\w*|helio\s?\w+)", re.I)
+_BUNDLE_WORD = re.compile(r"\bbundle\b|\+\s*(?!(?:e?sim|5g|4g|lte|facetime|warranty|tax|decker|esim)\b)[A-Za-z]{3,}"
+                          r"|\bwith\b[^,(|]{0,25}\b(?:games?|controllers?|headsets?|gift|keyboard|stylus|pen)\b"
+                          r"|\b[2-9]\s+controllers\b|\bextra\s+\w*\s*controller", re.I)
+_GPU = re.compile(r"\b(?:RTX|GTX|RX|ARC|MX)\s?-?\s?(\d{3,4})\s?(TI|XT|S)?\b", re.I)
+
+
+def read_line(title: str) -> tuple[list[tuple[int, str]], dict[str, str]]:
+    """The product line words (with their word index, so the brand's words can be dropped later) and
+    the variant attributes: 'Samsung Galaxy A16, 128GB, 4GB RAM, 4G - Grey' ->
+    ([(0,'samsung'), (1,'galaxy'), (2,'a16')], {'storage': '128GB', 'ram': '4GB', 'net': '4G'})."""
+    t = title.translate(_DASHES)
+    head = re.split(r"\s[-|/]\s|[,()\[\]|/:;]|\s[-–]\s*|\s{2,}", t, maxsplit=1)[0]  # up to the first separator
+    words, line, named = re.findall(r"[A-Za-z0-9+]+", head), [], False
+    for i, w in enumerate(words):
+        lw, nxt = w.lower(), words[i + 1].lower() if i + 1 < len(words) else ""
+        if _LINE_STOP.match(lw) or is_code(norm_code(w)) and len(w) >= 5 or len(line) >= 5 or lw in _UNITS_AFTER:
+            break
+        if lw.isdigit() and (nxt in _UNITS_AFTER or nxt.isdigit() or len(lw) >= 4):
+            break  # '6 liter', '1.5 hp' (split as 1, 5), a year
+        if lw in _FILLER:
+            continue
+        # the line is a name when a word mixes letters and digits ('a16', 'x9d', 's11') or a short
+        # number follows a word ('iphone 16', 'momentum 4'); digits from specs don't count
+        if lw.isdigit() and line or any(c.isdigit() for c in lw) and any(c.isalpha() for c in lw):
+            named = True
+        line.append((i, lw.replace("+", "plus")))
+    if not named:
+        line = []
+    attrs = {}
+    caps = [(float(n), u.upper()) for n, u in _CAPACITY.findall(t)]
+    gbs = sorted({int(n * (1024 if u == "TB" else 1)) for n, u in caps})
+    ram = _RAM.search(t)
+    if ram:
+        attrs["ram"] = f"{ram.group(1)}GB"
+        gbs = [g for g in gbs if g != int(ram.group(1))]
+    if gbs and gbs[-1] >= 32:
+        attrs["storage"] = f"{gbs[-1] // 1024}TB" if gbs[-1] >= 1024 else f"{gbs[-1]}GB"
+        if "ram" not in attrs and len(gbs) > 1 and gbs[0] <= 64:
+            attrs["ram"] = f"{gbs[0]}GB"
+    if net := _NET.search(t):
+        attrs["net"] = net.group(1) + "G"
+    if cpu := _CPU.search(t):
+        attrs["cpu"] = re.sub(r"[\s-]", "", cpu.group(0)).upper()
+    if gpu := _GPU.search(t):
+        attrs["gpu"] = re.sub(r"[\s-]", "", gpu.group(0)).upper()
+    if _BUNDLE_WORD.search(t):
+        attrs["bundle"] = "1"
+    return line, attrs
 
 
 @dataclass(slots=True)
@@ -202,11 +325,11 @@ class TitleCodes:
     before: dict[str, str] = field(default_factory=dict)  # short code -> the word just before it ('TUNE')
 
 
-@lru_cache(maxsize=200_000)
+@lru_cache(maxsize=20_000)
 def read_title(title: str) -> TitleCodes:
     """Model codes in a title (needs no brand or database). Cached (noon lists one item under many
     sellers with the same title), so the result is shared: don't change it."""
-    t = title.translate(_DASHES)
+    t = _join_spaced(title.translate(_DASHES))
     cut, accessory = len(t), False
     if fits := _FITS.search(t):
         # the accessory is named in the first words ("Ear Pads Cushions for"), or right before a
@@ -241,168 +364,367 @@ def read_title(title: str) -> TitleCodes:
                  - (10 if bundle and m.start() > bundle.start() else 0))
         scored.append((score, -m.start(), code))
     own = [c for _, _, c in sorted(scored, reverse=True)]
+    for m in _NUMBERED.finditer(t):  # "Model 20605": a plain number is a code when the title says so
+        if m.start() < cut and m.group(1) not in own:
+            own.append(m.group(1))
     caps = sorted({f"{float(n):g}{u.upper()}" for n, u in _CAPACITY.findall(t)},
                   key=lambda c: (c[-2:], float(c[:-2])))
-    # A TV series code ("Samsung U8000H") covers every screen size; a full code ("UA43U8000H") names one.
-    if own and (size := _SCREEN.search(t)) and int(size.group(1)) >= 32 and size.group(1) not in own[0]:
+    # A TV series code ("Samsung U8000H") covers every screen size, so the size is part of the model;
+    # a full code ("UA43U8000H") already names it (dropped at assignment when the chosen code has it).
+    if own and (size := _SCREEN.search(t)) and int(size.group(1)) >= 32:
         caps.append(f"{size.group(1)}IN")
     return TitleCodes(own, mentions, accessory and not own, bool(_USED.search(t)), "+".join(caps), before)
 
 
 # --- the rebuild -------------------------------------------------------------------------------
+#
+# Built to stay small on the 1 GB droplet however many products there are: codes are read from a
+# title once (product_codes, incremental), every count over the whole catalogue is a SQL GROUP BY,
+# the per-product and per-model decisions stream through temporary tables in product or model order,
+# and the result is diffed against the stored tables in SQL. Python holds only the small global
+# lookups (spec words, shared codes, series words, which brand owns a code).
 
-@dataclass(slots=True)
-class _Product:
-    id: int
-    site: str
-    price: int | None
-    fresh: bool
-    brand: str | None
-    brand_from: str  # 'title', 'shop', or 'model' (taken from the model's other listings)
-    codes: TitleCodes
-    code: str | None = None
-    model: str | None = None
-    status: str = "no_code"
-    note: str = ""
+CHUNK = 2000  # rows per write transaction: the coordinator's uploads wait at most this long
 
 
-@dataclass
-class Result:
-    products: dict[int, tuple] = field(default_factory=dict)  # product_id -> product_models columns
-    models: dict[str, tuple] = field(default_factory=dict)  # model -> models columns
+def _hash(title: str, brand: str | None, seller: str | None) -> int:
+    return zlib.crc32(f"{title}\0{brand or ''}\0{seller or ''}".encode())
 
 
-def build(rows, now: datetime, brand_sites: list[tuple[str, str]] | None = None) -> Result:
-    """Every product's model, or why it has none. Pure: product rows in, table rows out.
+def _chunked(conn: sqlite3.Connection, sql: str, rows) -> int:
+    """executemany in short transactions; returns the row count."""
+    n, batch = 0, []
+    for row in rows:
+        batch.append(row)
+        if len(batch) >= CHUNK:
+            with conn:
+                conn.executemany(sql, batch)
+            n, batch = n + len(batch), []
+    if batch:
+        with conn:
+            conn.executemany(sql, batch)
+    return n + len(batch)
 
-    `rows` are (id, site, title, brand, seller, price, last_seen_at), read once (a cursor will do
-    when `brand_sites`, the distinct (brand, site) pairs, is given; otherwise they come from `rows`).
-    """
+
+def extract(conn: sqlite3.Connection) -> int:
+    """Read the codes of every product whose title, brand or seller changed (or that is new, or
+    was read with older rules) into product_codes / product_code_index. Returns how many."""
+    conn.create_function("title_hash", 3, _hash, deterministic=True)
+    todo = [r[0] for r in conn.execute(  # ids only: 300k titles would be 100 MB
+        """SELECT p.id FROM products p LEFT JOIN product_codes pc ON pc.product_id = p.id
+           WHERE pc.product_id IS NULL OR pc.version != ?
+              OR pc.title_hash != title_hash(p.title, p.brand, p.seller)""", (VERSION,))]
+    n = 0
+    for i in range(0, len(todo), CHUNK):
+        ids = todo[i:i + CHUNK]
+        codes, index = [], []
+        for pid, title, brand, seller in conn.execute(
+                f"SELECT id, title, brand, seller FROM products WHERE id IN ({','.join('?' * len(ids))})", ids):
+            t = read_title(title)
+            shop_brand = norm_brand(brand)
+            if shop_brand and shop_brand == norm_brand(seller):
+                shop_brand = None  # the seller's own name, not the maker's
+            line, attrs = read_line(title)
+            codes.append((pid, _hash(title, brand, seller), VERSION, "|".join(f"{k}:{b}" for k, b in title_heads(title)),
+                          shop_brand, " ".join(t.own), " ".join(t.mentions),
+                          " ".join(f"{c}={w}" for c, w in t.before.items()), t.capacity, int(t.used), int(t.accessory),
+                          " ".join(f"{i}:{w}" for i, w in line), " ".join(f"{k}={v}" for k, v in sorted(attrs.items()))))
+            index += [(pid, c, rank) for rank, c in enumerate(t.own)]
+        with conn:
+            conn.executemany("DELETE FROM product_code_index WHERE product_id = ?", [(c[0],) for c in codes])
+            conn.executemany("INSERT OR REPLACE INTO product_codes VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", codes)
+            conn.executemany("INSERT OR REPLACE INTO product_code_index VALUES (?, ?, ?)", index)
+        n += len(codes)
+    return n
+
+
+def _fold(brands: Counter) -> dict[str, str]:
+    """Each brand spelling -> the group's canonical (shortest) spelling."""
+    groups = brand_groups(brands)
+    return {b: next(g for g in groups if same_brand(g, b)) for b in brands}
+
+
+def _group(conn: sqlite3.Connection, now: datetime) -> None:
+    """From product_codes to the temp tables new_pm / new_m (the next product_models / models)."""
     fresh_after = iso(now - FRESH)
-    if brand_sites is None:
-        rows = list(rows)
-        brand_sites = {(r[3], r[1]) for r in rows}
     shops_of = defaultdict(set)
-    for brand, site in brand_sites:
+    for brand, site in conn.execute("SELECT DISTINCT brand, site FROM products WHERE brand IS NOT NULL"):
         if b := norm_brand(brand):
             shops_of[b].add(site)
     known = {b for b, sites in shops_of.items() if len(sites) >= 2}  # brands 2+ shops use
+    conn.executescript("""
+        CREATE TEMP TABLE pb (product_id INTEGER PRIMARY KEY, brand TEXT, brand_from TEXT, words INTEGER);
+        CREATE TEMP TABLE lines (product_id INTEGER PRIMARY KEY, brand TEXT NOT NULL, line TEXT NOT NULL, attrs TEXT NOT NULL,
+                                 site TEXT, price INTEGER, fresh INTEGER, codes TEXT);
+        CREATE INDEX lines_block ON lines (brand, line);
+        CREATE TEMP TABLE pick (product_id INTEGER PRIMARY KEY, code TEXT, word TEXT NOT NULL, status TEXT, note TEXT);
+        CREATE TEMP TABLE assign (product_id INTEGER PRIMARY KEY, model TEXT, status TEXT NOT NULL, brand TEXT,
+                                  brand_from TEXT, codes TEXT, note TEXT, site TEXT, price INTEGER, fresh INTEGER,
+                                  kind TEXT NOT NULL DEFAULT 'mpn');
+        CREATE INDEX assign_model ON assign (model);
+        CREATE TEMP TABLE new_pm (product_id INTEGER PRIMARY KEY, model TEXT, status TEXT NOT NULL, brand TEXT,
+                                  brand_from TEXT, codes TEXT, note TEXT);
+        CREATE TEMP TABLE new_m (model TEXT PRIMARY KEY, kind TEXT, code TEXT, capacity TEXT, brand TEXT, status TEXT,
+                                 products INTEGER, sites INTEGER, site_list TEXT, low INTEGER, median INTEGER,
+                                 high INTEGER, note TEXT);
+    """)
 
-    products = []
-    for pid, site, title, brand, seller, price, last_seen in rows:
-        shop_brand = norm_brand(brand)
-        if shop_brand and shop_brand == norm_brand(seller):
-            shop_brand = None  # the seller's own name, not the maker's
-        # A known brand the title starts with beats the brand field, which sellers sometimes
-        # fill with their shop's name ("Lap-Tech" on a Dell monitor).
-        title_brand = guess_brand(title, known)
-        brand, src = (title_brand, "title") if title_brand else (shop_brand, "shop") if shop_brand else (None, "")
-        products.append(_Product(pid, site, price, last_seen >= fresh_after, brand, src, read_title(title)))
+    # 1. Each product's brand: a known brand the title starts with beats the shop's brand field,
+    #    which sellers sometimes fill with their own name ("Lap-Tech" on a Dell monitor).
+    def brands():
+        for pid, heads, shop_brand in conn.execute("SELECT product_id, heads, shop_brand FROM product_codes"):
+            found = next(((int(k), b) for k, b in (h.split(":", 1) for h in heads.split("|") if h) if b in known), None)
+            if found:
+                yield pid, found[1], "title", found[0]
+            else:
+                yield pid, shop_brand, "shop" if shop_brand else None, 0
+    _chunked(conn, "INSERT INTO pb VALUES (?, ?, ?, ?)", brands())
 
-    # Spec words, learned: a code that many brands use is not a model ("1355U", "DCIP3"); nor is a
-    # brand's name ("V2COM" is the brand V2Com).
-    code_brands: dict[str, Counter] = defaultdict(Counter)
-    code_sites: dict[str, set] = defaultdict(set)
-    for p in products:
-        for c in p.codes.own:
-            code_sites[c].add(p.site)
-            if p.brand:
-                code_brands[c][p.brand] += 1
+    # 2. Spec words, learned: a code that many brands use is not a model ("1355U", "DCIP3").
     spec = {}
-    for c, counts in code_brands.items():
-        groups = brand_groups(counts)
-        if len(groups) >= SPEC_BRANDS and groups.most_common(1)[0][1] < DOMINANT * sum(groups.values()):
-            spec[c] = f"used by {len(groups)} brands: " + ", ".join(b for b, _ in groups.most_common(4))
+    pairs = conn.execute("""SELECT i.code, pb.brand, COUNT(*) FROM product_code_index i JOIN pb USING (product_id)
+                            WHERE pb.brand IS NOT NULL GROUP BY i.code, pb.brand ORDER BY i.code""")
+    for code, rows in groupby(pairs, key=lambda r: r[0]):
+        counts = Counter({b: n for _, b, n in rows})
+        if len(counts) >= SPEC_BRANDS:
+            groups = brand_groups(counts)
+            if len(groups) >= SPEC_BRANDS and groups.most_common(1)[0][1] < DOMINANT * sum(groups.values()):
+                spec[code] = f"used by {len(groups)} brands: " + ", ".join(b for b, _ in groups.most_common(4))
+    shared = {r[0] for r in conn.execute(
+        """SELECT i.code FROM product_code_index i JOIN products p ON p.id = i.product_id
+           GROUP BY i.code HAVING COUNT(DISTINCT p.site) >= 2""")}
 
-    # Each product's code: its best one that is not a spec word, preferring a code another shop
-    # also has (title order alone can't tell a laptop's code from the mouse bundled with it).
-    for p in products:
-        if p.codes.used:
-            p.status, p.note = "used", "renewed / refurbished / used listing"
-        elif p.codes.accessory:
-            p.status, p.note = "accessory", "accessory for " + (" ".join(p.codes.mentions[:3]) or "another product")
-        elif candidates := [c for c in p.codes.own if c not in spec and c.lower() not in shops_of]:
-            p.code = next((c for c in candidates if code_sites[c] - {p.site}), candidates[0])
-        elif p.codes.own:
-            p.note = "only spec words: " + " ".join(p.codes.own[:3])
-        elif p.codes.mentions:
-            p.note = "bundle with " + " ".join(p.codes.mentions[:3])
+    # 3. Each product's code: its best one that is not a spec word or a brand's name ("V2COM" is the
+    #    brand V2Com), preferring a code another shop also has (title order alone can't tell a
+    #    laptop's code from the mouse bundled with it); and the word before a short code.
+    def picks():
+        for pid, own, mentions, before, used, accessory, brand in conn.execute(
+                """SELECT pc.product_id, pc.own, pc.mentions, pc.before, pc.used, pc.accessory, pb.brand
+                   FROM product_codes pc JOIN pb USING (product_id)"""):
+            own, mentions = own.split(), mentions.split()
+            if used:
+                yield pid, None, "", "used", "renewed / refurbished / used listing"
+            elif accessory:
+                yield pid, None, "", "accessory", "accessory for " + (" ".join(mentions[:3]) or "another product")
+            elif candidates := [c for c in own if c not in spec and c.lower() not in shops_of]:
+                code = next((c for c in candidates if c in shared), candidates[0])
+                word = dict(kv.split("=", 1) for kv in before.split()).get(code, "") if _WEAK.match(code) else ""
+                if word and (b := norm_brand(word)) and brand and same_brand(b, brand):
+                    word = ""  # "JBL 520BT": the brand, not a series
+                yield pid, code, word, None, None
+            elif own:
+                yield pid, None, "", "no_code", "only spec words: " + " ".join(own[:3])
+            elif mentions:
+                yield pid, None, "", "no_code", "bundle with " + " ".join(mentions[:3])
+            else:
+                yield pid, None, "", "no_code", None
+    _chunked(conn, "INSERT INTO pick VALUES (?, ?, ?, ?, ?)", picks())
 
-    # A short code two series share ("JBL Tune 660NC", "JBL Live 660NC") keeps the series word. A series
-    # word is one brand's and comes before several of its codes (Tune, Live, LOQ); words many brands
-    # put there ("Model", "Receiver") are not. A listing that doesn't say which series is left out.
-    def series_word(p: _Product) -> str:
-        w = p.codes.before.get(p.code, "")
-        return "" if not w or (b := norm_brand(w)) and p.brand and same_brand(b, p.brand) else w
+    # 4. Series: a short code two series share ("JBL Tune 660NC", "JBL Live 660NC") keeps the series
+    #    word. A series word is one brand's and comes before several of its codes (Tune, Live, LOQ);
+    #    words many brands put there ("Model", "Receiver") are not.
     word_codes, word_brands = defaultdict(set), defaultdict(Counter)
-    for p in products:
-        if p.code and _WEAK.match(p.code) and (w := series_word(p)):
-            word_codes[w].add(p.code)
-            word_brands[w][p.brand] += bool(p.brand)
-    series_words = {w for w, codes in word_codes.items()
-                    if len(codes) >= 2 and len(brand_groups(+word_brands[w])) == 1}
+    for code, word, brand, n in conn.execute(
+            """SELECT pick.code, pick.word, pb.brand, COUNT(*) FROM pick JOIN pb USING (product_id)
+               WHERE pick.word != '' GROUP BY pick.code, pick.word, pb.brand"""):
+        word_codes[word].add(code)
+        if brand:
+            word_brands[word][brand] += n
+    series_words = {w for w, codes in word_codes.items() if len(codes) >= 2 and len(brand_groups(word_brands[w])) == 1}
     series = defaultdict(set)
-    for p in products:
-        if p.code and (w := series_word(p)) in series_words:
-            series[p.code].add(w)
-    for p in products:
-        if not p.code:
-            continue
-        code = p.code
-        if len(words := series.get(code, set())) > 1:
-            if series_word(p) not in words:
-                p.note = f"{code} is used by several series ({', '.join(sorted(words))}); the title doesn't say which"
+    for word in series_words:
+        for code in word_codes[word]:
+            series[code].add(word)
+
+    # 5. Brand-scoped keys (brand + model code, the identifier Google Shopping asks for when there is
+    #    no barcode): the same code from two makers stays two models. Spellings of one brand on a code
+    #    fold together; a listing with no brand joins the one brand that has its code, or is left out
+    #    as ambiguous when several do.
+    canon: dict[str, dict[str, str]] = {}  # code -> spelling -> canonical, for codes with 2+ spellings
+    owner: dict[str, str | None] = {}  # code -> the one brand that has it (None: several), for unbranded listings
+    rows = conn.execute("""SELECT pick.code, pb.brand, COUNT(*) FROM pick JOIN pb USING (product_id)
+                           WHERE pick.code IS NOT NULL AND pb.brand IS NOT NULL
+                           GROUP BY pick.code, pb.brand ORDER BY pick.code""")
+    unbranded = {r[0] for r in conn.execute(
+        "SELECT DISTINCT pick.code FROM pick JOIN pb USING (product_id) WHERE pick.code IS NOT NULL AND pb.brand IS NULL")}
+    for code, group in groupby(rows, key=lambda r: r[0]):
+        counts = Counter({b: n for _, b, n in group})
+        folded = _fold(counts) if len(counts) > 1 else {}
+        if folded:
+            canon[code] = folded
+        if code in unbranded:
+            owners = set(folded.values()) if folded else set(counts)
+            owner[code] = next(iter(owners)) if len(owners) == 1 else None
+
+    def assignments():
+        for pid, code, word, status, note, brand, brand_from, capacity, codes, site, price, fresh in conn.execute(
+                """SELECT pick.product_id, pick.code, pick.word, pick.status, pick.note, pb.brand, pb.brand_from,
+                          pc.capacity, pc.own, p.site, p.price, p.last_seen_at >= ?
+                   FROM pick JOIN pb USING (product_id) JOIN product_codes pc USING (product_id)
+                   JOIN products p ON p.id = pick.product_id""", (fresh_after,)):
+            codes = codes or None
+            if status:
+                yield pid, None, status, brand, brand_from, codes, note, site, price, fresh
                 continue
-            code = series_word(p) + code
-        p.model = f"{code} {p.codes.capacity}" if p.codes.capacity else code
-        p.status = "model"
+            if len(words := series.get(code, ())) > 1:
+                if word not in words:
+                    yield (pid, None, "no_code", brand, brand_from, codes,
+                           f"{code} is used by several series ({', '.join(sorted(words))}); the title doesn't say which",
+                           site, price, fresh)
+                    continue
+                code = word + code
+            if capacity.endswith("IN") and capacity.rsplit("+", 1)[-1][:-2] in code:
+                capacity = capacity.rsplit("+", 1)[0] if "+" in capacity else ""  # 'UA43U8000H' holds the 43
+            if brand:
+                brand = canon.get(code, {}).get(brand, brand)
+            elif len(code) == 4:
+                yield (pid, None, "no_code", None, None, codes, f"{code} is too short a code to trust without a brand",
+                       site, price, fresh)
+                continue
+            elif code in owner:
+                if owner[code] is None:
+                    yield (pid, None, "ambiguous_brand", None, None, codes,
+                           f"{code} is sold by several brands and the title names none", site, price, fresh)
+                    continue
+                brand, brand_from = owner[code], "model"
+            model = f"{brand or '-'} {code}" + (f" {capacity}" if capacity else "")
+            yield pid, model, "model", brand, brand_from, codes, None, site, price, fresh
+    _chunked(conn, "INSERT INTO assign VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'mpn')", assignments())
+    _lines(conn, fresh_after)
 
-    # Brand and price checks within each model.
-    members: dict[str, list[_Product]] = defaultdict(list)
-    for p in products:
-        if p.model:
-            members[p.model].append(p)
-    models = {}
-    for key, ps in members.items():
-        brands = brand_groups(Counter(p.brand for p in ps if p.brand))
-        brand, status, note = None, "ok", ""
-        if brands:
-            brand, n = brands.most_common(1)[0]
-            if len(brands) > 1 and n < DOMINANT * sum(brands.values()):
-                status = "conflict"
-                note = "brands disagree: " + ", ".join(f"{b} ({k})" for b, k in brands.most_common(4))
-            for p in ps:
-                if not p.brand:
-                    p.brand, p.brand_from = brand, "model"
-                elif status == "ok" and not same_brand(p.brand, brand):
-                    p.status, p.note = "brand_conflict", f"brand {p.brand}, the model's is {brand}"
-        priced = [p for p in ps if p.status == "model" and p.fresh and p.price]
-        if len(priced) >= 3:
-            median = statistics.median(p.price for p in priced)
-            for p in priced:
-                if not OUTLIER_LOW * median <= p.price <= OUTLIER_HIGH * median:
-                    p.status, p.note = "price_outlier", f"{p.price / median:.1f}x the model's median price"
-        kept = sorted(p.price for p in ps if p.status == "model" and p.fresh and p.price)
-        if status == "ok" and len(kept) >= 2 and kept[-1] > OUTLIER_HIGH * kept[0]:
-            status, note = "conflict", f"prices {kept[0] // 100:,}-{kept[-1] // 100:,} EGP can't be one product"
-        listed = [p for p in ps if p.status == "model"]
-        sites = sorted({p.site for p in listed})
-        code, _, capacity = key.partition(" ")
-        models[key] = (code, capacity or None, brand, status, len(listed), len(sites), ",".join(sites),
-                       kept[0] if kept else None, int(statistics.median(kept)) if kept else None,
-                       kept[-1] if kept else None, note or None)
-    for c, why in spec.items():
-        models.setdefault(c, (c, None, None, "spec", 0, 0, "", None, None, None, why))
+    # 7. Price checks per model (its listings come in model order): a listing far from the model's
+    #    median price is left out (a 100,000 EGP placeholder, a case at 300 EGP); a model whose
+    #    prices can't be one product is 'conflict'.
+    def finish():
+        rows = conn.execute("""SELECT product_id, model, status, brand, brand_from, codes, note, site, price, fresh, kind
+                               FROM assign ORDER BY model, product_id""")
+        for model, group in groupby(rows, key=lambda r: r[1]):
+            members = [list(r) for r in group]
+            if model is None:
+                for m in members:
+                    yield "pm", tuple(m[:7])
+                continue
+            priced = [m for m in members if m[9] and m[8]]
+            if len(priced) >= 3:
+                median = statistics.median(m[8] for m in priced)
+                for m in priced:
+                    if not OUTLIER_LOW * median <= m[8] <= OUTLIER_HIGH * median:
+                        m[2], m[6] = "price_outlier", f"{m[8] / median:.1f}x the model's median price"
+            kept = sorted(m[8] for m in members if m[2] == "model" and m[9] and m[8])
+            status, note = "ok", None
+            if len(kept) >= 2 and kept[-1] > OUTLIER_HIGH * kept[0]:
+                status, note = "conflict", f"prices {kept[0] // 100:,}-{kept[-1] // 100:,} EGP can't be one product"
+            listed = [m for m in members if m[2] == "model"]
+            sites = sorted({m[7] for m in listed})
+            brand, code, capacity = (model.split(" ", 2) + [None])[:3]
+            yield "m", (model, members[0][10], code, capacity, None if brand == "-" else brand, status, len(listed), len(sites),
+                        ",".join(sites), kept[0] if kept else None, int(statistics.median(kept)) if kept else None,
+                        kept[-1] if kept else None, note)
+            for m in members:
+                yield "pm", tuple(m[:7])
+    pm_rows, m_rows = [], []
+    for kind, row in finish():
+        (pm_rows if kind == "pm" else m_rows).append(row)
+        if len(pm_rows) >= CHUNK:
+            _chunked(conn, "INSERT INTO new_pm VALUES (?, ?, ?, ?, ?, ?, ?)", pm_rows)
+            pm_rows = []
+        if len(m_rows) >= CHUNK:
+            _chunked(conn, "INSERT INTO new_m VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", m_rows)
+            m_rows = []
+    _chunked(conn, "INSERT INTO new_pm VALUES (?, ?, ?, ?, ?, ?, ?)", pm_rows)
+    _chunked(conn, "INSERT INTO new_m VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             m_rows + [(c, "mpn", c, None, None, "spec", 0, 0, "", None, None, None, why) for c, why in spec.items()])
 
-    return Result(
-        products={p.id: (p.model, p.status, p.brand, p.brand_from or None, " ".join(p.codes.own[:6]) or None,
-                         p.note or None) for p in products},
-        models=models)
+
+_SUB_BRANDS = {"xiaomi": ("xiaomi", "redmi", "poco", "mi"), "huawei": ("huawei",), "samsung": ("samsung",),
+               "apple": ("apple",), "sony": ("sony",), "anker": ("anker", "soundcore"),
+               "oppo": ("oppo",), "realme": ("realme",), "vivo": ("vivo", "iqoo"), "lenovo": ("lenovo", "motorola", "moto")}
+
+
+def _lines(conn: sqlite3.Connection, fresh_after: str) -> None:
+    """6. The second identity, for listings with no usable code: brand + product line + variant
+    attributes ("apple iphone16 128GB", "samsung galaxytabs11 128GB 12GB 5G"). The line must have a
+    digit. Listings of one (brand, line) are one block: a listing that omits an attribute joins the
+    one fuller variant consistent with it, or is left out as ambiguous when several are."""
+    def rows():
+        for pid, brand, words, line, attrs, codes, site, price, fresh in conn.execute(
+                """SELECT pc.product_id, pb.brand, pb.words, pc.line, pc.attrs, pc.own, p.site, p.price, p.last_seen_at >= ?
+                   FROM assign a JOIN product_codes pc USING (product_id) JOIN pb USING (product_id)
+                   JOIN products p ON p.id = a.product_id
+                   WHERE a.status = 'no_code' AND pb.brand IS NOT NULL AND pc.line != ''""", (fresh_after,)):
+            toks = [(int(i), w) for i, w in (x.split(":", 1) for x in line.split())]
+            toks = [w for i, w in toks if i >= words]  # drop the brand's own words
+            subs = _SUB_BRANDS.get(brand, (brand,))
+            while toks and (toks[0] in subs or norm_brand(toks[0]) and brand.startswith(norm_brand(toks[0]))):
+                toks = toks[1:]
+            key = "".join(toks)
+            if not any(ch.isdigit() for ch in key) or len(key) < 3:
+                continue
+            a = dict(kv.split("=", 1) for kv in attrs.split())
+            if brand == "apple":
+                a.pop("ram", None)  # Apple never states it; shops guess it wrong
+            if a.pop("bundle", None):
+                bundles.append((pid, None, "bundle", brand, None, codes or None,
+                                "a bundle (console + game, phone + earbuds): its price is not the product's", site, price, fresh))
+                continue
+            yield pid, brand, key, " ".join(f"{k}={v}" for k, v in sorted(a.items())), site, price, fresh, codes or None
+    bundles: list[tuple] = []
+    _chunked(conn, "INSERT INTO lines VALUES (?, ?, ?, ?, ?, ?, ?, ?)", rows())
+    _chunked(conn, "INSERT OR REPLACE INTO assign VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'line')", bundles)
+
+    def compatible(a: dict, b: dict) -> bool:
+        return all(b.get(k, v) == v for k, v in a.items())
+
+    def assignments():
+        block_rows = conn.execute("SELECT * FROM lines ORDER BY brand, line, product_id")
+        for (brand, line), group in groupby(block_rows, key=lambda r: (r[1], r[2])):
+            members = [(r[0], dict(kv.split("=", 1) for kv in r[3].split()), r[4], r[5], r[6], r[7]) for r in group]
+            keys = {tuple(sorted(a.items())) for _, a, *_ in members}
+            # the fullest variants: keys no other compatible key adds to
+            maximal = sorted(k for k in keys if not any(len(o) > len(k) and compatible(dict(k), dict(o)) for o in keys))
+            for pid, a, site, price, fresh, codes in members:
+                fits = [k for k in maximal if compatible(a, dict(k))]
+                if len(fits) > 1:
+                    yield (pid, None, "ambiguous_variant", brand, None, codes,
+                           f"{line}: several variants fit ({'; '.join(' '.join(v for _, v in k) or 'base' for k in fits[:3])})",
+                           site, price, fresh)
+                    continue
+                full = dict(fits[0]) if fits else a
+                model = f"{brand} {line}" + "".join(f" {full[k]}" for k in ("storage", "ram", "net", "cpu", "gpu") if k in full)
+                yield pid, model, "model", brand, None, codes, None, site, price, fresh
+    _chunked(conn, "INSERT OR REPLACE INTO assign VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'line')", assignments())
+
+
+def _write(conn: sqlite3.Connection, now: datetime) -> int:
+    """product_models / models := new_pm / new_m, touching only rows that differ. Returns the row count."""
+    now_s, before = iso(now), conn.total_changes
+    last = conn.execute("SELECT MAX(rowid) FROM new_pm").fetchone()[0] or 0
+    for lo in range(1, last + 1, 10 * CHUNK):
+        with conn:
+            conn.execute(
+                """INSERT OR REPLACE INTO product_models
+                   SELECT n.product_id, n.model, n.status, n.brand, n.brand_from, n.codes, n.note, ?, ?
+                   FROM new_pm n LEFT JOIN product_models o USING (product_id)
+                   WHERE n.rowid BETWEEN ? AND ? AND (o.product_id IS NULL OR o.model IS NOT n.model
+                      OR o.status IS NOT n.status OR o.brand IS NOT n.brand OR o.brand_from IS NOT n.brand_from
+                      OR o.codes IS NOT n.codes OR o.note IS NOT n.note)""", (VERSION, now_s, lo, lo + 10 * CHUNK - 1))
+    with conn:
+        conn.execute("DELETE FROM product_models WHERE product_id NOT IN (SELECT product_id FROM new_pm)")
+        conn.execute(
+            """INSERT OR REPLACE INTO models
+               SELECT n.*, ?, ? FROM new_m n LEFT JOIN models o USING (model)
+               WHERE o.model IS NULL OR o.kind IS NOT n.kind OR o.status IS NOT n.status OR o.brand IS NOT n.brand
+                  OR o.products IS NOT n.products OR o.sites IS NOT n.sites OR o.site_list IS NOT n.site_list
+                  OR o.low IS NOT n.low OR o.median IS NOT n.median OR o.high IS NOT n.high OR o.note IS NOT n.note""",
+            (VERSION, now_s))
+        conn.execute("DELETE FROM models WHERE model NOT IN (SELECT model FROM new_m)")
+    return conn.total_changes - before
 
 
 @dataclass
 class Summary:
     products: int
+    extracted: int  # titles read this pass (new, changed, or read with older rules)
     in_model: int  # products in a model
     cross_shop: int  # ... whose model ('ok') is on 2+ shops
     models: int
@@ -411,54 +733,75 @@ class Summary:
 
 
 def rebuild(conn: sqlite3.Connection, now: datetime) -> Summary:
-    """Recompute every product's model and write only what changed (in short transactions)."""
+    """Read new titles, recompute every product's model, write what changed."""
     started = time.monotonic()
-    # Plain tuples, streamed: this runs on the 1 GB droplet next to the coordinator.
-    read = conn.cursor()
-    read.row_factory = None
-    result = build(read.execute("SELECT id, site, title, brand, seller, price, last_seen_at FROM products"), now,
-                   conn.execute("SELECT DISTINCT brand, site FROM products WHERE brand IS NOT NULL").fetchall())
-    # Only a hash of each stored row, to tell what changed.
-    old_p = {r[0]: hash(tuple(r[1:])) for r in read.execute(
-        "SELECT product_id, model, status, brand, brand_from, codes, note FROM product_models")}
-    old_m = {r[0]: hash(tuple(r[1:])) for r in read.execute(
-        "SELECT model, code, capacity, brand, status, products, sites, site_list, low, median, high, note FROM models")}
-    now_s = iso(now)
-    writes = [
-        ("""INSERT OR REPLACE INTO product_models (product_id, model, status, brand, brand_from, codes, note,
-                                                   version, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-         [(k, *v, VERSION, now_s) for k, v in result.products.items() if old_p.get(k) != hash(v)]),
-        ("DELETE FROM product_models WHERE product_id = ?", [(k,) for k in old_p.keys() - result.products.keys()]),
-        ("""INSERT OR REPLACE INTO models (model, code, capacity, brand, status, products, sites, site_list, low,
-                                           median, high, note, version, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-         [(k, *v, VERSION, now_s) for k, v in result.models.items() if old_m.get(k) != hash(v)]),
-        ("DELETE FROM models WHERE model = ?", [(k,) for k in old_m.keys() - result.models.keys()]),
-    ]
-    for sql, items in writes:
-        for i in range(0, len(items), BATCH):
-            with conn:
-                conn.executemany(sql, items[i:i + BATCH])
-    cross = {k for k, m in result.models.items() if m[3] == "ok" and m[5] >= 2}
-    return Summary(
-        products=len(result.products),
-        in_model=sum(1 for v in result.products.values() if v[1] == "model"),
-        cross_shop=sum(1 for v in result.products.values() if v[1] == "model" and v[0] in cross),
-        models=sum(1 for m in result.models.values() if m[3] != "spec"),
-        changed=sum(len(items) for _, items in writes),
-        seconds=round(time.monotonic() - started, 2))
+    extracted = extract(conn)
+    _group(conn, now)
+    changed = _write(conn, now)
+    conn.executescript("DROP TABLE pb; DROP TABLE pick; DROP TABLE lines; DROP TABLE assign; DROP TABLE new_pm; DROP TABLE new_m")
+    n = conn.execute(
+        """SELECT COUNT(*), SUM(pm.status = 'model'), SUM(pm.status = 'model' AND m.status = 'ok' AND m.sites >= 2),
+                  (SELECT COUNT(*) FROM models WHERE status != 'spec')
+           FROM product_models pm LEFT JOIN models m USING (model)""").fetchone()
+    return Summary(n[0], extracted, n[1] or 0, n[2] or 0, n[3], changed, round(time.monotonic() - started, 2))
+
+
+@dataclass
+class Result:
+    products: dict[int, tuple]  # product_id -> (model, status, brand, brand_from, codes, note)
+    models: dict[str, tuple]  # model -> (code, capacity, brand, status, products, sites, site_list, low, median, high, note)
+
+
+def build(rows, now: datetime) -> Result:
+    """The matching of a list of (id, site, title, brand, seller, price, last_seen_at) rows, in
+    memory, through the same pipeline as the server (for tests and experiments)."""
+    conn = sqlite3.connect(":memory:")
+    conn.execute("PRAGMA foreign_keys = ON")
+    db._migrate(conn)
+    conn.executemany(
+        """INSERT INTO products (id, site, title, brand, seller, price, last_seen_at, sku, url, currency, in_stock,
+                                 first_seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', 'EGP', 1, ?)""",
+        [(*r, f"sku{r[0]}", r[6]) for r in rows])
+    rebuild(conn, now)
+    return Result(
+        products={r[0]: tuple(r[1:]) for r in conn.execute(
+            "SELECT product_id, model, status, brand, brand_from, codes, note FROM product_models")},
+        models={r[0]: tuple(r[1:]) for r in conn.execute(
+            "SELECT model, code, capacity, brand, status, products, sites, site_list, low, median, high, note FROM models")})
 
 
 def rebuild_in_process(db_path: Path, timeout: float = 1800) -> Summary:
     """`rebuild` in a separate process at the lowest CPU priority, as the coordinator runs it:
-    crawl uploads always get the CPU first (a full pass is ~16 s of CPU on the 1-CPU droplet), the
-    ~140 MB it needs is returned when it exits, a crash in it can't touch the coordinator, and if
-    the service's memory limit is reached the kernel kills it rather than the coordinator."""
+    crawl uploads always get the CPU first, the memory it needs is returned when it exits, a crash
+    in it can't touch the coordinator, and if the service's memory limit is reached the kernel
+    kills it rather than the coordinator."""
     run = subprocess.run([sys.executable, "-m", "deals.matching", str(db_path)],
                          capture_output=True, text=True, timeout=timeout)
     if run.returncode:
         raise RuntimeError(f"matching exited with {run.returncode}: {run.stderr.strip()[-800:]}")
     return Summary(**json.loads(run.stdout.strip().splitlines()[-1]))
+
+
+OTHER_SHOPS_FRESH = timedelta(hours=24)
+
+
+def other_shops(conn: sqlite3.Connection, product_id: int, now: datetime) -> list[sqlite3.Row]:
+    """The same product's cheapest in-stock listing on each *other* shop, seen in the last day, for
+    the end of an alert: (site, price, url, seller, last_seen_at), cheapest shop first. Empty when the
+    product is not in an 'ok' model. Read-only, and only called after the alert decision is made."""
+    me = conn.execute(
+        """SELECT pm.model, p.site FROM product_models pm JOIN products p ON p.id = pm.product_id
+           JOIN models m ON m.model = pm.model
+           WHERE pm.product_id = ? AND pm.status = 'model' AND m.status = 'ok'""", (product_id,)).fetchone()
+    if me is None:
+        return []
+    return conn.execute(
+        """SELECT p.site, MIN(p.price) AS price, p.url, p.seller, MAX(p.last_seen_at) AS last_seen_at
+           FROM product_models pm JOIN products p ON p.id = pm.product_id
+           WHERE pm.model = ? AND pm.status = 'model' AND p.site != ? AND p.in_stock = 1
+                 AND p.price IS NOT NULL AND p.last_seen_at >= ?
+           GROUP BY p.site ORDER BY price""",
+        (me["model"], me["site"], iso(now - OTHER_SHOPS_FRESH))).fetchall()
 
 
 def same_model(conn: sqlite3.Connection, product_id: int) -> dict | None:

@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 
 from curl_cffi import requests
 
-from deals import db
+from deals import db, matching
 from deals.config import Config
 from deals.db import iso, parse_iso, utcnow
 from deals.pricing import LOW_STOCK_EVERYWHERE, Deal, Point, PriceStats, ProductView, compute_stats, evaluate
@@ -82,14 +82,44 @@ def check_product(conn: sqlite3.Connection, cfg: Config, product_id: int, *, boo
     confirm = iso(now + timedelta(minutes=hold)) if wait else None
     past = conn.execute("SELECT COUNT(*) FROM alerts WHERE product_id = ? AND (error IS NULL OR error NOT LIKE 'cancelled%')",
                         (product_id,)).fetchone()[0]
+    message = format_deal(p, stats, deal, group, other_offer=other, past_alerts=past)
+    # Only text: the other shops' prices for the same product are appended after everything above
+    # has decided the alert. The lookup is read-only and any failure in it is logged and ignored.
+    if cfg.alerts.show_other_shops:
+        try:
+            message = append_other_shops(message, p, deal.price, matching.other_shops(conn, product_id, now), now)
+        except Exception:
+            log.exception("other shops' prices for %s", p["sku"])
     conn.execute(
         """INSERT INTO alerts (product_id, kind, price, reference_price, drop_pct, score, message,
                                created_at, next_attempt_at, confirm_until)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (product_id, deal.kind, deal.price, deal.reference, deal.drop, deal.score,
-         format_deal(p, stats, deal, group, other_offer=other, past_alerts=past), iso(now), iso(now), confirm),
+        (product_id, deal.kind, deal.price, deal.reference, deal.drop, deal.score, message, iso(now), iso(now), confirm),
     )
     return deal
+
+
+def append_other_shops(message: str, p: sqlite3.Row, price: int, others: list, now: datetime) -> str:
+    """Add the same product's price on each other shop (cheapest first) before the footer line, with
+    a verdict: cheapest everywhere, or which shop is cheaper and by how much."""
+    if not others:
+        return message
+    lines = ["🏪 <b>نفس المنتج في محلات تانية</b> (مطابقة بالموديل)"]
+    for o in others:
+        age = (now - parse_iso(o["last_seen_at"])).total_seconds() / 3600
+        seen = "الآن" if age < 1 else f"منذ {age:.0f} س"
+        diff = o["price"] - price
+        tag = "" if diff == 0 else f" ({'+' if diff > 0 else '−'}{abs(diff) / 100:,.0f})"
+        lines.append(f"• <a href=\"{html.escape(o['url'])}\">{SITE_NAME.get(o['site'], o['site'])}</a>: "
+                     f"{_egp(o['price'])}{tag} · {seen}")
+    cheapest = others[0]
+    if cheapest["price"] < price:
+        lines.append(f"👉 أرخص عند {SITE_NAME.get(cheapest['site'], cheapest['site'])} بفارق "
+                     f"{(price - cheapest['price']) / 100:,.0f} جنيه ({(price - cheapest['price']) / price:.0%})")
+    else:
+        lines.append("✅ ده أرخص سعر بين المحلات اللي بنتابعها")
+    body, _, footer = message.rpartition("\n\n🔖 ")
+    return body + "\n\n" + "\n".join(lines) + "\n\n🔖 " + footer
 
 
 def _recently_alerted(conn, cfg: Config, product_id: int, price: int, now: datetime) -> bool:

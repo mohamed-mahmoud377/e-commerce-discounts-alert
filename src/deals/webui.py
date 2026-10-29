@@ -853,12 +853,13 @@ async function productPage(id) {
 function sameModel(sm, p) {
   if (!sm) return '';
   const m = sm.model, why = {no_code: 'no model code found in the title', used: 'a renewed / used listing', accessory: 'an accessory',
-    brand_conflict: 'its brand differs from the model', price_outlier: 'its price is far from the other listings'};
-  if (!m || !sm.others.length) return `<section class='card' style='padding:12px 18px'><span class='sub'>Same product at other shops: ${m ? `model <b>${esc(m.model)}</b> is only listed here` : 'not matched, ' + esc(why[sm.me.status] || sm.me.status)}${sm.me.note ? ' (' + esc(sm.me.note) + ')' : ''}.</span></section>`;
-  const head = `model <b>${esc(m.model)}</b>${m.brand ? ' · ' + esc(m.brand) : ''} · ${m.sites} shop${m.sites === 1 ? '' : 's'}`
+    ambiguous_brand: 'several brands use its code and the title names none', ambiguous_variant: 'several variants of this line fit it (storage, RAM...)',
+    bundle: 'a bundle (console + game, phone + earbuds), priced as a set', price_outlier: 'its price is far from the other listings'};
+  if (!m || !sm.others.length) return `<section class='card' style='padding:12px 18px'><span class='sub'>Same product at other shops: ${m ? `model <b>${esc(m.code)}</b> is only listed here` : 'not matched, ' + esc(why[sm.me.status] || sm.me.status)}${sm.me.note ? ' (' + esc(sm.me.note) + ')' : ''}.</span></section>`;
+  const head = `${m.brand ? esc(m.brand) + ' ' : ''}<b>${esc(m.code)}</b>${m.capacity ? ' ' + esc(m.capacity) : ''} · ${m.sites} shop${m.sites === 1 ? '' : 's'}`
     + (sm.me.status !== 'model' ? ` · this listing is left out: ${esc(why[sm.me.status] || sm.me.status)}` : '')
     + (m.status !== 'ok' ? ` · <span class='up'>${esc(m.status)}: ${esc(m.note || '')}</span>` : '');
-  return `<section class='card' style='overflow:hidden'><div class='cardhead'><h2>Same product at other shops</h2><span class='sub'>${head}; matched by the model code in the titles</span></div><div class='scroll'><table>
+  return `<section class='card' style='overflow:hidden'><div class='cardhead'><h2>Same product at other shops</h2><span class='sub'>${head}; matched by ${m.kind === 'line' ? 'brand, product line and variant (storage, RAM, network...)' : 'brand and the model code in the titles'}</span></div><div class='scroll'><table>
     <tr><th>Shop</th><th>Listing</th><th class='r'>Price</th><th>Stock</th><th class='r'>vs this</th><th class='r'>Seen</th></tr>
     ${sm.others.map(o => `<tr class='click' onclick='openProduct(${o.id})'><td class='nw'>${esc(shop(o.site))}</td>
       <td>${esc(o.title)}${o.seller ? `<div class='sub'>${esc(o.seller)}</div>` : ''}${o.status !== 'model' ? ' ' + pill('idle', 'left out: ' + (o.note || o.status)) : ''}</td>
@@ -1141,9 +1142,9 @@ QUERIES: dict[str, dict] = {
                         g AS (SELECT model, COUNT(DISTINCT site) AS shops, MIN(price) AS lo, MAX(price) AS hi
                               FROM l GROUP BY model HAVING shops >= 2),
                         c AS (SELECT l.*, ROW_NUMBER() OVER (PARTITION BY model ORDER BY price, product_id) AS rn FROM l)
-                   SELECT g.model, g.shops, c.product_id, c.title, c.site, c.grp, c.url, c.seller,
+                   SELECT g.model, m.kind, g.shops, c.product_id, c.title, c.site, c.grp, c.url, c.seller,
                           g.lo AS lowest, g.hi AS highest, ROUND(100.0 * (g.hi - g.lo) / g.hi, 1) AS spread_pct
-                   FROM g JOIN c ON c.model = g.model AND c.rn = 1
+                   FROM g JOIN c ON c.model = g.model AND c.rn = 1 JOIN models m ON m.model = g.model
                    ORDER BY spread_pct DESC LIMIT 300""",
         "cutoff_days": 1,
     },
@@ -1151,7 +1152,7 @@ QUERIES: dict[str, dict] = {
         "title": "Matches to check by eye",
         "about": "Every listing of the models found on 2+ shops, one model after another in a fixed shuffled order: read "
                  "the titles of each model and see whether they really are one product.",
-        "sql": f"""SELECT pm.model, {_PRODUCT}, p.price AS now, p.in_stock
+        "sql": f"""SELECT pm.model, m.kind, {_PRODUCT}, p.price AS now, p.in_stock
                    FROM models m JOIN product_models pm ON pm.model = m.model AND pm.status = 'model'
                    JOIN products p ON p.id = pm.product_id
                    WHERE m.status = 'ok' AND m.sites >= 2 AND ? IS NOT NULL
@@ -1159,20 +1160,23 @@ QUERIES: dict[str, dict] = {
     },
     "match_left_out": {
         "title": "Matching: listings left out",
-        "about": "Listings that share a model code but were kept out of the model (brand or price disagrees), and models "
-                 "whose listings can't be one product ('conflict'). Shows what the safety rules caught.",
+        "about": "Listings kept out by a safety rule: no brand while several brands use the code, several variants of a line "
+                 "fit (storage or RAM missing), a bundle, or a price far from the others; and models whose prices can't be "
+                 "one product ('conflict').",
         "sql": f"""SELECT CASE WHEN m.status = 'conflict' THEN 'model conflict' ELSE pm.status END AS why,
                           COALESCE(pm.note, m.note) AS note, pm.model, {_PRODUCT}, p.price AS now
                    FROM product_models pm JOIN products p ON p.id = pm.product_id
                    LEFT JOIN models m ON m.model = pm.model
-                   WHERE (pm.status IN ('brand_conflict', 'price_outlier') OR m.status = 'conflict') AND ? IS NOT NULL
+                   WHERE (pm.status IN ('ambiguous_brand', 'ambiguous_variant', 'bundle', 'price_outlier') OR m.status = 'conflict') AND ? IS NOT NULL
                    ORDER BY why, pm.model, p.price LIMIT 300""",
     },
     "match_coverage": {
         "title": "Matching coverage per shop",
-        "about": "Per shop: listings seen in the last 3 days, how many have a model code, and how many of those are matched "
-                 "to the same product on another shop. The rest have no code in the title (most phones), or are used, or accessories.",
+        "about": "Per shop: listings seen in the last 3 days, how many are in a model (by model code, or by brand + product "
+                 "line + variant), and how many of those are matched to the same product on another shop. The rest have "
+                 "neither a code nor a named line in the title, or are used, accessories or bundles.",
         "sql": """SELECT p.site, COUNT(*) AS listings, SUM(pm.status = 'model') AS with_model,
+                         SUM(pm.status = 'model' AND m.kind = 'line') AS by_line,
                          SUM(pm.status = 'model' AND m.status = 'ok' AND m.sites >= 2) AS on_other_shops,
                          ROUND(100.0 * SUM(pm.status = 'model' AND m.status = 'ok' AND m.sites >= 2) / COUNT(*), 1) AS matched_pct,
                          SUM(pm.status = 'used') AS used, SUM(pm.status = 'accessory') AS accessories,

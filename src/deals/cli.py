@@ -225,13 +225,14 @@ def cmd_models(args) -> None:
     q = lambda sql, *a: conn.execute(sql, a).fetchall()  # noqa: E731
     if args.rebuild:
         s = matching.rebuild(conn, utcnow())
-        print(f"rebuilt in {s.seconds}s: {s.in_model:,} of {s.products:,} products in a model, "
-              f"{s.cross_shop:,} on 2+ shops; {s.models:,} models; {s.changed:,} rows changed")
+        print(f"rebuilt in {s.seconds}s: {s.extracted:,} titles read; {s.in_model:,} of {s.products:,} products in a "
+              f"model, {s.cross_shop:,} on 2+ shops; {s.models:,} models; {s.changed:,} rows changed")
 
     def show(model: str) -> None:
         m = q("SELECT * FROM models WHERE model = ?", model)[0]
         price = f"EGP {m['low'] / 100:,.0f}-{m['high'] / 100:,.0f}" if m["low"] else "no fresh price"
-        print(f"\n{m['model']}  ({m['brand'] or 'brand ?'}, {m['sites']} shops, {m['products']} listings, {price})"
+        print(f"\n{m['model']}  (by {'model code' if m['kind'] == 'mpn' else 'product line + variant'}; "
+              f"{m['sites']} shops, {m['products']} listings, {price})"
               f"{'  ' + m['status'].upper() + ': ' + m['note'] if m['status'] != 'ok' else ''}")
         for r in q("""SELECT p.site, p.sku, p.price, p.in_stock, p.title, pm.status, pm.note FROM product_models pm
                       JOIN products p ON p.id = pm.product_id WHERE pm.model = ?
@@ -259,12 +260,12 @@ def cmd_models(args) -> None:
             show(r[0])
         return
 
-    print(f"{'shop':<14} {'listings':>9} {'with model':>11} {'on 2+ shops':>12}   (seen in the last 3 days)")
-    for r in q("""SELECT p.site, COUNT(*) n, SUM(pm.status = 'model') model,
+    print(f"{'shop':<14} {'listings':>9} {'in a model':>11} {'by line':>8} {'on 2+ shops':>12}   (seen in the last 3 days)")
+    for r in q("""SELECT p.site, COUNT(*) n, SUM(pm.status = 'model') model, SUM(pm.status = 'model' AND m.kind = 'line') line,
                          SUM(pm.status = 'model' AND m.status = 'ok' AND m.sites >= 2) cross_shop
                   FROM products p JOIN product_models pm ON pm.product_id = p.id LEFT JOIN models m ON m.model = pm.model
                   WHERE p.last_seen_at >= ? GROUP BY p.site ORDER BY p.site""", iso(utcnow() - timedelta(days=3))):
-        print(f"{r['site']:<14} {r['n']:>9,} {r['model'] / r['n']:>10.0%} {r['cross_shop'] / r['n']:>11.0%}")
+        print(f"{r['site']:<14} {r['n']:>9,} {r['model'] / r['n']:>10.0%} {r['line'] / r['n']:>7.0%} {r['cross_shop'] / r['n']:>11.0%}")
     print("\nlistings by status: " + ", ".join(f"{r[0]} {r[1]:,}" for r in q(
         "SELECT status, COUNT(*) FROM product_models GROUP BY status ORDER BY COUNT(*) DESC")))
     print("models by status:   " + ", ".join(f"{r[0]} {r[1]:,} ({r[2]:,} on 2+ shops)" for r in q(
