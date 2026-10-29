@@ -5,7 +5,7 @@ concepts and algorithms; this document maps them onto the code.
 
 ## Code map
 
-The whole system is about 3,400 lines of Python in `src/deals/`, plus the tests in `tests/`. Each module
+The whole system is about 5,500 lines of Python in `src/deals/`, plus the tests in `tests/`. Each module
 owns one job.
 
 | Module | Lines | Owns | Calls |
@@ -27,10 +27,11 @@ owns one job.
 | `pricing.py` | 222 | Price statistics and the deal rules; pure functions, no database | config, models |
 | `alerts.py` | 279 | Judging a changed product, writing alerts, formatting the Arabic message, the Telegram client and the delivery loop | db, pricing |
 | `bot.py` | 292 | The Telegram conversation: /start, /stop, approvals, subscribers; `decide()` is shared with the web UI | alerts, db |
-| `health.py` | 200 | Health checks and the daily report | db, alerts |
+| `health.py` | 207 | Health checks and the daily report | db, alerts |
+| `matching.py` | 470 | The same product on different shops: model codes read from titles, the hourly rebuild of `models` / `product_models` (in a `nice 19` subprocess), `same_model()` for the views. See [MATCHING.md](MATCHING.md) | db |
 | `monitor.py` | 166 | Device states, events (logs), the dashboard page | db, scheduler |
 | `webui.py` | 1182 | The web UI page (one HTML + CSS + JS string, light and dark themes) and its queries | health, monitor, alerts |
-| `coordinator.py` | 545 | The FastAPI app (all endpoints) and the watchdog thread | everything above |
+| `coordinator.py` | 570 | The FastAPI app (all endpoints) and the watchdog thread (which also starts the hourly matching) | everything above |
 | `worker.py` | 271 | The crawling loop on each device, retries, log shipping | sites, planner, HTTP to the coordinator |
 | `cli.py` | 445 | The `deals` command: every subcommand | everything |
 
@@ -128,6 +129,7 @@ many have run, and `db.connect()` runs the missing ones in a transaction on star
 | 7 | `worker_sites`, `events` |
 | 8 | `alerts.confirm_until` (low-confidence alerts held until the price is seen again) |
 | 9 | `subscribers.is_manager` (helper admins) |
+| 10 | `models`, `product_models` (cross-shop matching; written only by `matching.rebuild`) |
 
 **Tables and columns** (prices are integer piastres; times are UTC ISO text, which sorts correctly as text):
 
@@ -144,6 +146,8 @@ many have run, and `db.connect()` runs the missing ones in a transaction on star
 | `subscribers` | `chat_id` | `name`, `username`, `status` (`pending`, `active`, `rejected`, `removed`, `stopped`, `blocked`), `is_admin` (the owner), `is_manager` (helper admin: also gets system alerts and the daily report), `approved_at` |
 | `events` | `id`; indexes on time and source | `at`, `source`, `level`, `message`; pruned after 7 days |
 | `kv` | `key` | `telegram_offset` (last Telegram update handled) |
+| `models` | `model`; index `(status, sites)` | One product across shops: `code`, `capacity`, `brand`, `status` (`ok`, `conflict`, `spec`), `products`, `sites`, `site_list`, `low`/`median`/`high`, `note`, `version`, `updated_at`. Rebuilt hourly from `products` ([MATCHING.md](MATCHING.md)) |
+| `product_models` | `product_id` (cascade delete); index `(model)` | `model`, `status` (`model`, `no_code`, `accessory`, `used`, `brand_conflict`, `price_outlier`), `brand`, `brand_from`, `codes`, `note`, `version`, `updated_at` |
 
 **Adding a migration:** append a new SQL string to `MIGRATIONS` (never edit an old one), use
 `ALTER TABLE ... ADD COLUMN` or new tables, rehearse it on a copy (`make db`, then `db.connect()` on a copy

@@ -24,7 +24,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
-from deals import alerts, bot, db, health, monitor, scheduler, webui
+from deals import alerts, bot, db, health, matching, monitor, scheduler, webui
 from deals.config import Config
 from deals.db import iso, utcnow
 from deals.models import Listing, Slice
@@ -484,11 +484,15 @@ def _site(name: str) -> str:
 
 class Watchdog(threading.Thread):
     """Notices problems nobody reports (stalled sites, silent workers, low disk), sends the
-    admin's daily report, and does daily maintenance (compressed backup, planner stats)."""
+    admin's daily report, does daily maintenance (compressed backup, planner stats), and
+    matches products across shops every hour."""
+
+    MATCH_EVERY = timedelta(hours=1)
 
     def __init__(self, cfg: Config, stop: threading.Event, interval: float = 60):
         super().__init__(name="watchdog", daemon=True)
         self.cfg, self.stop_event, self.interval = cfg, stop, interval
+        self.next_match: datetime | None = None  # first run on the first round after a start
 
     def run(self) -> None:
         conn = db.connect(self.cfg.db_path)
@@ -497,6 +501,19 @@ class Watchdog(threading.Thread):
                 self.check(conn, utcnow())
             except Exception:
                 log.exception("watchdog check failed")
+            try:  # on its own: a matching bug must not stop the checks above
+                self.match(conn, utcnow())
+            except Exception:
+                log.exception("product matching failed")
+
+    def match(self, conn: sqlite3.Connection, now: datetime) -> None:
+        """Recompute which listings are the same product (matching.py), in a low-priority process."""
+        if self.next_match is not None and now < self.next_match:
+            return
+        self.next_match = now + self.MATCH_EVERY
+        s = matching.rebuild_in_process(self.cfg.db_path)
+        log.info("matching: %d of %d products in a model, %d of them on 2+ shops; %d rows changed in %.1fs",
+                 s.in_model, s.products, s.cross_shop, s.changed, s.seconds)
 
     def check(self, conn: sqlite3.Connection, now: datetime) -> None:
         with conn:

@@ -4,7 +4,7 @@ from datetime import timedelta
 import pytest
 from fastapi.testclient import TestClient
 
-from deals import db
+from deals import db, matching
 from deals.coordinator import create_app
 from deals.db import utcnow
 from deals.models import Listing
@@ -81,13 +81,25 @@ def test_product_page_data_and_filters(client):
     client.post("/ui/login", data={"token": "admin-secret"}, follow_redirects=False)
     pid = client.get("/api/products?q=samsung").json()["products"][0]["id"]
     d = client.get(f"/api/products/{pid}").json()
-    assert set(d) == {"product", "stats", "history", "alerts", "other_sellers"}
+    assert set(d) == {"product", "stats", "history", "alerts", "other_sellers", "same_model"}
     assert "share_at_or_below" in d["stats"] and "drop_vs_typical" in d["stats"] and len(d["history"]) == 1
     r = client.get("/api/products?limit=0").json()
     assert r["products"] == [] and r["groups"] == ["TVs"]
     assert client.get("/api/products?grp=TVs&sort=cheap&in_stock=1").json()["products"][0]["id"] == pid
     assert client.get("/api/products?grp=Phones").json()["products"] == []
     assert client.get("/api/products?q=samsung&sort=bogus").status_code == 200  # unknown sort falls back
+    assert d["same_model"] is None  # not matched yet: the hourly rebuild has not run
+    conn = client.app.state.conn
+    with conn:
+        db.record(conn, Listing("amazon_eg", "TV2", "Samsung 55 inch TV UA55DU7000", "https://x/TV2", 2_000_000, None,
+                                "EGP", True), grp="TVs", now=utcnow())
+        db.record(conn, Listing("noon_eg", "TV3@s", "55 inch Crystal UHD TV UA55DU7000", "https://x/TV3", 1_900_000,
+                                None, "EGP", True), grp="TVs", now=utcnow())
+    matching.rebuild(conn, utcnow())
+    tv2 = client.get("/api/products?q=UA55DU7000&sort=dear").json()["products"][0]["id"]
+    same = client.get(f"/api/products/{tv2}").json()["same_model"]
+    assert same["model"]["model"] == "UA55DU7000" and [o["site"] for o in same["others"]] == ["noon_eg"]
+    assert client.get(f"/api/products/{pid}").json()["same_model"]["me"]["status"] == "no_code"
 
 
 def test_products_are_paged_with_a_total(client):

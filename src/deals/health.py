@@ -42,8 +42,12 @@ def run_checks(conn: sqlite3.Connection, cfg: Config, now: datetime) -> list[Che
     counts = one("SELECT (SELECT COUNT(*) FROM products) p, (SELECT COUNT(*) FROM price_history) h")
     if quick != "ok":
         add(Check("database", FAIL, f"integrity problem: {quick}", "مشكلة في سلامة قاعدة البيانات"))
-    elif version != db.schema_version():
+    elif version < db.schema_version():
         add(Check("database", FAIL, f"schema v{version}, code expects v{db.schema_version()}", "إصدار قاعدة البيانات لا يطابق الكود"))
+    elif version > db.schema_version():  # older code on a newer database (a rollback): it still works
+        add(Check("database", WARN, f"schema v{version} is newer than this code (v{db.schema_version()}): "
+                                    f"rolled back? Fine to run; deploy the newer code to clear this",
+                  "قاعدة البيانات أحدث من الكود (رجوع لإصدار سابق؟)"))
     else:
         add(Check("database", OK, f"intact, schema v{version}, {size_mb:.0f} MB, "
                                   f"{counts['p']:,} products, {counts['h']:,} price points"))

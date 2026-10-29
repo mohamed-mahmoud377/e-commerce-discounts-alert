@@ -78,3 +78,13 @@ FROM products WHERE title LIKE '%samsung%55%' ORDER BY price;
 
 -- 13. Sites currently blocking an IP
 SELECT site, ip, strikes, until, reason FROM blocks ORDER BY until DESC;
+
+-- 14. The same product on every shop (change the model code; see docs/MATCHING.md)
+SELECT p.site, ROUND(p.price / 100.0) AS price_egp, p.in_stock, pm.status, pm.note, p.last_seen_at, p.title, p.url
+FROM product_models pm JOIN products p ON p.id = pm.product_id
+WHERE pm.model = 'AHXP12BME' ORDER BY pm.status != 'model', p.price;
+
+-- 15. Products on 3+ shops with the widest price spread right now
+SELECT model, brand, sites, site_list, ROUND(low / 100.0) AS low_egp, ROUND(high / 100.0) AS high_egp,
+       ROUND(100.0 * (high - low) / high) AS spread_pct
+FROM models WHERE status = 'ok' AND sites >= 3 ORDER BY spread_pct DESC LIMIT 100;

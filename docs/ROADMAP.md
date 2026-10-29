@@ -24,7 +24,10 @@ Ordered by value for effort. "Why" says what problem each one solves.
    percentile rule: alert only if the price is below the 5th percentile of its 90-day time-weighted
    distribution **and** ≥ X% below typical. A flat 30% then works for stable products, while volatile
    ones need a real outlier.
-6. **Cross-site matching** (high value). Match the same model on Amazon and noon (brand + model
+6. **Cross-site matching** (high value). *Matching done 29 Oct 2026* ([MATCHING.md](MATCHING.md)): model
+   codes from titles group 23,700 listings into 5,000 products found on 2+ shops; shown in the web UI and
+   `make models`, not used by alerts yet. Next: the "cheaper elsewhere" section in alerts, then phones
+   (no code in their titles). Originally: match the same model on Amazon and noon (brand + model
    number from titles, e.g. `UA55CU7000`, `MQ5235`). Then:
    - "cheapest across both sites" alerts,
    - a real reference price for **new listings** (the other site's typical price), which is better than the

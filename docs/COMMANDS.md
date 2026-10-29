@@ -72,6 +72,7 @@ On the server (`make ssh` first):
 | Ready-made queries | open `docs/queries.sql` in IntelliJ, cursor in a query, Cmd+Enter |
 | One product's history | `make ssh`, then `runuser -u deals -- /opt/deals/.venv/bin/deals product amazon_eg B0CYZK7PVC --config /etc/deals/config.toml` |
 | Biggest price moves | `make movers` |
+| Same product on other shops (matching coverage) | `make models`; one model: `make models FIND=AH-XP12BME` (or title words); random ones to check: `make models SAMPLE=10`; in the web UI: a product's page, or Queries → Matching |
 | Recent alerts | `make alerts` |
 | Backup now | `make ssh`, then `runuser -u deals -- /opt/deals/.venv/bin/deals backup --config /etc/deals/config.toml` |
 

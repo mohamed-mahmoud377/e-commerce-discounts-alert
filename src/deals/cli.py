@@ -9,7 +9,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from deals import config as config_mod
-from deals import db, planner
+from deals import db, matching, planner
 from deals.alerts import Telegram, product_stats
 from deals.db import iso, parse_iso, utcnow
 from deals.models import Slice
@@ -216,6 +216,61 @@ def cmd_product(args) -> None:
     for h in hist[-args.limit:]:
         flag = "" if h["in_stock"] else "  (out of stock)"
         print(f"  {h['observed_at'][:16]}  {_egp(h['price']):>12}{flag}")
+
+
+def cmd_models(args) -> None:
+    """Products matched across shops by model code (matching.py): coverage, one model, or a sample to check."""
+    cfg = _config(args)
+    conn = db.connect(cfg.db_path)
+    q = lambda sql, *a: conn.execute(sql, a).fetchall()  # noqa: E731
+    if args.rebuild:
+        s = matching.rebuild(conn, utcnow())
+        print(f"rebuilt in {s.seconds}s: {s.in_model:,} of {s.products:,} products in a model, "
+              f"{s.cross_shop:,} on 2+ shops; {s.models:,} models; {s.changed:,} rows changed")
+
+    def show(model: str) -> None:
+        m = q("SELECT * FROM models WHERE model = ?", model)[0]
+        price = f"EGP {m['low'] / 100:,.0f}-{m['high'] / 100:,.0f}" if m["low"] else "no fresh price"
+        print(f"\n{m['model']}  ({m['brand'] or 'brand ?'}, {m['sites']} shops, {m['products']} listings, {price})"
+              f"{'  ' + m['status'].upper() + ': ' + m['note'] if m['status'] != 'ok' else ''}")
+        for r in q("""SELECT p.site, p.sku, p.price, p.in_stock, p.title, pm.status, pm.note FROM product_models pm
+                      JOIN products p ON p.id = pm.product_id WHERE pm.model = ?
+                      ORDER BY pm.status != 'model', p.site, p.price""", model):
+            flag = "" if r["status"] == "model" else f"  [left out: {r['note']}]"
+            print(f"  {r['site']:<14} {_egp(r['price']):>12} {'' if r['in_stock'] else 'sold out':<8} {r['title'][:90]}{flag}")
+
+    if args.find:
+        code = matching.norm_code(args.find.replace(" ", ""))
+        found = [r[0] for r in q("SELECT model FROM models WHERE status != 'spec' AND (code = ? OR model LIKE ?) "
+                                  "ORDER BY sites DESC LIMIT 20", code, f"%{code}%")]
+        if not found:  # by title words: the models of the products that match
+            words = args.find.split()
+            found = [r[0] for r in q(
+                "SELECT DISTINCT pm.model FROM products p JOIN product_models pm ON pm.product_id = p.id "
+                "WHERE pm.model IS NOT NULL AND " + " AND ".join("p.title LIKE ?" for _ in words) + " LIMIT 20",
+                *[f"%{w}%" for w in words])]
+        for model in found:
+            show(model)
+        if not found:
+            print(f"no model for {args.find!r}")
+        return
+    if args.sample:
+        for r in q("SELECT model FROM models WHERE status = 'ok' AND sites >= 2 ORDER BY random() LIMIT ?", args.sample):
+            show(r[0])
+        return
+
+    print(f"{'shop':<14} {'listings':>9} {'with model':>11} {'on 2+ shops':>12}   (seen in the last 3 days)")
+    for r in q("""SELECT p.site, COUNT(*) n, SUM(pm.status = 'model') model,
+                         SUM(pm.status = 'model' AND m.status = 'ok' AND m.sites >= 2) cross_shop
+                  FROM products p JOIN product_models pm ON pm.product_id = p.id LEFT JOIN models m ON m.model = pm.model
+                  WHERE p.last_seen_at >= ? GROUP BY p.site ORDER BY p.site""", iso(utcnow() - timedelta(days=3))):
+        print(f"{r['site']:<14} {r['n']:>9,} {r['model'] / r['n']:>10.0%} {r['cross_shop'] / r['n']:>11.0%}")
+    print("\nlistings by status: " + ", ".join(f"{r[0]} {r[1]:,}" for r in q(
+        "SELECT status, COUNT(*) FROM product_models GROUP BY status ORDER BY COUNT(*) DESC")))
+    print("models by status:   " + ", ".join(f"{r[0]} {r[1]:,} ({r[2]:,} on 2+ shops)" for r in q(
+        "SELECT status, COUNT(*), SUM(sites >= 2) FROM models GROUP BY status ORDER BY COUNT(*) DESC")))
+    last = q("SELECT MAX(updated_at) FROM product_models")[0][0]
+    print(f"last change {_ago(last)}; `deals models --sample 10` to check matches by eye, `deals models <code>` for one")
 
 
 # --- setup helpers ------------------------------------------------------------------
@@ -430,6 +485,10 @@ def main() -> None:
     p.add_argument("--group", help="only this watch group, e.g. TVs")
     p.add_argument("--min-price", type=int, default=0, help="EGP")
     p.add_argument("--limit", type=int, default=30)
+    p = add("models", cmd_models, "the same product on several shops (by model code): coverage, one model, a sample")
+    p.add_argument("find", nargs="?", help="a model code (WH-1000XM5) or title words")
+    p.add_argument("--sample", type=int, metavar="N", help="N random models on 2+ shops with all their listings")
+    p.add_argument("--rebuild", action="store_true", help="recompute the matches now (the server does it hourly)")
     p = add("product", cmd_product, "price history and stats of one product")
     p.add_argument("site", choices=sorted(SITES))
     p.add_argument("sku")

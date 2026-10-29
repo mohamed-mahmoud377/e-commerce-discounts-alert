@@ -694,6 +694,15 @@ badge, or the shop's own "lowest price" badge, then multiplied by 1.0 (high conf
 | Air fryer tracked for 2 days at 5,220, now 3,500 | 33% below and a new low: early drop (⏳), low confidence, sent at once |
 | Same air fryer at 3,977 | Only 24% below: under the 30% early-drop bar, no alert (yet) |
 
+## Algorithm 6: the same product on different shops
+
+Every hour the watchdog starts `python -m deals.matching` at the lowest CPU priority. It reads every title,
+pulls out the maker's model code (`AH-XP12BME`, `WH-1000XM5`), drops spec words, accessories, renewed
+listings and prices that can't belong to the product, and writes the result to `models` and
+`product_models`. Listings with the same code on several shops are one product. It doesn't touch crawling
+or the alert rules; the web UI's product page and `make models` show the result. The rules, why model codes
+(no shop shows a barcode) and how accurate it is on our data are in [MATCHING.md](MATCHING.md).
+
 ## Alerts and the Telegram bot
 
 **What a deal message contains**, top to bottom: the kind and the discount; the product link, brand and

@@ -2,7 +2,7 @@ HOST ?= root@207.154.206.127
 HOST_IP = $(lastword $(subst @, ,$(HOST)))
 SSH_DEALS = ssh $(HOST) runuser -u deals -- /opt/deals/.venv/bin/deals
 
-.PHONY: test deploy keep-awake allow-sleep save-logs ui ui-token ssh restart-server restart-mac-worker health devices dashboard events worker-log report telegram db sql dbweb status alerts movers logs mac-worker-env mac-worker install-mac-worker uninstall-mac-worker
+.PHONY: test deploy keep-awake allow-sleep save-logs ui ui-token ssh restart-server restart-mac-worker health devices dashboard events worker-log report telegram db sql dbweb status alerts movers models logs mac-worker-env mac-worker install-mac-worker uninstall-mac-worker
 
 test:                 ## run the test suite
 	.venv/bin/pytest -q
@@ -73,6 +73,9 @@ alerts:               ## deal alerts from the last 24h
 
 movers:               ## biggest price moves in the last 24h
 	$(SSH_DEALS) movers --config /etc/deals/config.toml --min-price 1000
+
+models:               ## the same product on several shops: coverage; FIND=AH-XP12BME (or title words), SAMPLE=10
+	$(SSH_DEALS) models --config /etc/deals/config.toml $(if $(FIND),'"$(FIND)"') $(if $(SAMPLE),--sample $(SAMPLE))
 
 logs:                 ## follow server logs
 	ssh $(HOST) journalctl -u deals-coordinator -u deals-worker -f -n 100

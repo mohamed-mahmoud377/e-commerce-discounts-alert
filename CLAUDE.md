@@ -4,6 +4,7 @@ Personal price tracker for amazon.eg, noon.com (Egypt), jumia.com.eg, cairosales
 product's price history in SQLite, and sends Arabic Telegram alerts for real discounts.
 Read [README.md](README.md), [docs/GUIDE.md](docs/GUIDE.md) (design and algorithms) and
 [docs/INTERNALS.md](docs/INTERNALS.md) (code map, schema, API) before changing behaviour;
+[docs/MATCHING.md](docs/MATCHING.md) is how the same product is found on different shops (model codes from titles);
 [docs/PRICING_RESEARCH.md](docs/PRICING_RESEARCH.md) is the research on how Amazon and noon price and on detection science
 (raw notes in `docs/research/`); [docs/MONITORING.md](docs/MONITORING.md) is the runbook and [docs/COMMANDS.md](docs/COMMANDS.md) lists every command.
 [docs/CATEGORIES.md](docs/CATEGORIES.md) holds category ids and shop quirks; [docs/JUMIA.md](docs/JUMIA.md), [docs/CAIROSALES.md](docs/CAIROSALES.md), [docs/2B.md](docs/2B.md), [docs/BTECH.md](docs/BTECH.md), [docs/DREAM2000.md](docs/DREAM2000.md) and [docs/CARREFOUR.md](docs/CARREFOUR.md) are the per-shop analyses. Keep these in step with the code, and
@@ -35,6 +36,7 @@ write down anything new you learn about the shops or the operations there (the u
 | Devices and their fetch state | `make devices` (terminal), `make dashboard` (browser), `GET /api/devices` |
 | Logs from every device + server | `make save-logs` (download all for analysis), `make events` (live, `SOURCE=mac`), `make logs` (server journal), `make worker-log` (Mac) |
 | Live numbers | `make status`, `make alerts`, `make movers`, `make logs` |
+| Same product on other shops | `make models` (`FIND=<code>`, `SAMPLE=10`); web UI product page, Queries → Matching |
 | Database | `make sql` (live, read-only), `make dbweb` (browser), `make db` (snapshot for IntelliJ) |
 | Daily report now | `make report` |
 

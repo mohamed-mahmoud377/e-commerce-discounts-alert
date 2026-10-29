@@ -222,6 +222,41 @@ MIGRATIONS = [
     -- Helper admins: chosen by the owner, they also get the system warnings and the daily report.
     ALTER TABLE subscribers ADD COLUMN is_manager INTEGER NOT NULL DEFAULT 0;
     """,
+    """
+    -- The same product on different shops, by manufacturer model code (matching.py). Both
+    -- tables are rebuilt from products by `matching.rebuild`; nothing else writes them, and
+    -- crawling and alerts don't read them. Keep this entry even if the feature is ever
+    -- reverted: a later migration must not reuse its number.
+    CREATE TABLE models (
+        model      TEXT PRIMARY KEY,  -- code, plus capacities when the title states them: 'WH1000XM5', '15IRH10 16GB+512GB'
+        code       TEXT NOT NULL,
+        capacity   TEXT,
+        brand      TEXT,              -- normalised: 'blackdecker'
+        status     TEXT NOT NULL,     -- ok | conflict (brands or prices disagree) | spec (a spec word, not a model)
+        products   INTEGER NOT NULL,  -- listings in the model (status 'model')
+        sites      INTEGER NOT NULL,
+        site_list  TEXT NOT NULL,
+        low        INTEGER,           -- price range of its listings seen in the last 14 days
+        median     INTEGER,
+        high       INTEGER,
+        note       TEXT,
+        version    INTEGER NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE INDEX models_sites ON models (status, sites);
+    CREATE TABLE product_models (
+        product_id INTEGER PRIMARY KEY REFERENCES products(id) ON DELETE CASCADE,
+        model      TEXT,              -- models.model
+        status     TEXT NOT NULL,     -- model | no_code | accessory | used | brand_conflict | price_outlier
+        brand      TEXT,
+        brand_from TEXT,              -- shop | title | model (taken from the model's other listings)
+        codes      TEXT,              -- every code-like word read from the title, best first
+        note       TEXT,              -- why it is not in a model, when it isn't
+        version    INTEGER NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE INDEX product_models_model ON product_models (model);
+    """,
 ]
 
 # Price moves smaller than this are noise (amazon.eg prices creep by a piastre per

@@ -14,7 +14,7 @@ import re
 import sqlite3
 from datetime import datetime, timedelta
 
-from deals import db, health, monitor, scheduler
+from deals import db, health, matching, monitor, scheduler
 from deals.alerts import product_stats
 from deals.config import Config
 from deals.db import iso
@@ -159,6 +159,7 @@ def product(conn: sqlite3.Connection, product_id: int, now: datetime) -> dict | 
             """SELECT id, created_at, kind, price, reference_price, drop_pct, score, error, confirm_until
                FROM alerts WHERE product_id = ? ORDER BY created_at DESC LIMIT 20""", (product_id,))],
         "other_sellers": [dict(o) for o in db.sibling_offers(conn, row["site"], row["sku"], now)],
+        "same_model": matching.same_model(conn, product_id),
     }
 
 
@@ -652,7 +653,7 @@ const views = {
     const nextFeed = {url: o => `/api/queries/${qz.name}?limit=${PAGE}&offset=${o}&total=${d.total}&` + query, row: qrow, rows: '#qrows', count: '#qcount', more: '#qmore', next: d.rows.length, total: d.total, busy: false};
     const lq = qz.listQ.trim().toLowerCase();
     const listed = qz.list.filter(x => (qz.topic === 'all' || topicOf(x.name) === qz.topic) && (!lq || x.title.toLowerCase().includes(lq) || x.name.includes(lq)));
-    const menu = ['Prices', 'Alerts', 'Crawling'].map(t => { const xs = listed.filter(x => topicOf(x.name) === t); return xs.length ? `<div class='qh'>${t}</div>` +
+    const menu = ['Prices', 'Alerts', 'Matching', 'Crawling'].map(t => { const xs = listed.filter(x => topicOf(x.name) === t); return xs.length ? `<div class='qh'>${t}</div>` +
       xs.map(x => `<button type='button' class='q ${x.name === qz.name ? 'on' : ''}' onclick="pickQuery('${x.name}')">${esc(x.title)}</button>`).join('') : ''; }).join('');
     const tags = [qz.q && ['Text: ' + qz.q, 'q', ''], qz.site && ['Shop: ' + shop(qz.site), 'site', ''], qz.grp && ['Group: ' + qz.grp, 'grp', '']].filter(Boolean);
     return {feed: nextFeed, html: head('Queries', 'Ready-made questions about the data. Read-only; filtering and sorting run in the database.') +
@@ -740,7 +741,8 @@ const dz = {days: '1', loaded: null, data: [], kind: 'all', site: '', state: '',
 const pz = {q: '', site: '', grp: '', sort: 'recent', stock: false, changed: 24};
 const jz = {only: 'all', site: '', grp: ''}, lz = {level: 'info', src: '', q: '', paused: false};
 const qz = {list: null, groups: null, name: null, hours: '24', grp: '', site: '', q: '', sort: null, desc: false, listQ: '', topic: 'all'};
-const TOPICS = {Alerts: ['alerts_by_day', 'held_and_cancelled', 'deliveries'], Crawling: ['coverage', 'schedule', 'device_hours', 'tables']};
+const TOPICS = {Alerts: ['alerts_by_day', 'held_and_cancelled', 'deliveries'], Crawling: ['coverage', 'schedule', 'device_hours', 'tables'],
+  Matching: ['same_product', 'match_review', 'match_left_out', 'match_coverage']};
 // Saved-query columns that are a rise or a fall, and which column each price is compared with.
 const PCT_TREND = {drop_pct: 'down', below_pct: 'down', rise_pct: 'up', above_pct: 'up'};
 const PRICE_REF = {now: ['was', 'previous_low'], price_now: ['alert_price', 'now'], b: ['a']};
@@ -840,11 +842,29 @@ async function productPage(id) {
         ${d.other_sellers.map(o => `<tr class='click' onclick='openProduct(${o.id})'><td>${esc(o.seller || '?')}</td><td class='num r'>${money(o.price)}</td><td>${o.in_stock ? pill('ok', 'in stock') : pill('idle', 'sold out')}</td>
           <td class='num r ${o.price > p.price ? 'up' : 'down'}'>${o.price && p.price ? (o.price > p.price ? '+' : '') + money(o.price - p.price) : ''}</td></tr>`).join('')}</table></div></section>` : ''}
     </div>
+    ${sameModel(d.same_model, p)}
     <section class='card' style='overflow:hidden'><div class='cardhead'><h2>Recorded changes</h2><span class='sub'>only changes are stored, not every visit</span></div><div class='scroll'><table>
       <tr><th>When</th><th class='r'>Price</th><th class='r'>Crossed-out</th><th>Stock</th><th class='r'>Change</th></tr>
       ${d.history.slice().reverse().map((h, i, arr) => { const prev = arr[i + 1], ch = prev && prev.price && h.price ? h.price - prev.price : null;
         return `<tr><td class='num nw'>${hhmm(h.observed_at)}</td><td class='num r'>${money(h.price)}</td><td class='num r muted'>${money(h.list_price)}</td><td>${h.in_stock ? 'in stock' : 'sold out'}</td>
         <td class='num r nw ${ch < 0 ? 'down' : 'up'}'>${ch ? (ch < 0 ? '▼ ' : '▲ ') + money(Math.abs(ch)) + ' · ' + changePct(ch / prev.price) : ''}</td></tr>`; }).join('')}</table></div></section>`;
+}
+// Listings of the same model at every shop (matching.py), or why this one has no model.
+function sameModel(sm, p) {
+  if (!sm) return '';
+  const m = sm.model, why = {no_code: 'no model code found in the title', used: 'a renewed / used listing', accessory: 'an accessory',
+    brand_conflict: 'its brand differs from the model', price_outlier: 'its price is far from the other listings'};
+  if (!m || !sm.others.length) return `<section class='card' style='padding:12px 18px'><span class='sub'>Same product at other shops: ${m ? `model <b>${esc(m.model)}</b> is only listed here` : 'not matched, ' + esc(why[sm.me.status] || sm.me.status)}${sm.me.note ? ' (' + esc(sm.me.note) + ')' : ''}.</span></section>`;
+  const head = `model <b>${esc(m.model)}</b>${m.brand ? ' · ' + esc(m.brand) : ''} · ${m.sites} shop${m.sites === 1 ? '' : 's'}`
+    + (sm.me.status !== 'model' ? ` · this listing is left out: ${esc(why[sm.me.status] || sm.me.status)}` : '')
+    + (m.status !== 'ok' ? ` · <span class='up'>${esc(m.status)}: ${esc(m.note || '')}</span>` : '');
+  return `<section class='card' style='overflow:hidden'><div class='cardhead'><h2>Same product at other shops</h2><span class='sub'>${head}; matched by the model code in the titles</span></div><div class='scroll'><table>
+    <tr><th>Shop</th><th>Listing</th><th class='r'>Price</th><th>Stock</th><th class='r'>vs this</th><th class='r'>Seen</th></tr>
+    ${sm.others.map(o => `<tr class='click' onclick='openProduct(${o.id})'><td class='nw'>${esc(shop(o.site))}</td>
+      <td>${esc(o.title)}${o.seller ? `<div class='sub'>${esc(o.seller)}</div>` : ''}${o.status !== 'model' ? ' ' + pill('idle', 'left out: ' + (o.note || o.status)) : ''}</td>
+      <td class='num r nw'>${money(o.price)}</td><td>${o.in_stock ? pill('ok', 'in stock') : pill('idle', 'sold out')}</td>
+      <td class='num r nw ${o.price > p.price ? 'up' : 'down'}'>${o.price && p.price ? (o.price > p.price ? '+' : '') + money(o.price - p.price) : ''}</td>
+      <td class='num r muted nw'>${ago(o.last_seen_at)}</td></tr>`).join('')}</table></div></section>`;
 }
 // Step chart of the recorded prices (a price holds until the next row), with the 90-day typical
 // price dashed, out-of-stock stretches left blank, and a dot where an alert went out. Hover for the value.
@@ -1109,6 +1129,57 @@ QUERIES: dict[str, dict] = {
                    WHERE h.observed_at >= ? AND h.in_stock = 1 AND h.prev_stock = 0
                    ORDER BY h.observed_at DESC LIMIT 200""",
         "cutoff_twice": True,
+    },
+    "same_product": {
+        "title": "Same product on several shops",
+        "about": "Products (matched by the model code in their titles) in stock on 2+ shops and seen in the last day: the "
+                 "cheapest listing, the dearest price, and how far apart they are. Click a title for every shop's listing.",
+        "sql": f"""WITH l AS (SELECT pm.model, {_PRODUCT}, p.price
+                             FROM product_models pm JOIN products p ON p.id = pm.product_id
+                             JOIN models m ON m.model = pm.model AND m.status = 'ok' AND m.sites >= 2
+                             WHERE pm.status = 'model' AND p.in_stock = 1 AND p.price IS NOT NULL AND p.last_seen_at >= ?),
+                        g AS (SELECT model, COUNT(DISTINCT site) AS shops, MIN(price) AS lo, MAX(price) AS hi
+                              FROM l GROUP BY model HAVING shops >= 2),
+                        c AS (SELECT l.*, ROW_NUMBER() OVER (PARTITION BY model ORDER BY price, product_id) AS rn FROM l)
+                   SELECT g.model, g.shops, c.product_id, c.title, c.site, c.grp, c.url, c.seller,
+                          g.lo AS lowest, g.hi AS highest, ROUND(100.0 * (g.hi - g.lo) / g.hi, 1) AS spread_pct
+                   FROM g JOIN c ON c.model = g.model AND c.rn = 1
+                   ORDER BY spread_pct DESC LIMIT 300""",
+        "cutoff_days": 1,
+    },
+    "match_review": {
+        "title": "Matches to check by eye",
+        "about": "Every listing of the models found on 2+ shops, one model after another in a fixed shuffled order: read "
+                 "the titles of each model and see whether they really are one product.",
+        "sql": f"""SELECT pm.model, {_PRODUCT}, p.price AS now, p.in_stock
+                   FROM models m JOIN product_models pm ON pm.model = m.model AND pm.status = 'model'
+                   JOIN products p ON p.id = pm.product_id
+                   WHERE m.status = 'ok' AND m.sites >= 2 AND ? IS NOT NULL
+                   ORDER BY (m.rowid * 7919) % 10007, m.model, p.price LIMIT 300""",
+    },
+    "match_left_out": {
+        "title": "Matching: listings left out",
+        "about": "Listings that share a model code but were kept out of the model (brand or price disagrees), and models "
+                 "whose listings can't be one product ('conflict'). Shows what the safety rules caught.",
+        "sql": f"""SELECT CASE WHEN m.status = 'conflict' THEN 'model conflict' ELSE pm.status END AS why,
+                          COALESCE(pm.note, m.note) AS note, pm.model, {_PRODUCT}, p.price AS now
+                   FROM product_models pm JOIN products p ON p.id = pm.product_id
+                   LEFT JOIN models m ON m.model = pm.model
+                   WHERE (pm.status IN ('brand_conflict', 'price_outlier') OR m.status = 'conflict') AND ? IS NOT NULL
+                   ORDER BY why, pm.model, p.price LIMIT 300""",
+    },
+    "match_coverage": {
+        "title": "Matching coverage per shop",
+        "about": "Per shop: listings seen in the last 3 days, how many have a model code, and how many of those are matched "
+                 "to the same product on another shop. The rest have no code in the title (most phones), or are used, or accessories.",
+        "sql": """SELECT p.site, COUNT(*) AS listings, SUM(pm.status = 'model') AS with_model,
+                         SUM(pm.status = 'model' AND m.status = 'ok' AND m.sites >= 2) AS on_other_shops,
+                         ROUND(100.0 * SUM(pm.status = 'model' AND m.status = 'ok' AND m.sites >= 2) / COUNT(*), 1) AS matched_pct,
+                         SUM(pm.status = 'used') AS used, SUM(pm.status = 'accessory') AS accessories,
+                         SUM(pm.status = 'no_code') AS no_code
+                  FROM products p JOIN product_models pm ON pm.product_id = p.id LEFT JOIN models m ON m.model = pm.model
+                  WHERE p.last_seen_at >= ? GROUP BY p.site ORDER BY matched_pct DESC""",
+        "cutoff_days": 3,
     },
     "deliveries": {
         "title": "Telegram deliveries per person",
