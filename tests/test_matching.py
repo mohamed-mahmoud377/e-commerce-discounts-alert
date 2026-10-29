@@ -512,3 +512,15 @@ def test_anc_earbuds_are_another_product():
                          row(3, "2b_eg", "Apple AirPods 4 - White", 654_900, "Apple"),
                          row(4, "jumia_eg", "Apple AirPods 4 Wireless Earbuds", 670_000, "Apple")])
     assert products[1][0] == products[2][0] != products[3][0] == products[4][0]
+
+
+def test_lte_means_4g():
+    assert read_line("Samsung Galaxy A17 LTE, Android Smartphone, 256GB Storage, 8GB RAM")[1]["net"] == "4G"
+    assert read_line("Samsung Galaxy A17 5G LTE 256GB")[1]["net"] == "5G"
+
+
+def test_a_pass_stopped_by_a_shutdown_is_not_an_error(monkeypatch, cfg):
+    import signal, subprocess
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, -signal.SIGTERM, "", ""))
+    with pytest.raises(matching.Interrupted):
+        matching.rebuild_in_process(cfg.db_path)

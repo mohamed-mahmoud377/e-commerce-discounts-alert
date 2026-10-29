@@ -173,3 +173,7 @@ x	jumia_eg	Fresh	8580	Fresh Gas Cooker Rainbow ST 60*60
 # a motherboard's chipset is not its model
 x	amazon_eg		9400	Gigabyte B760 DS3H AX DDR4 Motherboard - Supports Intel Core 14th CPUs
 x	btech_eg	Gigabyte	8315	Gigabyte B760 GAMING X Motherboard , Intel Black
+# LTE is the 4G model
+76	jumia_eg	Samsung	12999	Samsung Galaxy A17 LTE, Android Smartphone, 256GB Storage, 8GB RAM, Blue
+76	btech_eg	Samsung	12800	Samsung Galaxy A17 , 256 GB , 8 GB , 4G , Dual-SIM - Blue
+77	2b_eg	Samsung	15499	Samsung Galaxy A17 5G - 8GB RAM - 256GB - Black

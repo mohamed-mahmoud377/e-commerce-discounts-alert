@@ -29,6 +29,7 @@ import json
 import math
 import os
 import re
+import signal
 import sqlite3
 import statistics
 import subprocess
@@ -47,7 +48,7 @@ from deals import db
 from deals.db import iso
 from deals.models import valid_gtin
 
-VERSION = 12  # bump when the title rules change: every title is then read again at the next pass
+VERSION = 13  # bump when the title rules change: every title is then read again at the next pass
 
 MIN_CODE = 5  # shorter codes ("A16", "G502", "M5") are too often shared by unrelated products ...
 _SHORT = re.compile(r"^(?:[A-Z]\d{3}|[A-Z]{2}\d{2}|[A-Z]\d{2}[A-Z]|\d[A-Z]\d{2}|[A-Z]\d[A-Z]\d)$")  # ... but these 4-char shapes are codes when brand-scoped: C75X, H390, Q20I
@@ -338,6 +339,8 @@ def read_line(title: str) -> tuple[list[tuple[int, str]], dict[str, str]]:
             attrs["ram"] = f"{gbs[0]}GB"
     if net := _NET.search(t):
         attrs["net"] = net.group(1) + "G"
+    elif re.search(r"\bLTE\b", t):
+        attrs["net"] = "4G"  # "Galaxy A17 LTE" is the 4G model, not the 5G one
     if cpu := _CPU.search(t):
         attrs["cpu"] = re.sub(r"[\s-]", "", cpu.group(0)).upper()
     if gpu := _GPU.search(t):
@@ -1206,6 +1209,10 @@ def build(rows, now: datetime, barcodes: dict[int, list[str]] | None = None) -> 
             "SELECT model, code, capacity, brand, status, products, sites, site_list, low, median, high, note FROM models")})
 
 
+class Interrupted(Exception):
+    """The matching process was stopped from outside (a deploy restarting the coordinator): not a failure."""
+
+
 def rebuild_in_process(db_path: Path, timeout: float = 1800) -> Summary:
     """`rebuild` in a separate process at the lowest CPU priority, as the coordinator runs it:
     crawl uploads always get the CPU first, the memory it needs is returned when it exits, a crash
@@ -1213,6 +1220,8 @@ def rebuild_in_process(db_path: Path, timeout: float = 1800) -> Summary:
     kills it rather than the coordinator."""
     run = subprocess.run([sys.executable, "-m", "deals.matching", str(db_path)],
                          capture_output=True, text=True, timeout=timeout)
+    if run.returncode in (-signal.SIGTERM, -signal.SIGINT):
+        raise Interrupted("stopped by a shutdown (a deploy or restart); the next pass recomputes everything")
     if run.returncode:
         raise RuntimeError(f"matching exited with {run.returncode}: {run.stderr.strip()[-800:]}")
     return Summary(**json.loads(run.stdout.strip().splitlines()[-1]))

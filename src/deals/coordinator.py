@@ -592,6 +592,8 @@ class Watchdog(threading.Thread):
                 log.exception("watchdog check failed")
             try:  # on its own: a matching bug must not stop the checks above
                 self.match(conn, utcnow())
+            except matching.Interrupted as e:
+                log.info("product matching %s", e)
             except Exception:
                 log.exception("product matching failed")
 
