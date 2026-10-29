@@ -271,6 +271,7 @@ class _RetryingSite:
 def _listing_json(listing: Listing) -> dict:
     data = asdict(listing)
     data["badges"] = list(listing.badges)
+    data["gtins"] = list(listing.gtins)
     return data
 
 

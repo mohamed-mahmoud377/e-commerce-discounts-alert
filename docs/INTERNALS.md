@@ -133,6 +133,7 @@ many have run, and `db.connect()` runs the missing ones in a transaction on star
 | 11 | `product_codes`, `product_code_index` (codes read once per title, incremental); `models` / `product_models` recreated with brand-scoped keys and `models.kind` |
 | 12 | `product_codes.line`, `.attrs`: the second identity (brand + product line + variant) for titles without a code |
 | 13 | `product_codes.ptype`, `.specs`, `.flags`, `.toks` (the spec signature, for the probable tier); `match_overrides` (matches set by hand) |
+| 14 | `product_barcodes` (barcodes from a shop's own data: Dream 2000's variant SKUs; source `feed`) |
 
 **Tables and columns** (prices are integer piastres; times are UTC ISO text, which sorts correctly as text):
 
@@ -153,6 +154,7 @@ many have run, and `db.connect()` runs the missing ones in a transaction on star
 | `product_code_index` | `(product_id, code)`; index `(code)` | One row per code of a product (`rank`), for the SQL counts |
 | `models` | `model` (`<brand> <code>[ <capacity>]`); index `(status, sites)` | One product across shops: `kind` (`gtin`, `mpn`, `line`, `similar`, `manual`), `code`, `capacity`, `brand`, `status` (`ok`, `probable`, `conflict`, `spec`), `products`, `sites`, `site_list`, `low`/`median`/`high`, `note`, `version`, `updated_at`. Rebuilt hourly |
 | `product_models` | `product_id` (cascade delete); index `(model)` | `model`, `status` (`model`, `no_code`, `accessory`, `used`, `bundle`, `ambiguous_brand`, `ambiguous_variant`, `price_outlier`, `split`), `brand`, `brand_from`, `codes`, `note`, `version`, `updated_at` |
+| `product_barcodes` | `(product_id, gtin)` (cascade delete); index `(gtin)` | `source` (`feed`; `page` later), `seen_at`. Written by the page upload when a listing carries `gtins`; read only by matching |
 | `match_overrides` | `(a, b)` (cascade delete) | `verdict` (`same`: b joins a's model; `different`: b leaves it), `note`, `created_at`. Set from the web UI product page or `deals models --same/--different/--forget` |
 
 **Adding a migration:** append a new SQL string to `MIGRATIONS` (never edit an old one), use

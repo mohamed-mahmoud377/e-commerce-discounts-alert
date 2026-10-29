@@ -125,3 +125,10 @@ SELECT kind, count(*), sum(failures > 0) failing, min(next_due_at) FROM jobs WHE
 | `blocked: dream2000_eg: HTTP 430` | Shopify's bot block for this client | Pauses by itself; lower the request rate if it repeats |
 | A slice suddenly parses 0 products | The JSON changed shape (unlikely: Shopify's `products.json` is a stable public format) or the collection was emptied | Open the URL in a browser |
 | Many "new product" listings for one phone | Variant grouping changed (a new option name) | Add the option name to `IGNORED_OPTIONS` in `dream2000_eg.py` if it is a colour-like option |
+
+## Barcodes (30 Oct 2026)
+
+Each variant's `sku` is its GTIN-13 barcode for almost every product (481 of 498 variants in the saved
+collection page pass the check digit; e.g. Samsung Galaxy A17 `8806097657460`). The parser passes the
+barcodes of a listing's variants (its colours) as `Listing.gtins`; matching uses them as its strongest
+evidence (docs/MATCHING.md).

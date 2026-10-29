@@ -85,8 +85,8 @@ def row(id, site, title, price=100_000, brand=None, seller=None, seen=NOW):
     return (id, site, title, brand, seller, price, iso(seen))
 
 
-def built(rows):
-    r = matching.build(rows, NOW)
+def built(rows, barcodes=None):
+    r = matching.build(rows, NOW, barcodes)
     return r.products, r.models
 
 
@@ -345,6 +345,10 @@ def test_gold_set_precision_and_recall():
     ("Zahran 8 Cups Yogurt Maker , 2724761319031", []),
     ("Cougar POSEIDON ELITE ARGB 240 AIO Liquid Cooler", []),
     ("Samsung 55 inch TV 2025 model", []),
+    ("Realme 11+ Pro 5G 12 GB 512 GB Oasis Green RMX3741-G", ["RMX3741G"]),  # not 'GB512'
+    ("Fresh Modena Stainless Steel Gas Stove 90 cm 19722", ["19722"]),  # not CM19722: Fresh numbers its products
+    ("Black & White Turkish Coffee Maker, 400 Watts, Stainless Steel Pot, CM-310S", ["CM310S"]),
+    ("IDO Stand Mixer - 500W - MB500-BK - Black", ["MB500BK"]),
 ])
 def test_more_code_shapes(title, own):
     assert read_title(title).own[:len(own) or None] == own
@@ -398,3 +402,28 @@ def test_hand_made_matches(cfg):
     assert conn.execute("SELECT model FROM product_models WHERE product_id = ?", (n1,)).fetchone()[0] == "sharp AHXP12BME"
     with pytest.raises(ValueError):
         matching.set_override(conn, j1, j1, "same", None, NOW)
+
+
+def test_barcodes_bridge_into_a_code_model_or_make_their_own():
+    g = "8806097657460"
+    products, models = built([
+        row(1, "jumia_eg", "Samsung Galaxy A17 SM-A175F 4GB 128GB", 1_100_000, "Samsung"),
+        row(2, "btech_eg", "Samsung Galaxy A17 SM-A175F 4GB 128GB", 1_090_000, "Samsung"),
+        row(3, "dream2000_eg", "Samsung Galaxy A17 (4GB / 128GB)", 1_120_000, "Samsung"),  # no code, its barcode bridges
+        row(4, "carrefour_eg", "Mienta Blender 1.5L", 150_000, "Mienta"),  # barcodes only: a barcode model
+        row(5, "dream2000_eg", "Mienta Blender Mill", 155_000, "Mienta"),
+        row(6, "noon_eg", "Silicone case for Galaxy A17", 15_000, "Generic"),  # an accessory never joins
+    ], barcodes={1: [g], 3: [g, "8806097657606"], 4: ["6221103008005"], 5: ["6221103008005"], 6: [g]})
+    code_model = products[1][0]
+    assert code_model == products[2][0] == products[3][0] and products[3][5] == f"joined by barcode {g}"
+    assert products[4][0] == products[5][0] == "mienta GTIN6221103008005"
+    assert products[6][1] == "accessory"
+
+
+def test_barcodes_that_link_two_code_models_merge_nothing():
+    g = "8806097657460"
+    products, _ = built([row(1, "jumia_eg", "Sharp AC AH-XP12BME", 3_000_000, "Sharp"),
+                         row(2, "btech_eg", "Sharp AC AY-XP12BME", 3_300_000, "Sharp")],
+                        barcodes={1: [g], 2: [g]})  # a shop typed the wrong barcode
+    assert products[1][0] == "sharp AHXP12BME" and products[2][0] == "sharp AYXP12BME"
+    assert "not merged" in products[1][5] and "not merged" in products[2][5]

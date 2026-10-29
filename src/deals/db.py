@@ -7,13 +7,16 @@ is a step: the price held from its observed_at until the next row.
 """
 
 import gzip
+import logging
 import shutil
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from deals.models import Listing
+from deals.models import Listing, valid_gtin
+
+log = logging.getLogger(__name__)
 
 # Append-only: each entry upgrades the schema by one version (PRAGMA user_version).
 MIGRATIONS = [
@@ -337,6 +340,18 @@ MIGRATIONS = [
         PRIMARY KEY (a, b)
     );
     """,
+    """
+    -- Barcodes a shop's own data gives (not the title): Dream 2000's variant SKUs, later product pages.
+    -- Matching evidence only; nothing in crawling or alerting reads it.
+    CREATE TABLE product_barcodes (
+        product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+        gtin       TEXT NOT NULL,
+        source     TEXT NOT NULL,  -- feed | page
+        seen_at    TEXT NOT NULL,
+        PRIMARY KEY (product_id, gtin)
+    );
+    CREATE INDEX product_barcodes_gtin ON product_barcodes (gtin);
+    """,
 ]
 
 # Price moves smaller than this are noise (amazon.eg prices creep by a piastre per
@@ -443,6 +458,25 @@ def record(conn: sqlite3.Connection, listing: Listing, grp: str | None = None,
         (product_id, *stored, listing.in_stock, now_s),
     )
     return result
+
+
+def record_barcodes(conn: sqlite3.Connection, product_id: int, gtins, source: str, now: datetime) -> None:
+    """Keep the barcodes a shop's data gives for a product (for matching only). A new non-empty set
+    replaces that source's old one; a listing without barcodes (an older worker) changes nothing. Never
+    lets an error reach the caller: barcodes must not cost a price update."""
+    valid = {g for g in (valid_gtin(x) for x in gtins) if g}
+    if not valid:
+        return
+    try:
+        conn.execute("SAVEPOINT barcodes")
+        conn.execute("DELETE FROM product_barcodes WHERE product_id = ? AND source = ?", (product_id, source))
+        conn.executemany("INSERT OR REPLACE INTO product_barcodes VALUES (?, ?, ?, ?)",
+                         [(product_id, g, source, iso(now)) for g in valid])
+        conn.execute("RELEASE barcodes")
+    except sqlite3.Error:
+        conn.execute("ROLLBACK TO barcodes")
+        conn.execute("RELEASE barcodes")
+        log.exception("barcodes for product %s", product_id)
 
 
 def moved(old: int | None, new: int | None) -> bool:

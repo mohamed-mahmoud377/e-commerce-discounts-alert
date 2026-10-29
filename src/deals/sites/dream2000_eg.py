@@ -20,7 +20,7 @@ import re
 
 from curl_cffi import requests
 
-from deals.models import Blocked, Listing, PageResult, Slice, UnknownTarget
+from deals.models import Blocked, Listing, PageResult, Slice, UnknownTarget, valid_gtin
 
 BASE = "https://dream2000.com/en"
 PER_PAGE = 250  # Shopify's maximum
@@ -103,6 +103,8 @@ def product_listings(product: dict) -> list[Listing]:
             in_stock=bool(available) and price is not None,
             list_price_kind="list" if compare and price and compare > price else None,
             brand=(product.get("vendor") or "").strip() or None,
+            # Dream 2000 puts each variant's barcode in its SKU (97% of them): the colours of this listing
+            gtins=tuple(sorted({g for v in variants if (g := valid_gtin(v.get("sku")))})),
         ))
     return out
 

@@ -289,3 +289,21 @@ def test_deal_feeds_have_their_own_tighter_cap(cfg):
     rows = {r["target"]: r["interval_s"] for r in conn.execute("SELECT target, interval_s FROM jobs")}
     assert rows.pop("category:televisions") == 1800  # a plain category keeps the group's back-off
     assert set(rows.values()) == {12 * 60}  # every kind of deal feed is held at the feed cap
+
+
+def test_feed_barcodes_are_kept_and_old_workers_dont_erase_them(client):
+    plan_amazon(client)
+    g1, g2 = "8806097657460", "8806097657606"
+    job = lease(client)
+    r = client.post(f"/api/jobs/{job['id']}/page", headers=W1, json={
+        "lease_token": job["lease_token"], "page": 1, "done": True,
+        "listings": [listing("A1", gtins=[g1, g2, "123", "2724761319031"]), listing("A2")]})  # junk is dropped
+    assert r.status_code == 200
+    rows = client.conn.execute("SELECT gtin, source FROM product_barcodes ORDER BY gtin").fetchall()
+    assert [tuple(x) for x in rows] == [(g1, "feed"), (g2, "feed")]
+    job = lease(client)  # an older worker: no 'gtins' field at all
+    old = {k: v for k, v in listing("A1", price_egp=4000).items()}
+    r = client.post(f"/api/jobs/{job['id']}/page", headers=W1, json={
+        "lease_token": job["lease_token"], "page": 1, "listings": [old], "done": True})
+    assert r.status_code == 200 and client.conn.execute("SELECT COUNT(*) FROM product_barcodes").fetchone()[0] == 2
+    assert client.conn.execute("SELECT price FROM products WHERE sku = 'A1'").fetchone()[0] == 400000  # price still recorded

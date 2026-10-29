@@ -33,6 +33,21 @@ class Listing:
     reviews: int | None = None
     badges: tuple[str, ...] = ()
     seller: str | None = None  # noon: one product can have several sellers at very different prices
+    gtins: tuple[str, ...] = ()  # barcodes the shop's data gives (GTIN-13, checksum verified): Dream 2000's variant SKUs
+
+
+def valid_gtin(value) -> str:
+    """A GTIN-12/13/14 with a valid check digit, as 13 digits (14 when it needs them); '' otherwise.
+    Numbers starting with 2 are GS1 'restricted circulation' (a store's own numbering), not barcodes
+    another shop would share."""
+    d = str(value or "").strip()
+    if not d.isdigit() or len(d) not in (12, 13, 14):
+        return ""
+    total = sum(int(x) * (3 if i % 2 == 0 else 1) for i, x in enumerate(reversed(d[:-1])))
+    if (10 - total % 10) % 10 != int(d[-1]):
+        return ""
+    g = d.zfill(13) if len(d) <= 13 else d[1:] if d[0] == "0" else d
+    return "" if g.startswith(("2", "02")) else g
 
 
 @dataclass(frozen=True)

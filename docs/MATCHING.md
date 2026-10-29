@@ -220,6 +220,46 @@ It is the record-linkage pattern of blocking, then a uniqueness constraint, then
 labelled *probable* in the web UI and the CLI, and `other_shops` (the alert section) only uses `ok` models, so
 a probable match never reaches an alert. 69 such products on 2+ shops; all 25 sampled were right.
 
+## Barcodes from the shops' own data, and ranking the evidence
+
+Dream 2000's Shopify feed (which the crawler already downloads) puts each variant's barcode in its SKU: 481 of
+498 variants in the saved page are valid GTINs. The parser now passes them on (`Listing.gtins`, all colours
+of a listing); the coordinator stores them in `product_barcodes` (source `feed`), never touching
+`db.record()`, and a listing without barcodes (an older worker) changes nothing. Live on 29 Oct 2026:
+about 1,000 barcodes on 660 products within the first hour.
+
+Listings that share a barcode (from `product_barcodes` or from a title) are grouped through any chain of
+shared barcodes (union-find). The group joins the most trusted identity its listings already have, by rank:
+**by hand > barcode > model code > product line** (the probable tier ranks below all of them). Two different
+identities of that same top rank mean the evidence disagrees (a shop typed a wrong barcode, or two products
+share one), so nothing is merged and the listings get a note ("barcode … also links models …: not merged").
+Used, accessory and bundle listings never join through a barcode.
+
+## Product pages: the pilot (30 Oct 2026)
+
+Do product pages give identifiers that titles lack? Measured, not guessed: 145 product pages from the Mac
+(the IP that crawls these shops anyway), one shop at a time, one request every 8-12 s, 25 pages per shop
+(Amazon and Dream 2000: 10); 20 unmatched + 5 matched products each. **No shop refused or challenged a single
+request.**
+
+| Shop | Pages with a barcode | Model number on the page | Agrees with our title code (matched) | Notes |
+| --- | --- | --- | --- | --- |
+| 2B | 7/25 | 19/25 | 2/5 (the others: maker part numbers, `90NB15Z2M003U0`, `DL7S0EA`) | best barcode source |
+| Jumia | 5/25 | 23/25 | 2/5 (page text also shows Jumia's own SKUs and other products' codes) | needs its spec table parsed, not free text |
+| Amazon | 3/10 | 6/10 | 3/3 | the shop most likely to block: slowest pace only |
+| B.TECH | 0/25 | 25/25 | 5/5 | model number on every page (`L43HYNDA630` for a code-less Hyundai TV) |
+| Cairo Sales | 0/25 | 15/25 | 4/5 | `mpn` in the page markup |
+| Carrefour | 1/25 | rare | - | the barcode/model block is on few products |
+| Dream 2000 | 0/10 | 3/10 | 2/2 | not needed: the feed has the barcodes |
+| noon | - | - | - | a plain page request gets a 2.6 KB bot wall; would need noon's product API |
+
+Findings: 7 of the 15 barcodes found on pages were already in Dream 2000's feed, so page barcodes connect
+straight into the barcode tier. "Disagreements" were mostly *other true identifiers* of the same product (an
+ASUS part number next to its order code, a Realme model `RMX5377` next to the name `C100i`), which the ranking
+must treat as aliases, not conflicts; and generic text scraping picks up noise (Jumia's SKUs, related
+products), so production needs a parser per shop for its spec table. The pilot also caught a title-reading bug
+(`12 GB 512 GB` read as code `GB512`), fixed the same day.
+
 ## Matches by hand
 
 When you see a wrong or missing match: the product page in the web UI has a **Not the same** button on each

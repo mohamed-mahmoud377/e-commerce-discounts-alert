@@ -45,8 +45,9 @@ from pathlib import Path
 
 from deals import db
 from deals.db import iso
+from deals.models import valid_gtin
 
-VERSION = 5  # bump when the title rules change: every title is then read again at the next pass
+VERSION = 6  # bump when the title rules change: every title is then read again at the next pass
 
 MIN_CODE = 5  # shorter codes ("A16", "G502", "M5") are too often shared by unrelated products ...
 _SHORT = re.compile(r"^(?:[A-Z]\d{3}|[A-Z]{2}\d{2}|[A-Z]\d{2}[A-Z]|\d[A-Z]\d{2}|[A-Z]\d[A-Z]\d)$")  # ... but these 4-char shapes are codes when brand-scoped: C75X, H390, Q20I
@@ -210,6 +211,8 @@ def _join_spaced(t: str) -> str:
         a, digits, sep, b = m.group(1), m.group(2), m.group(3) or "", m.group(4) or ""
         if a.upper() in _PREFIX_STOP or not (a.isupper() or len(a) <= 2):
             return m.group(0)
+        if a.upper() in _UNIT_TAIL | {"GB", "TB", "MB", "CM", "MM", "KG", "HZ"} and re.search(r"\d\s*$", t[:m.start()]):
+            return m.group(0)  # '12 GB 512 GB', '90 cm 19722': a unit after a number, then the next number
         if len(digits) == 4 and digits[:2] in ("19", "20") and not b:
             return m.group(0)  # a year
         if len(digits) == 2 and (len(a) < 2 or not a.isupper()):
@@ -221,14 +224,8 @@ def _join_spaced(t: str) -> str:
 
 
 def gtin(title: str) -> str:
-    """A barcode (GTIN-12/13/14, checksum verified) in the title, as 13 digits, or ''."""
-    for d in _GTIN.findall(title):
-        total = sum(int(x) * (3 if i % 2 == 0 else 1) for i, x in enumerate(reversed(d[:-1])))
-        if (10 - total % 10) % 10 == int(d[-1]):
-            g = d.zfill(13)[-13:] if len(d) <= 13 else d[1:] if d[0] == "0" else d
-            if not g.startswith(("2", "02")):  # GS1 'restricted circulation': a store's own number, not global
-                return g
-    return ""
+    """A barcode (GTIN-12/13/14, checksum verified, not a store's own number) in the title, or ''."""
+    return next((g for d in _GTIN.findall(title) if (g := valid_gtin(d))), "")
 
 
 def _pieces(token: str) -> list[str]:
@@ -738,6 +735,7 @@ def _group(conn: sqlite3.Connection, now: datetime) -> None:
              (r + ("gtin" if r[1] and " GTIN" in r[1] else "mpn",) for r in assignments()))
     _lines(conn, fresh_after)
     _similar(conn)
+    _barcodes(conn)
     _overrides(conn)
 
     # 7. Price checks per model (its listings come in model order): a listing far from the model's
@@ -899,6 +897,67 @@ def _similar(conn: sqlite3.Connection) -> None:
     _chunked(conn, "INSERT OR REPLACE INTO assign VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", assignments())
 
 
+# How much each identity is trusted, strongest first: when one barcode links listings that carry
+# different identities, the strongest one wins; two different ones of the same rank disagree.
+RANK = {"manual": 4, "gtin": 3, "mpn": 2, "line": 1}  # 'similar' (probable) is below all of them
+KEEP_OUT = ("used", "accessory", "bundle")  # a barcode never brings these into a model
+
+
+def _barcodes(conn: sqlite3.Connection) -> None:
+    """6c. Barcodes rank above every other identity. Listings that share a barcode (from the shop's
+    data, product_barcodes, or from the title) are one product, connected through any chain of shared
+    barcodes. A group joins the one strong model its listings already have (a Dream 2000 listing
+    with no code in its title joins the code model its barcode partner is in); with none it becomes a
+    barcode model. When its listings carry different identities the most trusted one wins (by hand >
+    barcode > model code > product line); two different identities of that same rank mean the
+    evidence disagrees, so nothing is merged and the listings are noted for review."""
+    pairs = conn.execute(
+        """WITH b AS (SELECT product_id, gtin FROM product_barcodes
+                      UNION SELECT product_id, substr(code, 5) FROM product_code_index WHERE code GLOB 'GTIN*')
+           SELECT gtin, product_id FROM b WHERE gtin IN (SELECT gtin FROM b GROUP BY gtin HAVING COUNT(*) >= 2)
+           ORDER BY gtin""").fetchall()
+    parent: dict[int, int] = {}
+
+    def find(x: int) -> int:
+        while parent.setdefault(x, x) != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+    label: dict[int, str] = {}
+    for g, group in groupby(pairs, key=lambda r: r[0]):
+        ids = [pid for _, pid in group]
+        for pid in ids[1:]:
+            parent[find(pid)] = find(ids[0])
+        label.setdefault(find(ids[0]), g)
+    components: dict[int, list[int]] = defaultdict(list)
+    for pid in parent:
+        components[find(pid)].append(pid)
+    for root, ids in components.items():
+        if len(ids) < 2:
+            continue
+        rows = conn.execute(f"""SELECT a.product_id, a.model, a.kind, a.status, pb.brand FROM assign a JOIN pb USING (product_id)
+                                WHERE a.product_id IN ({','.join('?' * len(ids))})""", ids).fetchall()
+        held = {(m, k) for _, m, k, st, _ in rows if st == "model" and m and k in RANK}
+        top = max((RANK[k] for _, k in held), default=0)
+        strong = {(m, k) for m, k in held if RANK[k] == top}
+        movable = [r for r in rows if r[3] not in KEEP_OUT]
+        gtin_of = min(g for g, pid in pairs if pid in ids)
+        with conn:
+            if len(strong) > 1:
+                conn.executemany("UPDATE assign SET note = ? WHERE product_id = ?",
+                                 [(f"barcode {gtin_of} also links models {', '.join(sorted(m for m, _ in strong))}: not merged",
+                                   r[0]) for r in rows])
+                continue
+            if strong:
+                model, kind = next(iter(strong))
+            else:
+                brands = Counter(r[4] for r in movable if r[4])
+                model, kind = f"{brands.most_common(1)[0][0] if brands else '-'} GTIN{gtin_of}", "gtin"
+            conn.executemany(
+                "UPDATE assign SET model = ?, kind = ?, status = 'model', note = ? WHERE product_id = ?",
+                [(model, kind, None if r[1] == model else f"joined by barcode {gtin_of}", r[0]) for r in movable])
+
+
 def _overrides(conn: sqlite3.Connection) -> None:
     """Matches set by hand (match_overrides), applied last. 'same' (a, b): b joins a's model, or both
     form a new hand-made model when a has none. 'different' (a, b): b leaves a's model."""
@@ -990,9 +1049,10 @@ class Result:
     models: dict[str, tuple]  # model -> (code, capacity, brand, status, products, sites, site_list, low, median, high, note)
 
 
-def build(rows, now: datetime) -> Result:
+def build(rows, now: datetime, barcodes: dict[int, list[str]] | None = None) -> Result:
     """The matching of a list of (id, site, title, brand, seller, price, last_seen_at) rows, in
-    memory, through the same pipeline as the server (for tests and experiments)."""
+    memory, through the same pipeline as the server (for tests and experiments); `barcodes` are
+    the shops' own barcodes per product id."""
     conn = sqlite3.connect(":memory:")
     conn.execute("PRAGMA foreign_keys = ON")
     db._migrate(conn)
@@ -1000,6 +1060,8 @@ def build(rows, now: datetime) -> Result:
         """INSERT INTO products (id, site, title, brand, seller, price, last_seen_at, sku, url, currency, in_stock,
                                  first_seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', 'EGP', 1, ?)""",
         [(*r, f"sku{r[0]}", r[6]) for r in rows])
+    for pid, gs in (barcodes or {}).items():
+        db.record_barcodes(conn, pid, gs, "feed", now)
     rebuild(conn, now)
     return Result(
         products={r[0]: tuple(r[1:]) for r in conn.execute(

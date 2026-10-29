@@ -51,9 +51,10 @@ class ListingIn(BaseModel):
     reviews: int | None = None
     badges: list[str] = []
     seller: str | None = None
+    gtins: list[str] = []  # optional: older workers don't send it
 
     def to_listing(self) -> Listing:
-        return Listing(**{**self.model_dump(), "badges": tuple(self.badges)})
+        return Listing(**{**self.model_dump(), "badges": tuple(self.badges), "gtins": tuple(self.gtins)})
 
 
 class LeaseIn(BaseModel):
@@ -225,6 +226,8 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
                 # A known product that this group would not accept (a headset the console search
                 # also returns) keeps the group that accepted it first.
                 rec = db.record(conn, listing, grp=None if unwanted else job["grp"], now=now)
+                if listing.gtins:
+                    db.record_barcodes(conn, rec.product_id, listing.gtins, "feed", now)
                 if rec.status == "changed" or (rec.status == "new" and not bootstrap):
                     changes += 1
                 dropped = (rec.status == "new" or (listing.price is not None and (
