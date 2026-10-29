@@ -291,6 +291,55 @@ What matching does with it: page barcodes go to `product_barcodes` (source `page
 page model numbers rank after the title's own codes as candidates for the model code (so a title without a
 code gets one, and an unshared title code can give way to a page model number another shop has).
 
+## Confidence (30 Oct 2026)
+
+Every model gets a confidence from 0 to 100 and the evidence behind it in words (`models.confidence`,
+`models.evidence`, `matching.confidence`), shown on the product page, in the Matching queries and in
+`make models`:
+
+| Evidence | Effect |
+| --- | --- |
+| How the listings were matched | by hand 100, barcode 95, model code 85, product line 75, probable 45 |
+| A shared barcode agrees | +10 |
+| A product page names the model | +5 |
+| 3 or more shops | +5 |
+| A short (4-character) or plain-number code | -10 |
+| No brand known | -15 |
+| Prices more than 1.5x / 1.8x apart | -10 / -20 |
+| The listings state different specs for one unit, more than 30% apart (600 W vs 1,200 W, 4 vs 5 burners) | -15 |
+| The model is a conflict | at most 30 |
+
+**Alerts quote other shops only for matches at 75 or more** (`alerts.other_shops_min_confidence`): a model code
+passes unless two doubts stack up, a product line only when nothing casts doubt on it, a probable match never.
+On 30 Oct: 5,892 such products on 2+ shops.
+
+## Other evidence and safety rules added on 30 Oct 2026
+
+- **Codes in product links** (`slug_codes`): B.TECH, Cairo Sales and Carrefour end a product's link with its
+  model code ("...-receiver-l43hynda630"); used like a page's model number. Not Dream 2000 (one link covers every
+  size of a product: its "55 inch" and "50 inch" listings carry the 75-inch code), not Jumia (sellers write
+  theirs), and not B.TECH links that are a random id (`/p/b4b8405b-78f5-...`).
+- **Page and link codes only when another shop has them**: an unshared one would only pull a listing out of a
+  working product-line match (Itel P55 and its model number `A666L`).
+- **Prices are compared per shop**: the reference is the median of each shop's cheapest listing, so one shop
+  listing a product three times can't outvote the others, and a shop's dear extra listing is set aside. With 4+
+  shops a listing above 1.7x the reference is set aside (one 75,999 among four around 41,000 no longer makes the
+  model a conflict); below half stays the limit (that may be a real deal).
+- **Spec words** need 5 brands now (keys are brand + code, so a code a few brands share is not a risk).
+- **Product lines** read up to 7 words (5 counted the brand's and cut "Redmi Note 15 Pro *Plus*" to "Pro"); a
+  listing that doesn't state its CPU, GPU or ANC never joins a variant that has one (one laptop line comes with
+  very different processors; "AirPods 4" and "AirPods 4 with Active Noise Cancellation" are two products);
+  motherboards have no product line (a chipset plus words: "B760 GAMING X").
+- **Spaced codes** with a 2-digit number need a 3-letter prefix and no size after them ("Rainbow ST 60*60" is a
+  cooker's size); refrigerant gases are named exactly (R32, R410A...), so RAF's `R.179`, `R.382` are codes again.
+- **The page queue learns**: a shop's group whose first 15 pages gave a barcode or model number less than 10% of
+  the time is read last (Jumia's appliances: sellers write "9" or "5 درج" as the model; its phones carry barcodes).
+
+Measured on a snapshot of the live data before and after these rules: listings matched across shops 32,691 ->
+34,184; the 185 that left were checked one pattern at a time (desktop bundles that sat in a monitor's model,
+laptops without their CPU, "Pro Plus" phones, a conflict from overpriced sellers), the gained ones by reading
+random samples.
+
 ## Matches by hand
 
 When you see a wrong or missing match: the product page in the web UI has a **Not the same** button on each
@@ -317,11 +366,14 @@ and added to the gold set.
 
 ## Limits and next steps
 
-1. **Fresher matches for new listings**: an alert for a product first seen minutes ago can match it on demand
+1. **Two-product bundles** whose title names both products ("French Press ... + Mienta coffee maker cm31316a")
+   can still join the second product's model; telling them from "Hand Blender + Whisk + Chopper KM1117" by rule
+   would lose real matches. The confidence score and "Not the same" on the product page cover them.
+2. **Fresher matches for new listings**: an alert for a product first seen minutes ago can match it on demand
    (`read_title` plus a lookup of its code in `models`) instead of waiting for the hourly pass.
-2. **What is left unmatched** (24,800 listings): mostly titles with no brand at all (noon and Amazon's
+3. **What is left unmatched** (24,800 listings): mostly titles with no brand at all (noon and Amazon's
    "Wireless Earbuds, 2025 New Bluetooth 5.4..."), single-spec titles ("Haier Split AC 1.5 HP Cooling Only",
    where several real products share the words), and products only one shop sells.
-3. **Attaching codeless listings to code models** (a noon listing that drops the code of a product other shops
+4. **Attaching codeless listings to code models** (a noon listing that drops the code of a product other shops
    list by code) by spec signature: possible, but every wrong attach would show a wrong price in an alert;
    the hand-made "same" covers the cases you care about.

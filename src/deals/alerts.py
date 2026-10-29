@@ -87,7 +87,7 @@ def check_product(conn: sqlite3.Connection, cfg: Config, product_id: int, *, boo
     # has decided the alert. The lookup is read-only and any failure in it is logged and ignored.
     if cfg.alerts.show_other_shops:
         try:
-            message = append_other_shops(message, p, deal.price, matching.other_shops(conn, product_id, now), now)
+            message = append_other_shops(message, p, deal.price, matching.other_shops(conn, product_id, now, cfg.alerts.other_shops_min_confidence), now)
         except Exception:
             log.exception("other shops' prices for %s", p["sku"])
     conn.execute(

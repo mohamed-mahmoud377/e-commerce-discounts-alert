@@ -148,7 +148,7 @@ def test_stale_prices_dont_count():
 
 def test_a_code_many_brands_use_is_a_spec_word():
     products, models = built([row(i, "noon_eg", f"{b} 27 inch Monitor with ZQ-7741K panel", brand=b, seller=f"s{i}")
-                              for i, b in enumerate(["Dell", "HP", "Lenovo", "Asus"])])
+                              for i, b in enumerate(["Dell", "HP", "Lenovo", "Asus", "Acer"])])
     assert all(p[1] == "no_code" and p[0] is None for p in products.values())
     assert models["ZQ7741K"][3] == "spec"
 
@@ -427,3 +427,88 @@ def test_barcodes_that_link_two_code_models_merge_nothing():
                         barcodes={1: [g], 2: [g]})  # a shop typed the wrong barcode
     assert products[1][0] == "sharp AHXP12BME" and products[2][0] == "sharp AYXP12BME"
     assert "not merged" in products[1][5] and "not merged" in products[2][5]
+
+
+def test_confidence_rises_with_corroboration_and_falls_with_doubt():
+    c = matching.confidence
+    base = dict(kind="mpn", status="ok", sites=2, code="AHXP12BME", brand_known=True, barcode=False, page=False,
+                prices=[100, 110])
+    assert c(**base)[0] == 85
+    assert c(**{**base, "barcode": True, "page": True, "sites": 3})[0] == 100
+    assert c(**{**base, "code": "40566"})[0] == 75  # a plain-number code
+    assert c(**{**base, "brand_known": False, "prices": [100, 195]})[0] == 50  # no brand, prices 1.95x apart
+    assert c(**{**base, "kind": "similar"})[0] == 45 and c(**{**base, "status": "conflict"})[0] == 30
+    assert "a shared barcode agrees" in c(**{**base, "barcode": True})[1]
+
+
+def test_alerts_only_quote_sure_matches(cfg):
+    conn = db.connect(cfg.db_path)
+    with conn:
+        a = db.record(conn, listing("jumia_eg", "J1", "Sokany Kettle SK-2010", 100_000, "Sokany"), now=NOW).product_id
+        db.record(conn, listing("noon_eg", "N1@s", "Sokany Kettle SK-2010", 95_000, "Sokany"), now=NOW)
+    matching.rebuild(conn, NOW)
+    assert [r["site"] for r in matching.other_shops(conn, a, NOW)] == ["noon_eg"]  # model code: 85
+    assert matching.other_shops(conn, a, NOW, min_confidence=90) == []
+
+
+def test_codes_in_product_links():
+    assert matching.slug_codes("https://btech.com/en/p/hyundai-43-fhd-smart-led-tv-with-built-in-receiver-l43hynda630"
+                               "?offering_id=943ebba5") == ["L43HYNDA630"]
+    assert matching.slug_codes("https://cairosales.com/en/blenders/moulinex-blend-force-800w-lm4358eg.html") == ["LM4358EG"]
+    assert matching.slug_codes("https://btech.com/en/p/samsung-galaxy-a16-128gb") == []  # only specs
+
+
+def test_a_link_code_matches_a_title_code_on_another_shop(cfg):
+    conn = db.connect(cfg.db_path)
+    with conn:
+        tv = db.record(conn, Listing("btech_eg", "B1", "Hyundai 43 Inch Smart TV , FHD LED Built-In Receiver",
+                                     "https://btech.com/en/p/hyundai-43-fhd-smart-led-tv-l43hynda630", 1_200_000, None,
+                                     "EGP", True, brand="Hyundai"), now=NOW).product_id
+        other = db.record(conn, Listing("jumia_eg", "J1", "Hyundai 43 Inch FHD Smart TV L43HYNDA630", "https://jumia/x",
+                                        1_250_000, None, "EGP", True, brand="Hyundai"), now=NOW).product_id
+        dream = db.record(conn, Listing("dream2000_eg", "D1", "Hyundai TV 50 inch", "https://dream2000.com/en/products/hyundai-l43hynda630",
+                                        1_400_000, None, "EGP", True, brand="Hyundai"), now=NOW).product_id
+    matching.rebuild(conn, NOW)
+    pm = {r[0]: r[1] for r in conn.execute("SELECT product_id, model FROM product_models")}
+    assert pm[tv] == pm[other] == "hyundai L43HYNDA630" and pm[dream] is None  # Dream 2000's links are not trusted
+
+
+def test_link_ids_are_not_codes_and_one_odd_price_does_not_spoil_a_model():
+    assert matching.slug_codes("https://btech.com/en/p/b4b8405b-78f5-448b-a25e-f5790b734e9a?offering_id=4a") == []
+    prices = [3_799_900, 4_159_900, 4_247_500, 4_159_900, 7_599_900]
+    products, models = built([row(i, s, "Samsung Fridge RB34C6B0E22", p, "Samsung")
+                              for i, (s, p) in enumerate(zip(["noon_eg", "cairosales_eg", "btech_eg", "jumia_eg", "cairosales_eg"],
+                                                             prices), start=1)])
+    assert models["samsung RB34C6B0E22"][3] == "ok" and products[5][1] == "price_outlier"
+
+
+def test_one_shop_listing_a_product_many_times_does_not_outvote_the_others():
+    products, models = built([row(1, "amazon_eg", "Asus VA24EHF Monitor", 530_300, "Asus"),
+                              row(2, "dream2000_eg", "Asus VA24EHF Monitor 24", 630_000, "Asus"),
+                              *[row(i, "noon_eg", "Asus VA24EHF Eye Care Monitor", 1_237_000, "Asus", seller=f"s{i}")
+                                for i in (3, 4, 5)]])
+    assert products[1][1] == products[2][1] == "model" and models["asus VA24EHF"][5] == 3
+
+
+def test_a_shops_dear_extra_listing_is_set_aside():
+    products, models = built([row(1, "amazon_eg", "Arshia EC116-2618 Electric Chopper", 285_000, "Arshia"),
+                              row(2, "noon_eg", "Arshia EC116-2618 Chopper", 370_000, "Arshia", seller="a"),
+                              row(3, "noon_eg", "Arshia EC116-2618 Chopper 1.5L", 862_800, "Arshia", seller="b")])
+    assert models["arshia EC1162618"][3] == "ok" and products[3][1] == "price_outlier"
+
+
+def test_specs_that_disagree_lower_confidence():
+    assert matching.spec_clash(["600W 2CUPS", "1200W 8CUPS"]) == "600W vs 1200W"
+    assert matching.spec_clash(["1200W 2L", "1300W 2L"]) == ""  # within 30%: sellers round
+    assert matching.spec_clash(["1500W 1000W", "1500W"]) == ""  # a combo states two values: skipped
+    base = dict(kind="mpn", status="ok", sites=2, code="AHXP12BME", brand_known=True, barcode=False, page=False,
+                prices=[100, 110])
+    assert matching.confidence(**base, clash="600W vs 1200W")[0] == 70
+
+
+def test_anc_earbuds_are_another_product():
+    products, _ = built([row(1, "2b_eg", "Apple AirPods 4 with Active Noise Cancellation - White", 1_129_900, "Apple"),
+                         row(2, "amazon_eg", "Apple AirPods 4 Wireless Earbuds with Active Noise Cancellation", 1_100_000, "Apple"),
+                         row(3, "2b_eg", "Apple AirPods 4 - White", 654_900, "Apple"),
+                         row(4, "jumia_eg", "Apple AirPods 4 Wireless Earbuds", 670_000, "Apple")])
+    assert products[1][0] == products[2][0] != products[3][0] == products[4][0]

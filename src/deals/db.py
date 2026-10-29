@@ -398,6 +398,11 @@ MIGRATIONS = [
         created_at TEXT NOT NULL
     );
     """,
+    """
+    -- How sure a match is (matching.confidence): 0-100, and the evidence behind it in words.
+    ALTER TABLE models ADD COLUMN confidence INTEGER;
+    ALTER TABLE models ADD COLUMN evidence TEXT;
+    """,
 ]
 
 # Price moves smaller than this are noise (amazon.eg prices creep by a piastre per

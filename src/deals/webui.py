@@ -887,7 +887,8 @@ function sameModel(sm, p, admin) {
   const head = `${m.brand ? esc(m.brand) + ' ' : ''}<b>${esc(m.code)}</b>${m.capacity ? ' ' + esc(m.capacity) : ''} · ${m.sites} shop${m.sites === 1 ? '' : 's'}`
     + (sm.me.status !== 'model' ? ` · this listing is left out: ${esc(why[sm.me.status] || sm.me.status)}` : '')
     + (m.status !== 'ok' ? ` · <span class='up'>${esc(m.status)}: ${esc(m.note || '')}</span>` : '');
-  return `<section class='card' style='overflow:hidden'><div class='cardhead'><h2>Same product at other shops</h2><span class='sub'>${head}; matched by ${how[m.kind] || m.kind}</span>${m.status === 'probable' ? ' ' + pill('warn', 'probable') : ''}</div><div class='scroll'><table>
+  return `<section class='card' style='overflow:hidden'><div class='cardhead'><h2>Same product at other shops</h2><span class='sub'>${head}; matched by ${how[m.kind] || m.kind}</span>${m.confidence != null ? ' ' + pill(m.confidence >= 85 ? 'ok' : m.confidence >= 70 ? 'info' : 'warn', 'confidence ' + m.confidence, 0) : ''}${m.status === 'probable' ? ' ' + pill('warn', 'probable') : ''}</div>
+    ${m.evidence ? `<div class='sub' style='padding:0 18px 8px'>Why: ${esc(m.evidence)}</div>` : ''}<div class='scroll'><table>
     <tr><th>Shop</th><th>Listing</th><th class='r'>Price</th><th>Stock</th><th class='r'>vs this</th><th class='r'>Seen</th>${admin ? '<th></th>' : ''}</tr>
     ${sm.others.map(o => `<tr class='click' onclick='openProduct(${o.id})'><td class='nw'>${esc(shop(o.site))}</td>
       <td>${esc(o.title)}${o.seller ? `<div class='sub'>${esc(o.seller)}</div>` : ''}${o.status !== 'model' ? ' ' + pill('idle', 'left out: ' + (o.note || o.status)) : ''}</td>
@@ -1181,7 +1182,7 @@ QUERIES: dict[str, dict] = {
                         g AS (SELECT model, COUNT(DISTINCT site) AS shops, MIN(price) AS lo, MAX(price) AS hi
                               FROM l GROUP BY model HAVING shops >= 2),
                         c AS (SELECT l.*, ROW_NUMBER() OVER (PARTITION BY model ORDER BY price, product_id) AS rn FROM l)
-                   SELECT g.model, m.kind, g.shops, c.product_id, c.title, c.site, c.grp, c.url, c.seller,
+                   SELECT g.model, m.kind, m.confidence, g.shops, c.product_id, c.title, c.site, c.grp, c.url, c.seller,
                           g.lo AS lowest, g.hi AS highest, ROUND(100.0 * (g.hi - g.lo) / g.hi, 1) AS spread_pct
                    FROM g JOIN c ON c.model = g.model AND c.rn = 1 JOIN models m ON m.model = g.model
                    ORDER BY spread_pct DESC LIMIT 300""",
@@ -1191,7 +1192,7 @@ QUERIES: dict[str, dict] = {
         "title": "Matches to check by eye",
         "about": "Every listing of the models found on 2+ shops, one model after another in a fixed shuffled order: read "
                  "the titles of each model and see whether they really are one product.",
-        "sql": f"""SELECT pm.model, m.kind, {_PRODUCT}, p.price AS now, p.in_stock
+        "sql": f"""SELECT pm.model, m.kind, m.confidence, {_PRODUCT}, p.price AS now, p.in_stock
                    FROM models m JOIN product_models pm ON pm.model = m.model AND pm.status = 'model'
                    JOIN products p ON p.id = pm.product_id
                    WHERE m.status IN ('ok', 'probable') AND m.sites >= 2 AND ? IS NOT NULL

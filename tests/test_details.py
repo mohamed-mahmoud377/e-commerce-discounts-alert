@@ -171,3 +171,16 @@ def test_a_model_number_written_with_spaces_is_one_code():
     assert details.from_pairs([("Model", "UI6 F1T S")]).mpns == ["UI6F1TS"]
     assert details.from_pairs([("Model", "CPH2831 Gold")]).mpns == ["CPH2831"]
     assert details.from_pairs([("Model Number", "a long description of the product")]).mpns == []
+
+
+def test_the_queue_learns_which_groups_pay_off(cfg, conn):
+    with conn:
+        ids = [db.record(conn, Listing("jumia_eg", f"F{i}", f"Freezer {i}", f"https://x/F{i}", 100_000, None, "EGP", True),
+                         grp="Freezers", now=NOW).product_id for i in range(20)]
+        phone = db.record(conn, Listing("jumia_eg", "P1", "Phone X9", "https://x/P1", 900_000, None, "EGP", True),
+                          grp="Phones", now=NOW).product_id
+    for pid in ids[:detailq.YIELD_SAMPLE]:  # 15 freezer pages that gave nothing
+        detailq.record(conn, cfg, pid, "jumia_eg", "ip", {"status": "ok", "specs": {"model": "9"}}, NOW)
+    matching.rebuild(conn, NOW)
+    order = [r[0] for r in conn.execute("SELECT product_id FROM detail_queue ORDER BY priority, product_id")]
+    assert order[0] == phone and set(order[1:]) == set(ids[detailq.YIELD_SAMPLE:])  # freezers last

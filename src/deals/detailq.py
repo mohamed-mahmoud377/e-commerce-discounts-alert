@@ -21,6 +21,11 @@ log = logging.getLogger(__name__)
 MIN_IDLE = 10  # seconds the worker would otherwise wait: below this a crawl job is about due, so no page
 QUEUE_PER_SITE = 2000  # pages queued per shop by each matching pass (more than a day's cap)
 RETRY_FAILED = timedelta(days=7)  # a page that failed to parse is tried again after this long
+# Learning where pages pay off: once a shop's group has this many pages read, it is read last if fewer
+# than LOW_YIELD of them gave a barcode or a model number (Jumia's appliances: sellers leave the model
+# blank or write "9", "5 درج"; its phones carry barcodes).
+YIELD_SAMPLE = 15
+LOW_YIELD = 0.10
 
 
 def offer(conn: sqlite3.Connection, cfg: Config, ip: str, site: str, now: datetime, idle_seconds: float) -> dict | None:
@@ -101,16 +106,25 @@ def refill(conn: sqlite3.Connection, now: datetime) -> int:
     from deals.details import PARSERS
 
     sites = list(PARSERS)
+    low = [(r[0], r[1]) for r in conn.execute(
+        """SELECT p.site, p.grp FROM product_details d JOIN products p ON p.id = d.product_id WHERE d.status = 'ok'
+           GROUP BY p.site, p.grp HAVING COUNT(*) >= ? AND AVG(d.gtins != '' OR d.codes != '') < ?""",
+        (YIELD_SAMPLE, LOW_YIELD))]
     with conn:
         conn.execute("DELETE FROM detail_queue")
+        conn.execute("CREATE TEMP TABLE IF NOT EXISTS low_yield (site TEXT, grp TEXT)")
+        conn.execute("DELETE FROM low_yield")
+        conn.executemany("INSERT INTO low_yield VALUES (?, ?)", low)
         conn.execute(
             f"""INSERT INTO detail_queue (site, product_id, priority)
                 SELECT site, id, priority FROM (
                   SELECT p.site, p.id,
-                         CASE WHEN pm.status IN ('no_code', 'ambiguous_brand', 'ambiguous_variant') THEN 0
+                         CASE WHEN EXISTS (SELECT 1 FROM low_yield l WHERE l.site = p.site AND l.grp IS p.grp) THEN 3
+                              WHEN pm.status IN ('no_code', 'ambiguous_brand', 'ambiguous_variant') THEN 0
                               WHEN m.status = 'probable' OR m.kind = 'line' THEN 1 ELSE 2 END AS priority,
                          ROW_NUMBER() OVER (PARTITION BY p.site ORDER BY
-                           CASE WHEN pm.status IN ('no_code', 'ambiguous_brand', 'ambiguous_variant') THEN 0
+                           CASE WHEN EXISTS (SELECT 1 FROM low_yield l WHERE l.site = p.site AND l.grp IS p.grp) THEN 3
+                                WHEN pm.status IN ('no_code', 'ambiguous_brand', 'ambiguous_variant') THEN 0
                                 WHEN m.status = 'probable' OR m.kind = 'line' THEN 1 ELSE 2 END, p.id) AS n
                   FROM products p LEFT JOIN product_models pm ON pm.product_id = p.id
                   LEFT JOIN models m ON m.model = pm.model

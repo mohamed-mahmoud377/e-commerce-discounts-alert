@@ -245,7 +245,7 @@ def cmd_models(args) -> None:
         price = f"EGP {m['low'] / 100:,.0f}-{m['high'] / 100:,.0f}" if m["low"] else "no fresh price"
         how = {"mpn": "model code", "gtin": "barcode", "line": "product line + variant", "similar": "PROBABLE: type + specs",
                "manual": "set by hand"}.get(m["kind"], m["kind"])
-        print(f"\n{m['model']}  (by {how}; "
+        print(f"\n{m['model']}  (by {how}; confidence {m['confidence']} = {m['evidence']}; "
               f"{m['sites']} shops, {m['products']} listings, {price})"
               f"{'  ' + m['status'].upper() + ': ' + m['note'] if m['status'] != 'ok' else ''}")
         for r in q("""SELECT p.site, p.sku, p.price, p.in_stock, p.title, pm.status, pm.note FROM product_models pm

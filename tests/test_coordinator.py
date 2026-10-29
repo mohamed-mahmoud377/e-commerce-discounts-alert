@@ -373,3 +373,16 @@ def test_pause_controls_are_admin_only(cfg):
         assert c.post(f"/api/pauses/{pid}/resume").json() == {"ok": True}
         assert c.get("/api/pauses").json()["pauses"] == []
         assert c.post(f"/api/pauses/{pid}/resume").status_code == 404
+
+
+def test_an_offline_device_does_not_keep_a_paused_shop_alarming(client):
+    from deals import scheduler
+    now = utcnow()
+    with client.conn:
+        scheduler.worker_seen(client.conn, "mac", "1.1.1.1", now, sites=["jumia_eg"])
+        scheduler.worker_seen(client.conn, "friend", "2.2.2.2", now - timedelta(hours=8), sites=["jumia_eg"])
+    scheduler.pause(client.conn, now, worker="mac", site="jumia_eg", hours=1)
+    assert scheduler.site_paused(client.conn, "jumia_eg", now) is not None  # the friend's Mac is offline
+    with client.conn:
+        scheduler.worker_seen(client.conn, "friend", "2.2.2.2", now, sites=["jumia_eg"])
+    assert scheduler.site_paused(client.conn, "jumia_eg", now) is None  # it is back online and not paused

@@ -44,6 +44,7 @@ confirm_early_drops = false   # ...except early drops, which are sent at once (t
 confirm_minutes = 90          # ...but send anyway after this long if the product was not rechecked
 realert_after_days = 7        # don't repeat an alert for the same product within a week...
 realert_extra_drop = 0.05     # ...unless the price drops another 5%
+other_shops_min_confidence = 75  # only quote other shops for matches at least this sure (docs/MATCHING.md, Confidence)
 show_other_shops = true       # end each alert with the same product's price on the other shops (docs/MATCHING.md); never changes what is alerted
 
 [schedule]

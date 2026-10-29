@@ -247,10 +247,10 @@ def active_pauses(conn: sqlite3.Connection, now: datetime) -> list[dict]:
 
 
 def site_paused(conn: sqlite3.Connection, site: str, now: datetime) -> sqlite3.Row | None:
-    """A pause that stops every device that crawls this shop (seen in the last day), if any: the shop
-    is meant to be quiet, so no 'stalled' alarm."""
+    """A pause that stops every online device that crawls this shop (seen in the last 30 minutes; an
+    offline one isn't crawling anyway), if any: the shop is meant to be quiet, so no 'stalled' alarm."""
     workers = [r["name"] for r in conn.execute("SELECT name, sites FROM workers WHERE last_seen_at > ?",
-                                               (iso(now - timedelta(days=1)),)) if site in (r["sites"] or "").split(",")]
+                                               (iso(now - timedelta(minutes=30)),)) if site in (r["sites"] or "").split(",")]
     found = [paused(conn, w, site, now) for w in workers] or [paused(conn, "*", site, now)]
     return found[0] if all(found) else None
 

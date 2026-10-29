@@ -155,3 +155,21 @@ x	amazon_eg		1349	Zahran 8 Cups Yogurt Maker , 2724761319031
 60	jumia_eg	Haier	19400	Haier Split Air Conditioner, 1.5 HP, Cooling Only, White
 61	jumia_eg	Haier	26000	Haier Turbo Split Air Conditioner Eco 1.5 HP Cooling Only Gray
 62	noon_eg	Haier	19500	Haier Split Air Conditioner 1.5 HP Cooling Only
+# --- overnight review, 30 Oct 2026 ---
+# 'Pro Plus' is not 'Pro' (the line reader stopped after 5 words counting the brand's)
+70	2b_eg	Xiaomi	29999	Xiaomi Redmi Note 15 Pro 5G - 12GB RAM - 512GB - Black
+70	btech_eg	Xiaomi	30500	Xiaomi Redmi Note 15 Pro , 512 GB , 12 GB , 5G , Dual-SIM - Black
+71	2b_eg	Xiaomi	34999	Xiaomi Redmi Note 15 Pro Plus 5G - 12GB RAM - 512GB - Glacier Blue
+# a laptop listing without its CPU does not join one CPU's variant
+72	btech_eg	Asus	48640	Asus Vivobook S14 Laptop ,AMD Ryzen AI 5 330 14 Inch ,512 GB SSD ,16 GB ,AMD Radeon Graphics
+72	noon_eg	Asus	47952	Vivobook S14 Laptop with 14 Inch WUXGA / AMD Ryzen AI 5 330 / 16 Gigabyte RAM / 512GB SSD
+73	noon_eg	Asus	69799	Vivobook S14 Laptop With 14 Inch/16 Gb Ram/512 Gb Ssd/English/Arabic Cool Silver
+# RAF numbers its products R.xxx: codes, not refrigerant gases
+74	jumia_eg	RAF	2989	RAF Electric Pressure Cooker-Rice Cooker/5L Removable Non-Stick Bowl/Warm Function/1000W(R.179)
+74	noon_eg	RAF	3030	Electric Pressure Cooker-Rice Cooker/5L Removable Non-Stick Bowl/Warm Function/1000W R.179
+# '60*60' is a cooker's size, not code ST60; Master and Rainbow are different Fresh cookers
+x	jumia_eg	Fresh	8580	Fresh Gas Cooker Rainbow ST 60*60
+75	cairosales_eg	Fresh	17000	Fresh Gas cooker 4 Gas Burners 60 cm With Fan Stainless MASTER ST60-17281
+# a motherboard's chipset is not its model
+x	amazon_eg		9400	Gigabyte B760 DS3H AX DDR4 Motherboard - Supports Intel Core 14th CPUs
+x	btech_eg	Gigabyte	8315	Gigabyte B760 GAMING X Motherboard , Intel Black

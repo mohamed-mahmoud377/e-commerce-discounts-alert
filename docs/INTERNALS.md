@@ -138,6 +138,7 @@ many have run, and `db.connect()` runs the missing ones in a transaction on star
 | 14 | `product_barcodes` (barcodes from a shop's own data: Dream 2000's variant SKUs; source `feed`) |
 | 15 | `product_details`, `detail_queue`, `detail_state` (product pages read for barcodes and model numbers) |
 | 16 | `crawl_pauses` (crawling paused by hand per device and/or shop, with an end time) |
+| 17 | `models.confidence`, `models.evidence` (how sure a match is, and why) |
 
 **Tables and columns** (prices are integer piastres; times are UTC ISO text, which sorts correctly as text):
 
@@ -287,6 +288,7 @@ commented template.
 | `[alerts] confirm_minutes` | 90 | ...but send anyway after this long if nobody rechecked it (the hold is at least 3x the group's interval + 10 min, so a slow group can actually be rechecked) |
 | `[alerts] realert_after_days` | 7 | No repeat alert within this many days... |
 | `[alerts] realert_extra_drop` | 0.05 | ...unless the price fell this much more |
+| `[alerts] other_shops_min_confidence` | 75 | Only matches at least this sure (0-100) are quoted |
 | `[alerts] show_other_shops` | true | End each alert with the same product's price on the other shops ([MATCHING.md](MATCHING.md)); text only, appended after the decision |
 | `[schedule] min_interval_minutes` | 10 | Fastest revisit of a busy slice |
 | `[schedule] max_interval_factor` | 3.0 | Quiet slices slow down to group interval times this |

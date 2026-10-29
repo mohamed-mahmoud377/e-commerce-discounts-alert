@@ -30,6 +30,7 @@ class AlertRules:
     realert_after_days: float = 7
     realert_extra_drop: float = 0.05  # re-alert sooner if the price falls this much further
     show_other_shops: bool = True  # end each alert with the same product's price on the other shops (text only)
+    other_shops_min_confidence: int = 75  # ... only for matches at least this sure (matching.confidence, 0-100)
 
 
 @dataclass(frozen=True)
