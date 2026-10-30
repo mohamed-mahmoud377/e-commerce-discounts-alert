@@ -615,9 +615,10 @@ def test_dubaiphone_listing_and_traps():
     # "coming soon" shows a price but can't be bought
     assert by_sku["2543"].price == 17600000 and not by_sku["2543"].in_stock
     assert len(result.listings) == 96  # 100 cards, 4 pre-orders
-    # newest first (stable paging), inclusive price filter, the current minute past Vercel's cache
+    # newest first (stable paging), the current minute past Vercel's cache, and no price filter
+    # (the shop's hides sold-out products; the coordinator applies the group minimum)
     assert page_url(Slice.from_key("category:tvs|price:3000-"), 2, now=600) == (
-        "https://www.dubaiphone.net/en/category/tvs?per_page=100&sort=newest&page=2&price_min=3000&t=10")
+        "https://www.dubaiphone.net/en/category/tvs?per_page=100&sort=newest&page=2&t=10")
 
 
 def test_dubaiphone_crossed_out_price_html_page_and_errors(monkeypatch):

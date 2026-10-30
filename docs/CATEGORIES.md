@@ -266,7 +266,8 @@ menu (`/api/categories/searchable`) shows 61, and 20 were empty on 30 October 20
 (`samsung-2`, `smart-watch-2`), several are brand pages under a parent (`samsung-2` under Smart Phone), and a
 few mix things (`games` holds a PS5 and e-scooters; `laptop-store` holds laptops and JBL speakers; `asus-rtx`
 is ASUS gaming laptops, not graphics cards). Quirks: an unknown slug renders a 404 page with HTTP 200; the
-default order is price high to low (the adapter sorts newest first); every page is cached 10 minutes.
+default order is price high to low (the adapter sorts newest first); every page is cached 10 minutes; the price
+filter hides sold-out products (not used).
 `deals categories dubaiphone_eg <slug>` lists the children with counts. Details: [DUBAIPHONE.md](DUBAIPHONE.md).
 
 ## hardwaremarket.net category ids

@@ -15,7 +15,7 @@ page 1, with the 1 EGP placeholders and the pre-orders). Sizes are from 30 Octob
 | Whole shop in one listing | **Yes**: `/en/category/all` holds every product (1,268), so 13 requests at 100 a page read the whole catalogue |
 | Products per request | 1 to 100 (`per_page`); 101 and more answer an error page |
 | Exact count | Yes: `shopData.products.total`, `last_page` |
-| Price filter | `price_min` / `price_max`, on the selling price, whole pounds, inclusive |
+| Price filter | `price_min` / `price_max` (selling price, whole pounds, inclusive), but it **drops every sold-out product**, so we don't use it |
 | Fresh prices | Listing pages are cached at Vercel's edge for **10 minutes**. `/api/products/by-ids?ids=…` (up to 100 ids) is never cached and gives the current price and the crossed-out price |
 | Bot protection | Vercel's bot challenge (HTTP 429, `x-vercel-mitigated: challenge`) for plain `curl`, even from home. Chrome's TLS fingerprint (`curl_cffi`) passes from the Mac. Static files (`static.dubaiphone.net`) are behind Cloudflare, which answers 403 to plain `curl` |
 | Who can crawl it | **Home connections only**: the Mac's `DEALS_SITES` has it, the droplet's doesn't. The droplet gets the 429 challenge even with Chrome's fingerprint |
@@ -92,6 +92,7 @@ listing it appears in (most are in 3 or 4).
 | `?page=999` | HTTP 200, `total` 120, empty `data` |
 | `?price_min=19777&price_max=19777` | 1 product at exactly 19,777: inclusive, on the selling price |
 | `?price_min=19777.5&price_max=19800` | 0: decimals accepted |
+| `?price_min=2500` on Smart Phone | 103, **all in stock**; unfiltered 120 with 45 sold out. Any price filter hides sold-out products (found after going live, 30 October) |
 | `?sort=price_desc` | Same as no sort: **the default order is price high to low**, so a product whose price changes during a pass can move between pages (missed or seen twice) |
 | `?sort=price_asc`, `?sort=newest` | Work. `newest` orders by id, newest first; it doesn't move when prices change, so use it for paging |
 | `?sort=latest`, `popularity`, `name_asc`, anything else | Page without `shopData`, like a bad `per_page` |
@@ -188,8 +189,10 @@ earbuds at 499, both out of stock) and `last-piece` (3).
 
 ## How we crawl it
 
-- **Requests**: `GET /en/category/<slug>?per_page=100&sort=newest[&page=N][&price_min=..&price_max=..]&t=<minute>`
-  with the header `RSC: 1` and Chrome's fingerprint. The slice key is `category:<slug>`; `category:all` is the
+- **Requests**: `GET /en/category/<slug>?per_page=100&sort=newest[&page=N]&t=<minute>` with the header
+  `RSC: 1` and Chrome's fingerprint. **No price filter**: the shop's hides sold-out products, so a slice is the
+  whole category (one or two pages; `max_slice_total` 10,000 keeps the planner from splitting) and the
+  coordinator drops new products under the group's minimum, as for Dream 2000. The slice key is `category:<slug>`; `category:all` is the
   whole shop. `search:` is refused (`UnknownTarget`: the search page is filled by JavaScript).
 - **`t=<minutes since 1970>`** makes each minute's URL new to Vercel's cache, so the page is rendered from the
   shop's current data instead of a copy up to 10 minutes old (the first principle: notice drops fast). Each

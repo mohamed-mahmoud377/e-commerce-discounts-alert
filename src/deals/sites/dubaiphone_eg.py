@@ -7,8 +7,11 @@ header the page answers only that data stream (about 40% of the HTML). `/en/cate
 holds the whole shop (about 1,300 products).
 
 Parameters: `sort=newest` (by id, so pages don't shift when prices change; the default is
-price high to low), `price_min`/`price_max` on the selling price (whole pounds, inclusive),
-`page`. A `per_page` above 100 or an unknown sort renders a page without `shopData`; an
+price high to low) and `page`. The shop's `price_min`/`price_max` filter is **not used**: it
+silently drops every sold-out product (Smart Phone from 2,500 EGP: 103 products, all in stock;
+unfiltered: 120, 45 sold out), so a sell-out would look like the product vanishing. Categories
+are one or two pages, so a slice is a whole category and the coordinator applies the group's
+minimum price itself (as for Dream 2000). A `per_page` above 100 or an unknown sort renders a page without `shopData`; an
 unknown category renders Next's not-found page (`NEXT_HTTP_ERROR_FALLBACK;404`), both with
 HTTP 200. Vercel caches every page for 10 minutes, so the URL carries the current minute
 (`t=`) to read the shop's prices as they are now rather than up to 10 minutes old.
@@ -38,7 +41,7 @@ NOT_FOUND = "NEXT_HTTP_ERROR_FALLBACK;404"
 
 class DubaiPhoneEG:
     name = "dubaiphone_eg"
-    max_slice_total = 2000  # no page cap; bigger than the whole shop
+    max_slice_total = 10_000  # the price filter is not used, so the planner must never split
 
     def __init__(self, state_dir=None):
         self._session = requests.Session(impersonate=IMPERSONATE)
@@ -69,10 +72,7 @@ def page_url(slice: Slice, page: int, now: float | None = None) -> str:
     params: dict[str, str | int] = {"per_page": PER_PAGE, "sort": "newest"}
     if page > 1:
         params["page"] = page
-    if slice.price_min is not None:
-        params["price_min"] = slice.price_min
-    if slice.price_max is not None:
-        params["price_max"] = slice.price_max
+    # No price_min/price_max: the shop's filter hides sold-out products (the coordinator applies the minimum)
     params["t"] = int((time.time() if now is None else now) // 60)  # past Vercel's 10-minute page cache
     return f"{BASE}/category/{slice.value.strip('/')}?{urlencode(params)}"
 
