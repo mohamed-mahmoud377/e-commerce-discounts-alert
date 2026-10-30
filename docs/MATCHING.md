@@ -287,6 +287,16 @@ How it stays safe (`detailq.py`, `[details]` in the config):
 - **Off switch:** `[details] enabled = false`, or remove a shop from `sites`. `make models` shows pages read
   per shop, barcodes and model numbers found, the queue and any pause.
 
+**Measured, 30 Oct 2026 (night test):** with the Mac's crawling of the four shops paused for two hours (the
+pause feature), 895 pages were read at the normal pace (one per shop every 30 s) with **no refusal from any
+shop**. Barcodes: 2B 81 of 223 pages, Jumia 44 of 209 (its phones), B.TECH and Cairo Sales none (model numbers:
+B.TECH 40, Cairo Sales 143). Matching the same snapshot with and without the page data: **+226 listings on
+2+ shops at confidence 75 or more, 5 fewer** (each of those a safety rule declining to guess, e.g. a Dream 2000
+listing whose barcodes point at both the 4G and the 5G model). Gains on all eight shops: a page barcode on one
+shop links listings on the others (Infinix Note Edge: barcode and page model number agree on 4 shops,
+confidence 100). One finding on the way: a shop that blocks one device's IP (Cairo Sales and the friend's Mac)
+leaves it uncrawled if the other device is paused; the stall alarm caught it.
+
 What matching does with it: page barcodes go to `product_barcodes` (source `page`) and join the barcode tier;
 page model numbers rank after the title's own codes as candidates for the model code (so a title without a
 code gets one, and an unshared title code can give way to a page model number another shop has).

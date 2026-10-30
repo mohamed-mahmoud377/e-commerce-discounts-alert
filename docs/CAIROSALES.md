@@ -176,3 +176,10 @@ SELECT kind, count(*), sum(failures > 0) failing, min(next_due_at) FROM jobs WHE
 
 PrestaShop's `table.table-data-sheet` (`<td>` label, `<td>` value) has `Model` (`OLED65CS6VA-S30A`), and the
 markup has `itemprop="mpn"`. No barcodes seen (0 of 25 in the pilot). `details.parse_cairosales` reads both.
+
+## Cloudflare and the friend's Mac (30 Oct 2026)
+
+Cairo Sales challenged the friend's Mac (197.127.x) while it crawled Jumia, noon and the rest fine; with the
+owner's Mac paused, nobody crawled Cairo Sales for 1.7 hours and the watchdog's stall alarm fired, correctly.
+Pausing the owner's Mac on Cairo Sales therefore stops it entirely.
+
