@@ -671,6 +671,27 @@ def test_dubaiphone_crossed_out_price_html_page_and_errors(monkeypatch):
         site.fetch_page(Slice.from_key("category:tvs"), 1)
     assert len(urls) == 2  # one fresh session first
 
+    # Stock comes from the price-filtered listing (it holds exactly the products in stock): the plain
+    # listing calls 501 sold out (its first colour is), the filtered one lists it, so it is in stock;
+    # 500 is flagged in stock but missing from the filtered listing, so it is sold out.
+    plain = {"products": {"total": 2, "current_page": 1, "last_page": 1,
+                          "data": [item, {**same, "in_stock": False}]}}
+    stocked = {"products": {"total": 1, "current_page": 1, "last_page": 1, "data": [same]}}
+    stream = lambda d: '1:["$","$L30",null,{"shopData":' + json.dumps(d) + "}]\n"
+
+    def get(self, url, timeout, headers):
+        urls.append(url)
+        return Response(200, stream(stocked if "price_min=1" in url else plain))
+
+    monkeypatch.setattr(Session, "get", get)
+    site = dubaiphone_eg.DubaiPhoneEG()
+    urls.clear()
+    page = site.fetch_page(Slice.from_key("category:mobiles-all-2|price:2500-"), 1)
+    assert {x.sku: x.in_stock for x in page.listings} == {"500": False, "501": True}
+    assert len(urls) == 2 and "price_min=1" in urls[1] and "price_min" not in urls[0]
+    site.fetch_page(Slice.from_key("category:mobiles-all-2|price:2500-"), 2)
+    assert len(urls) == 3  # later pages reuse the ids read with page 1
+
 
 def test_hardwaremarket_products():
     from deals.sites.hardwaremarket_eg import parse_products, products_url

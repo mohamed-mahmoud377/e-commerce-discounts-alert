@@ -7,11 +7,18 @@ header the page answers only that data stream (about 40% of the HTML). `/en/cate
 holds the whole shop (about 1,300 products).
 
 Parameters: `sort=newest` (by id, so pages don't shift when prices change; the default is
-price high to low) and `page`. The shop's `price_min`/`price_max` filter is **not used**: it
-silently drops every sold-out product (Smart Phone from 2,500 EGP: 103 products, all in stock;
-unfiltered: 120, 45 sold out), so a sell-out would look like the product vanishing. Categories
-are one or two pages, so a slice is a whole category and the coordinator applies the group's
-minimum price itself (as for Dream 2000). A `per_page` above 100 or an unknown sort renders a page without `shopData`; an
+price high to low) and `page`.
+
+**Stock needs two listings.** The plain listing holds every product, but its `in_stock` is
+false for products whose first colour is sold out (28 of 120 phones on 30 October 2026, all
+in stock on their product pages and in 17 to 28 branches). Any `price_min`/`price_max`
+filter returns exactly the products that really are in stock, and nothing else. So a
+category is read twice: the plain pages for the products and prices, and the pages filtered
+with `price_min=1` for the ids in stock (refreshed at every page 1). The price filter is not
+used for slicing: categories are one or two pages, so a slice is a whole category and the
+coordinator applies the group's minimum price itself (as for Dream 2000).
+
+A `per_page` above 100 or an unknown sort renders a page without `shopData`; an
 unknown category renders Next's not-found page (`NEXT_HTTP_ERROR_FALLBACK;404`), both with
 HTTP 200. Vercel caches every page for 10 minutes, so the URL carries the current minute
 (`t=`) to read the shop's prices as they are now rather than up to 10 minutes old.
@@ -37,6 +44,7 @@ PER_PAGE = 100  # the shop's maximum
 IMPERSONATE = "chrome"
 PLACEHOLDER_PRICE = 1000  # piastres (10 EGP); sold-out products sit at 1 EGP until they get a real price
 NOT_FOUND = "NEXT_HTTP_ERROR_FALLBACK;404"
+STOCK_MAX_AGE = 300  # seconds a category's in-stock ids are reused for its later pages
 
 
 class DubaiPhoneEG:
@@ -45,6 +53,7 @@ class DubaiPhoneEG:
 
     def __init__(self, state_dir=None):
         self._session = requests.Session(impersonate=IMPERSONATE)
+        self._stock: dict[str, tuple[float, set[str]]] = {}  # category -> (read at, ids in stock)
 
     def fetch_page(self, slice: Slice, page: int) -> PageResult:
         if slice.kind != "category":
@@ -53,7 +62,22 @@ class DubaiPhoneEG:
         if NOT_FOUND in body and '"shopData":' not in body:
             raise UnknownTarget(f"{self.name}: no category with slug {slice.value!r} "
                                 f"(see https://www.dubaiphone.net/sitemap-categories.xml)")
-        return parse_listing(body)
+        return parse_listing(body, self._in_stock(slice, fresh=page == 1))
+
+    def _in_stock(self, slice: Slice, fresh: bool) -> set[str]:
+        """Ids of the category's products that are really in stock (the price-filtered listing)."""
+        category = slice.value.strip("/")
+        read_at, ids = self._stock.get(category, (0.0, set()))
+        if fresh or time.time() - read_at > STOCK_MAX_AGE:
+            ids, page = set(), 1
+            while True:
+                products = shop_data(self._get(page_url(slice, page, in_stock_only=True))).get("products") or {}
+                ids |= {str(item["id"]) for item in products.get("data") or []}
+                if page >= (products.get("last_page") or 1):
+                    break
+                page += 1
+            self._stock[category] = (time.time(), ids)
+        return ids
 
     def _get(self, url: str) -> str:
         r = self._session.get(url, timeout=30, headers={"RSC": "1"})
@@ -68,11 +92,14 @@ class DubaiPhoneEG:
         return r.text
 
 
-def page_url(slice: Slice, page: int, now: float | None = None) -> str:
+def page_url(slice: Slice, page: int, now: float | None = None, in_stock_only: bool = False) -> str:
+    """A listing page. No price filter for slicing (it hides sold-out products, the coordinator
+    applies the minimum); `in_stock_only` uses that very effect to list the products in stock."""
     params: dict[str, str | int] = {"per_page": PER_PAGE, "sort": "newest"}
     if page > 1:
         params["page"] = page
-    # No price_min/price_max: the shop's filter hides sold-out products (the coordinator applies the minimum)
+    if in_stock_only:
+        params["price_min"] = 1
     params["t"] = int((time.time() if now is None else now) // 60)  # past Vercel's 10-minute page cache
     return f"{BASE}/category/{slice.value.strip('/')}?{urlencode(params)}"
 
@@ -87,12 +114,13 @@ def shop_data(body: str) -> dict:
     return json.JSONDecoder().raw_decode(body, body.index("{", start))[0]
 
 
-def parse_listing(body: str) -> PageResult:
+def parse_listing(body: str, in_stock: set[str] | None = None) -> PageResult:
+    """One listing page; `in_stock` (ids from the filtered listing) overrides the page's own stock flags."""
     data = shop_data(body)
     products = data.get("products") or {}
     listings: dict[str, Listing] = {}
     for item in products.get("data") or []:
-        listing = _parse_item(item)
+        listing = _parse_item(item, in_stock)
         if listing and listing.sku not in listings:
             listings[listing.sku] = listing
     filters = (data.get("filters") or {}).get("categories") or []
@@ -105,7 +133,7 @@ def parse_listing(body: str) -> PageResult:
     )
 
 
-def _parse_item(item: dict) -> Listing | None:
+def _parse_item(item: dict, in_stock: set[str] | None = None) -> Listing | None:
     title = (item.get("name") or "").strip()
     availability = item.get("availability_type") or "normal"
     if availability == "preorder" or (item.get("preorder") or {}).get("enabled") \
@@ -126,7 +154,8 @@ def _parse_item(item: dict) -> Listing | None:
         price=price,
         list_price=list_price,
         currency="EGP",
-        in_stock=bool(item.get("in_stock")) and availability == "normal" and price is not None,
+        in_stock=(str(item["id"]) in in_stock if in_stock is not None else bool(item.get("in_stock")))
+        and availability == "normal" and price is not None,
         list_price_kind="list" if list_price else None,
     )
 

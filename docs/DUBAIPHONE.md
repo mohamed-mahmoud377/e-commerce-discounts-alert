@@ -15,7 +15,7 @@ page 1, with the 1 EGP placeholders and the pre-orders). Sizes are from 30 Octob
 | Whole shop in one listing | **Yes**: `/en/category/all` holds every product (1,268), so 13 requests at 100 a page read the whole catalogue |
 | Products per request | 1 to 100 (`per_page`); 101 and more answer an error page |
 | Exact count | Yes: `shopData.products.total`, `last_page` |
-| Price filter | `price_min` / `price_max` (selling price, whole pounds, inclusive), but it **drops every sold-out product**, so we don't use it |
+| Price filter | `price_min` / `price_max` (selling price, whole pounds, inclusive), but it **drops every sold-out product** (we use that to read stock), so we don't use it |
 | Fresh prices | Listing pages are cached at Vercel's edge for **10 minutes**. `/api/products/by-ids?ids=…` (up to 100 ids) is never cached and gives the current price and the crossed-out price |
 | Bot protection | Vercel's bot challenge (HTTP 429, `x-vercel-mitigated: challenge`) for plain `curl`, even from home. Chrome's TLS fingerprint (`curl_cffi`) passes from the Mac. Static files (`static.dubaiphone.net`) are behind Cloudflare, which answers 403 to plain `curl` |
 | Who can crawl it | **Home connections only**: the Mac's `DEALS_SITES` has it, the droplet's doesn't. The droplet gets the 429 challenge even with Chrome's fingerprint |
@@ -75,7 +75,7 @@ or the whole body when the request has `RSC: 1`) contains `"shopData":{…}`:
 | `price.amount` | The crossed-out price when it is above `selling_price` (only 4 products) |
 | `has_special_price` | **Unreliable**: true on 331 products, but 327 of them have `price` equal to `selling_price` |
 | `is_flash_sale` | False on all 1,268, even the two items in the Flash Sale category |
-| `in_stock` | Stock; up to 10 minutes stale (see caching) |
+| `in_stock` | **Wrong for products with colours**: false when the first colour is sold out, even if others are in stock (see "Stock" below) |
 | `availability_type` | `normal` 1,262, `preorder` 5, `coming_soon` 1 |
 | `preorder.enabled` | True on the 5 pre-orders |
 
@@ -121,11 +121,32 @@ is a block.
 - **Edge cache.** Listing pages are served from Vercel's cache (`x-vercel-cache: HIT`, `age` up to 600 s,
   then one `STALE` answer while it re-renders, then fresh). Measured over 30 minutes on three pages: the age
   climbed to 600 to 640, one STALE, then restarted at 45. A listing can therefore show a price or stock
-  state **up to 10 minutes old**. In a sample of 50 product pages, 6 were in stock on the product page but
-  out of stock on the cached listing; two of them re-read through a fresh listing URL were in stock. Any URL not seen before
+  state **up to 10 minutes old**. Any URL not seen before
   (another parameter order, an extra `&x=1`) is rendered fresh (`MISS`, `age` 0, 2.4 to 2.7 s for 100
   products), but that costs the shop a full render each time.
 - **Slugs change**; 44 products have a `-1` suffix. Key by id.
+
+## Stock: the listing's flag is wrong, the price filter is right (found live, 30 October 2026)
+
+In a sample of 50 product pages, 6 were in stock on the product page but "out of stock" in the listing. It
+looked like the 10-minute cache, but fresh renders say the same. On Smart Phone:
+
+| Listing | Products | `in_stock` true |
+| --- | --- | --- |
+| plain (`/en/category/mobiles-all-2`) | 120 | 75 |
+| `price_min=1` (or 0, or 2500…) | 102 | 102 |
+
+All 28 products the plain listing calls sold out while the filtered one lists them are colour-variant phones
+(Galaxy A18, Redmi Note 17 Pro, Galaxy S26 Ultra…). Each one checked was in stock on its product page
+(`inStock` true, some colours available), in the JSON-LD (`InStock`) and in 17 to 28 branches
+(`/api/products/store-availability`). The listing's flag evidently follows the product's first colour. The
+other way round, the 18 products missing from the filtered listing were all sold out on their product pages
+(every colour unavailable), the 1 EGP placeholders and the pre-orders among them.
+
+So the adapter reads each category twice: the plain pages (every product, with prices, sold-out ones
+included) and the `price_min=1` pages, whose ids are the products in stock. The filtered set is read with page
+1 and reused for later pages of the same category for up to 5 minutes. Cost: one or two extra requests per
+category.
 
 ## Fresh prices: `/api/products/by-ids`
 
@@ -192,13 +213,15 @@ earbuds at 499, both out of stock) and `last-piece` (3).
 - **Requests**: `GET /en/category/<slug>?per_page=100&sort=newest[&page=N]&t=<minute>` with the header
   `RSC: 1` and Chrome's fingerprint. **No price filter**: the shop's hides sold-out products, so a slice is the
   whole category (one or two pages; `max_slice_total` 10,000 keeps the planner from splitting) and the
-  coordinator drops new products under the group's minimum, as for Dream 2000. The slice key is `category:<slug>`; `category:all` is the
+  coordinator drops new products under the group's minimum, as for Dream 2000. Stock comes from a second
+  read with `price_min=1` (see "Stock" above). The slice key is `category:<slug>`; `category:all` is the
   whole shop. `search:` is refused (`UnknownTarget`: the search page is filled by JavaScript).
 - **`t=<minutes since 1970>`** makes each minute's URL new to Vercel's cache, so the page is rendered from the
   shop's current data instead of a copy up to 10 minutes old (the first principle: notice drops fast). Each
-  such request costs the shop one render (0.3 to 2.7 s); a pass of every group is about 20 pages.
+  such request costs the shop one render (0.3 to 2.7 s); a pass of every group is about 40 pages.
   `/api/products/by-ids` would be lighter but needs the ids, which the adapter doesn't have.
-- **Reading**: `shopData` cut out of the stream. Price = `selling_price` in piastres; a `price` above it is the
+- **Reading**: `shopData` cut out of the stream. In stock = listed by the `price_min=1` read (and `normal`
+  availability). Price = `selling_price` in piastres; a `price` above it is the
   crossed-out price (kind `list`). Below 10 EGP the price is a placeholder (recorded as no price, not in
   stock). Pre-orders (`availability_type` `preorder`, `preorder.enabled`, or a title starting "Pre Order") are
   skipped; `coming_soon` is recorded as not in stock. Keyed by the product id.

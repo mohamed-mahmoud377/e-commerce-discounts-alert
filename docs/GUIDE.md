@@ -263,7 +263,9 @@ earns HTTP 429. Details: [CARREFOUR.md](CARREFOUR.md).
 **dubaiphone.net.** Dubai Phone is a Next.js shop on Vercel. Each category page (`/en/category/<slug>`)
 renders a `shopData` object (asked with the `RSC: 1` header, the page sends only that data): 100 products a
 page, sorted newest first so pages don't shift, an exact count. Its price filter silently hides sold-out
-products, so it is not used: categories are one or two pages, and the coordinator applies the group minimum. Vercel caches every page for 10 minutes, so the URL carries the current minute (`t=`) to read prices
+products, so it is not used for slicing (categories are one or two pages; the coordinator applies the group
+minimum). The listing's own stock flag is wrong for products with colours, so stock comes from a second
+read filtered with `price_min=1`, which lists exactly the products in stock. Vercel caches every page for 10 minutes, so the URL carries the current minute (`t=`) to read prices
 as they are now. Vercel's bot challenge refuses plain clients and the droplet; Chrome's fingerprint passes
 from home. Traps: sold-out phones listed at 1 EGP (recorded as no price), pre-orders at their 500 EGP deposit
 (skipped), "coming soon" products (not in stock). robots.txt asks every non-search bot to stay away; the
