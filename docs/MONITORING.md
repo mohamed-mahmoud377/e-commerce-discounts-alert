@@ -142,6 +142,11 @@ Lines worth reacting to:
 | `dream2000_eg: no collection with handle 'x'` | Unknown Dream 2000 collection | Look it up in `https://dream2000.com/en/collections.json?limit=250` |
 | `blocked: carrefour_eg: HTTP 429` (or 403) | Akamai rate-limited or refused this connection | Pauses by itself; if it repeats, raise `[sites.carrefour_eg]` delays; see [CARREFOUR.md](CARREFOUR.md) |
 | `carrefour_eg: no products in category 'x'` | Unknown (or lowercase) Carrefour id | Ids are case-sensitive, e.g. `NFEGY4080000`; see [CARREFOUR.md](CARREFOUR.md) |
+| `blocked: dubaiphone_eg: HTTP 429 ... (Vercel challenge)` | Vercel's bot challenge: expected from any cloud IP, rare from home | Pauses by itself; keep `dubaiphone_eg` off cloud workers; see [DUBAIPHONE.md](DUBAIPHONE.md) |
+| `dubaiphone_eg: no category with slug 'x'` | Unknown Dubai Phone slug (the page was Next's 404) | Find it in `https://www.dubaiphone.net/sitemap-categories.xml` |
+| `dubaiphone_eg: no shopData in the page` | The shop answered an error page (it does for `per_page` over 100 or an unknown sort) or changed its layout | Open the URL from the log in a browser; retried by itself |
+| `blocked: hardwaremarket_eg: HTTP 403` | Cloudflare's challenge: expected from any cloud IP | Pauses by itself; keep `hardwaremarket_eg` off cloud workers; see [HARDWAREMARKET.md](HARDWAREMARKET.md) |
+| `hardwaremarket_eg: no category 'x'` | Unknown WooCommerce category id or slug | `deals categories hardwaremarket_eg <id>` or the category list URL in the message |
 | `lease lost` | The device was too slow (over 5 min between pages) and the job went to another device | Fine occasionally |
 
 ## Telegram warnings

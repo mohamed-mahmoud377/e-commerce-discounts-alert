@@ -358,7 +358,15 @@ def cmd_categories(args) -> None:
                                            ("every collection (386)", "https://dream2000.com/en/collections.json?limit=250&page=1")],
                           "carrefour_eg": [("Electronics & Appliances", "NFEGY4000000"), ("Mobiles, Tablets & Wearables", "NFEGY1200000"),
                                            ("Small Appliances", "NFEGY4040000"), ("Large Appliances", "NFEGY4100000"),
-                                           ("Computers & Office", "NFEGY4070000"), ("TVs & Projectors", "NFEGY4080000")]}[args.site]:
+                                           ("Computers & Office", "NFEGY4070000"), ("TVs & Projectors", "NFEGY4080000")],
+                          "dubaiphone_eg": [("Everything (one listing)", "all"), ("Smart Phone", "mobiles-all-2"),
+                                            ("Laptops", "all-laptops"), ("Tablets", "tablets"), ("TVs", "tvs"),
+                                            ("Kitchen Appliances", "kitchen-appliances"), ("Home Appliances", "home-appliances"),
+                                            ("every category (145)", "https://www.dubaiphone.net/sitemap-categories.xml")],
+                          "hardwaremarket_eg": [("Everything", "all"), ("Mouse", "41"), ("Keyboards", "15"), ("Headsets", "39"),
+                                                ("Streaming", "1109"), ("Gamepad", "148"), ("Hardware", "433"),
+                                                ("Fans & Cooling", "120"), ("Computer Accessories", "62"),
+                                                ("Mobile Accessories", "4395")]}[args.site]:
             print(f"  {name:<25} {cid}")
 
 

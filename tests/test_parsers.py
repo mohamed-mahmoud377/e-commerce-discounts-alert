@@ -596,3 +596,156 @@ def test_carrefour_page_cap_empty_unknown_and_block(monkeypatch):
     with pytest.raises(Blocked, match="HTTP 429"):
         site.fetch_page(Slice.from_key("category:NFEGY4080000"), 1)
     assert len(urls) == 2
+
+
+def test_dubaiphone_listing_and_traps():
+    from deals.sites.dubaiphone_eg import page_url, parse_listing
+    result = parse_listing(fixture_text("dubaiphone_mobiles.rsc.gz"))
+    assert result.total == 120 and result.has_next
+    assert ("honor", "Honor (15)") in [(c.id, c.name) for c in result.subcategories]
+    by_sku = {x.sku: x for x in result.listings}
+    phone = by_sku["1200"]
+    assert (phone.price, phone.list_price, phone.in_stock) == (14600000, None, True)
+    assert phone.title == "IPhone 17 Pro Max With FaceTime - 1TB, 12GB RAM"
+    assert phone.url == "https://www.dubaiphone.net/en/shop/apple-iphone-17-pro-max-with-facetime-1tb-12gb-ram"
+    # sold-out phones wait at 1 EGP for a real price: no price at all
+    assert by_sku["2854"].price is None and not by_sku["2854"].in_stock
+    # pre-orders are priced at the deposit (500 EGP) or before sale: skipped
+    assert not {"2655", "2774", "2821", "2822"} & set(by_sku)
+    # "coming soon" shows a price but can't be bought
+    assert by_sku["2543"].price == 17600000 and not by_sku["2543"].in_stock
+    assert len(result.listings) == 96  # 100 cards, 4 pre-orders
+    # newest first (stable paging), inclusive price filter, the current minute past Vercel's cache
+    assert page_url(Slice.from_key("category:tvs|price:3000-"), 2, now=600) == (
+        "https://www.dubaiphone.net/en/category/tvs?per_page=100&sort=newest&page=2&price_min=3000&t=10")
+
+
+def test_dubaiphone_crossed_out_price_html_page_and_errors(monkeypatch):
+    from deals.models import Blocked, UnknownTarget
+    from deals.sites import dubaiphone_eg
+
+    item = {"id": 500, "slug": "anker", "name": "Anker MagGo", "price": {"amount": 5899}, "selling_price": {"amount": 5599},
+            "has_special_price": True, "in_stock": True, "availability_type": "normal", "preorder": {"enabled": False}}
+    same = {**item, "id": 501, "price": {"amount": 5599}}  # has_special_price with equal prices: no claim
+    data = {"products": {"total": 2, "current_page": 1, "last_page": 1, "data": [item, same]}, "filters": {}}
+    rsc = '1:["$","$L30",null,{"shopData":' + json.dumps(data) + "}]\n"
+    html = f'<html><script>self.__next_f.push([1,{json.dumps(rsc)}])</script></html>'
+    for body in (rsc, html):
+        result = dubaiphone_eg.parse_listing(body)
+        a, b = result.listings
+        assert (a.price, a.list_price, a.list_price_kind) == (559900, 589900, "list")
+        assert (b.price, b.list_price) == (559900, None) and not result.has_next
+
+    class Response:
+        def __init__(self, status_code, text, headers=None):
+            self.status_code, self.text, self.headers = status_code, text, headers or {}
+
+        def raise_for_status(self):
+            pass
+
+    urls = []
+
+    class Session:
+        def __init__(self, impersonate):
+            pass
+
+        def get(self, url, timeout, headers):
+            assert headers == {"RSC": "1"}
+            urls.append(url)
+            return answer
+
+    monkeypatch.setattr(dubaiphone_eg.requests, "Session", Session)
+    site = dubaiphone_eg.DubaiPhoneEG()
+    answer = Response(200, '0:["NEXT_HTTP_ERROR_FALLBACK;404"]')
+    with pytest.raises(UnknownTarget, match="no-such"):
+        site.fetch_page(Slice.from_key("category:no-such"), 1)
+    with pytest.raises(UnknownTarget, match="search"):
+        site.fetch_page(Slice.from_key("search:iphone"), 1)
+    answer = Response(200, '0:["Something went wrong"]')  # e.g. per_page over 100
+    with pytest.raises(ValueError, match="no shopData"):
+        site.fetch_page(Slice.from_key("category:tvs"), 1)
+    answer = Response(429, "challenge", {"x-vercel-mitigated": "challenge"})
+    urls.clear()
+    with pytest.raises(Blocked, match="Vercel challenge"):
+        site.fetch_page(Slice.from_key("category:tvs"), 1)
+    assert len(urls) == 2  # one fresh session first
+
+
+def test_hardwaremarket_products():
+    from deals.sites.hardwaremarket_eg import parse_products, products_url
+    result = parse_products(fixture_json("hardwaremarket_headsets.json.gz"), 559, 6, 6)
+    assert result.total == 559 and not result.has_next and len(result.listings) == 59
+    by_sku = {x.sku: x for x in result.listings}
+    g321 = by_sku["154226"]
+    assert (g321.price, g321.list_price, g321.list_price_kind, g321.in_stock, g321.brand) == (
+        309900, 349900, "list", True, "Logitech")
+    assert g321.url == "https://hardwaremarket.net/product/logitech-g321-lightspeed-gaming-headset/"
+    # HTML entities in titles; brand from an "ONIKUMA | X92" SKU when the shop set none
+    x92 = by_sku["158133"]
+    assert x92.title.startswith("ONIKUMA X92 RGB Gaming Headset – 50mm") and x92.brand == "Onikuma"
+    assert by_sku["169314"].brand == "Microsoft"
+    assert sum(not x.in_stock for x in result.listings) == 27  # sold-out products stay visible
+    assert parse_products([], 0, 0, 1).total == 0
+    # every stock status, paged by id, price filter in piastres (inclusive whole pounds)
+    url = products_url(Slice.from_key("category:39|price:800-1500"), 2)
+    assert url.startswith("https://hardwaremarket.net/wp-json/wc/store/v1/products?_fields=id%2Cname%2Csku")
+    assert "per_page=100&page=2&orderby=id&order=asc&category=39&min_price=80000&max_price=150099" in url
+    assert url.endswith("stock_status%5B%5D=instock&stock_status%5B%5D=outofstock&stock_status%5B%5D=onbackorder")
+    deals = products_url(Slice.from_key("deals:41|price:1000-"), 1)
+    assert "per_page=50&orderby=modified&order=desc&category=41&min_price=100000" in deals
+    assert "search=redragon" in products_url(Slice.from_key("search:redragon"), 1)
+    assert "category=" not in products_url(Slice.from_key("category:all"), 1)
+
+
+def test_hardwaremarket_categories_deals_lane_and_block(monkeypatch):
+    from deals.models import Blocked, UnknownTarget
+    from deals.sites import hardwaremarket_eg
+
+    categories = [{"id": 39, "slug": "headsets", "name": "Headsets", "parent": 0, "count": 71},
+                  {"id": 72, "slug": "wired-headsets", "name": "Wired", "parent": 39, "count": 57}]
+    product = {"id": 1, "name": "Mouse &amp; Pad", "sku": "X", "permalink": "https://hardwaremarket.net/product/x/",
+               "prices": {"price": "100000", "regular_price": "100000", "currency_code": "EGP"}, "is_in_stock": True}
+
+    class Response:
+        def __init__(self, status_code, body, headers=None):
+            self.status_code, self._body = status_code, body
+            self.headers = {"content-type": "application/json", **(headers or {})}
+            self.text = json.dumps(body)
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self._body
+
+    urls = []
+
+    class Session:
+        def __init__(self, impersonate):
+            pass
+
+        def get(self, url, timeout):
+            urls.append(url)
+            return answer(url)
+
+    monkeypatch.setattr(hardwaremarket_eg.requests, "Session", Session)
+    site = hardwaremarket_eg.HardwareMarketEG()
+    answer = lambda url: Response(200, categories) if "/categories" in url else Response(
+        200, [product], {"x-wp-total": "120", "x-wp-totalpages": "2"})
+    page = site.fetch_page(Slice.from_key("category:headsets"), 1)
+    assert page.total == 120 and page.has_next and page.listings[0].title == "Mouse & Pad"
+    assert [(c.id, c.name) for c in page.subcategories] == [("72", "Wired (57)")]
+    assert page.listings[0].list_price is None
+    with pytest.raises(UnknownTarget, match="9999"):
+        site.fetch_page(Slice.from_key("category:9999"), 1)
+    assert sum("/categories" in u for u in urls) == 1  # the tree is read once
+    # the fast lane is one page of recently modified products, no count
+    lane = site.fetch_page(Slice.from_key("deals:39"), 1)
+    assert lane.total is None and not lane.has_next and len(lane.listings) == 1
+    assert site.fetch_page(Slice.from_key("deals:39"), 2).listings == []
+    # Cloudflare's challenge is HTML, twice: blocked
+    answer = lambda url: Response(403, None, {"content-type": "text/html", "cf-mitigated": "challenge"})
+    urls.clear()
+    with pytest.raises(Blocked, match="HTTP 403"):
+        site.fetch_page(Slice.from_key("category:all"), 1)
+    assert len(urls) == 2

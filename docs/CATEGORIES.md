@@ -258,6 +258,25 @@ so the full map, found from the category paths in search results, is in [CARREFO
 an unknown id and an empty price range look the same (the adapter checks the bare category); relevance order is
 unstable across pages (always sort by price); pages past the 21st repeat it; out-of-stock products are hidden.
 
+## dubaiphone.net category slugs
+
+The slug after `/category/` (`mobiles-all-2` is Smart Phone, `all-laptops` Laptops, `all` the whole shop of
+about 1,270 products). The sitemap `https://www.dubaiphone.net/sitemap-categories.xml` lists all 145; the
+menu (`/api/categories/searchable`) shows 61, and 20 were empty on 30 October 2026. Slugs carry odd suffixes
+(`samsung-2`, `smart-watch-2`), several are brand pages under a parent (`samsung-2` under Smart Phone), and a
+few mix things (`games` holds a PS5 and e-scooters; `laptop-store` holds laptops and JBL speakers; `asus-rtx`
+is ASUS gaming laptops, not graphics cards). Quirks: an unknown slug renders a 404 page with HTTP 200; the
+default order is price high to low (the adapter sorts newest first); every page is cached 10 minutes.
+`deals categories dubaiphone_eg <slug>` lists the children with counts. Details: [DUBAIPHONE.md](DUBAIPHONE.md).
+
+## hardwaremarket.net category ids
+
+WooCommerce term ids (slugs work too): Mouse `41`, Keyboards `15`, Headsets `39`, Streaming `1109`, Gamepad
+`148`, Hardware `433` (graphics cards, PSUs, storage, cases), Fans & Cooling `120`, Computer Accessories `62`,
+Mobile Accessories `4395`; `all` is the whole shop. A category includes its children. The category list's own
+counts are stale (WooCommerce's cached term counts): Mouse says 259, while 795 products are tagged and 249 are in
+stock. `deals categories hardwaremarket_eg <id>` lists the children. Details: [HARDWAREMARKET.md](HARDWAREMARKET.md).
+
 ## Parent categories hold products their children don't (all shops)
 
 Measured 26 October 2026 by comparing a category's count with the sum of its children's counts (same price

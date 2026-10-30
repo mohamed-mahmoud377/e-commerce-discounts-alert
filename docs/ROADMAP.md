@@ -53,7 +53,7 @@ Ordered by value for effort. "Why" says what problem each one solves.
     the internet) or Caddy + a domain for automatic HTTPS.
 12. **Web dashboard**: product page with a price chart, search, freshness per group, alert history.
     The data is all in SQLite already; FastAPI can serve it next to the API.
-13. **More shops**: Raya, Carrefour (B.TECH, 2B, Dream 2000 done 27 October 2026). Each needs one `sites/<shop>.py` (`fetch_page` +
+13. **More shops**: Raya (B.TECH, 2B, Dream 2000 done 27 October 2026, Carrefour 28 October, Dubai Phone and Hardware Market 30 October). Each needs one `sites/<shop>.py` (`fetch_page` +
     parser) and a saved-page test; everything else (planner, scheduling, alerts) is shared. Jumia Egypt was
     added on 26 October 2026 ([JUMIA.md](JUMIA.md)); its open ideas: crawl `/flash-sales/` to mark flash
     deals, use the Official Store badge and the other-sellers price (`mpg`) in alerts.

@@ -3,6 +3,8 @@ from deals.sites.btech_eg import BtechEG
 from deals.sites.cairosales_eg import CairoSalesEG
 from deals.sites.carrefour_eg import CarrefourEG
 from deals.sites.dream2000_eg import Dream2000EG
+from deals.sites.dubaiphone_eg import DubaiPhoneEG
+from deals.sites.hardwaremarket_eg import HardwareMarketEG
 from deals.sites.jumia_eg import JumiaEG
 from deals.sites.noon_eg import NoonEG
 from deals.sites.twob_eg import TwoBEG
@@ -16,4 +18,6 @@ SITES = {
     BtechEG.name: BtechEG,
     Dream2000EG.name: Dream2000EG,
     CarrefourEG.name: CarrefourEG,
+    DubaiPhoneEG.name: DubaiPhoneEG,
+    HardwareMarketEG.name: HardwareMarketEG,
 }

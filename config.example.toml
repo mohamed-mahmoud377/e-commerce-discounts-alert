@@ -87,6 +87,14 @@ max_delay = 2.0
 min_delay = 2.0
 max_delay = 4.0
 
+[sites.dubaiphone_eg]  # Next.js on Vercel, home connections only (Vercel challenge elsewhere); 100 products a page
+min_delay = 1.0
+max_delay = 2.0
+
+[sites.hardwaremarket_eg]  # WooCommerce Store API, home connections only (Cloudflare); each page costs the shop ~3 s
+min_delay = 1.0
+max_delay = 2.0
+
 # ---------------------------------------------------------------------------
 # What to track. Each [[watch]] is a product group with one root per site:
 #   amazon_eg = "category:<browse node id>"
@@ -97,6 +105,9 @@ max_delay = 4.0
 #   btech_eg  = "category:<slug>"  (the URL path under /en/c/, e.g. tvs-projectors/televisions; docs/BTECH.md)
 #   dream2000_eg = "category:<handle>"  (the Shopify collection handle, e.g. mobiles; no search; docs/DREAM2000.md)
 #   carrefour_eg = "category:<id>"  (the id after /c/ in the URL, case-sensitive, e.g. NFEGY4080000; docs/CARREFOUR.md)
+#   dubaiphone_eg = "category:<slug>"  (the slug after /category/, e.g. mobiles-all-2; Mac only; docs/DUBAIPHONE.md)
+#   hardwaremarket_eg = "category:<id>"  (WooCommerce id or slug, e.g. 39 = Headsets; "deals:<id>" = its 50 most
+#                       recently modified products, a fast lane; Mac only; docs/HARDWAREMARKET.md)
 # (or "search:<keywords>"; a list of roots also works). Find ids with:
 #   deals categories amazon_eg 18018102031
 #   deals categories noon_eg electronics-and-mobiles
@@ -106,6 +117,8 @@ max_delay = 4.0
 #   deals categories btech_eg large-home-appliances
 #   deals categories dream2000_eg            (then https://dream2000.com/en/collections.json?limit=250 for every handle)
 #   deals categories carrefour_eg NFEGY4000000
+#   deals categories dubaiphone_eg mobiles-all-2  (every slug: https://www.dubaiphone.net/sitemap-categories.xml)
+#   deals categories hardwaremarket_eg 15
 # label is the name shown in alerts (optional, defaults to name).
 # min_price (EGP) skips cheap accessories/junk both when crawling and alerting.
 # interval_minutes is the starting revisit interval; it adapts per slice.
@@ -133,6 +146,7 @@ cairosales_eg = "category:tvs-screens"
 btech_eg = "category:tvs-projectors/televisions"
 dream2000_eg = "category:tvs"
 carrefour_eg = "category:NFEGY4080000"  # TVs & Projectors (139 TVs, projectors, mounts below the minimum)
+dubaiphone_eg = "category:tvs"
 
 [[watch]]
 name = "Refrigerators"
@@ -180,6 +194,7 @@ cairosales_eg = "category:air-conditioners"
 btech_eg = "category:large-home-appliances/air-conditioners"
 dream2000_eg = ["category:air-conditioners", "category:air-conditioner"]  # two overlapping collections
 carrefour_eg = "category:NFEGY4040112"  # split ACs, inside Coolers, Heaters & Air Treatment
+dubaiphone_eg = "category:air-conditioner"
 
 [[watch]]
 name = "Gaming consoles"
@@ -240,6 +255,7 @@ exclude_words = ["pre-owned", "pre owned", "used ", "refurbished",  # B.TECH sel
                  "for xbox", "for nintendo", "for switch", "for steam deck", "for playstation", "pour ps",
                  "dualsense", "joy-con", "joy con", "pro controller", "portable ssd", "storage expansion",
                  "expansion card", "earbuds", "earphones", "speaker", "disc drive"]
+dubaiphone_eg = "category:ps-consoles"  # one PS5; "games" mixes it with e-scooters
 
 [[watch]]
 name = "Phones"
@@ -262,6 +278,7 @@ cairosales_eg = "category:mobiles-tablets/mobiles"
 btech_eg = "category:mobiles-tablets/mobile-phones"
 dream2000_eg = "category:mobiles"
 carrefour_eg = "category:NFEGY1220200"  # smartphones (not the smartwatches next to them)
+dubaiphone_eg = "category:mobiles-all-2"  # Smart Phone (pre-orders and 1 EGP placeholders are skipped)
 
 [[watch]]
 name = "Tablets"
@@ -284,6 +301,7 @@ cairosales_eg = "category:mobiles-tablets/tablets"
 btech_eg = "category:mobiles-tablets/tablets"
 dream2000_eg = "category:tablets"
 carrefour_eg = "category:NFEGY1230000"
+dubaiphone_eg = "category:tablets"
 
 [[watch]]
 name = "Laptops"
@@ -306,6 +324,7 @@ cairosales_eg = "category:computer-accessories/laptops-desktop-computers"
 btech_eg = "category:laptop-pc/laptops"  # pre-owned laptops (376) are a separate category, not tracked
 dream2000_eg = "category:laptop"
 carrefour_eg = "category:NFEGY4070500"
+dubaiphone_eg = "category:all-laptops"
 
 [[watch]]
 name = "Desktops"
@@ -345,6 +364,7 @@ cairosales_eg = ["category:computer-accessories/computer-monitors", "category:ga
 btech_eg = "category:laptop-pc/monitors"
 dream2000_eg = ["category:monitors", "category:gaming-monitors"]
 carrefour_eg = "category:NFEGY4070600"
+dubaiphone_eg = "category:monitors"
 
 [[watch]]
 name = "PC components"
@@ -370,6 +390,7 @@ exclude_words = ["monitor arm", "monitor mount", "monitor stand", "monitor holde
                  "wall mount", " mount ", "tv stand", "ups ", " ups", "-ups", "uninterrupt", "stabilizer",
                  "stabiliser", "battery backup", "battery 12v", "12v battery", "ultracell", "csb battery",
                  "dvd", "blu ray", "blu-ray", "cd-rw", "حامل", "ذراع"]
+hardwaremarket_eg = ["category:433", "category:120"]  # Hardware (GPUs, PSUs, storage, cases), Fans & Cooling
 
 [[watch]]
 name = "Headphones"
@@ -401,6 +422,8 @@ dream2000_eg = [
     "category:gaming-headset",
 ]
 carrefour_eg = "category:NFEGY1210300"
+dubaiphone_eg = ["category:headphones", "category:tws", "category:gaming-headset", "category:earphones"]
+hardwaremarket_eg = ["category:39", "deals:39"]  # Headsets, plus its 50 most recently modified (fast lane)
 
 [[watch]]
 name = "Kitchen machines"
@@ -484,6 +507,7 @@ dream2000_eg = [
     "category:electric-oven",
 ]
 carrefour_eg = ["category:NFEGY4040200", "category:NFEGY4040400", "category:NFEGY4040600"]  # food preparation (fryers, blenders, juicers), kettles & coffee, microwaves & ovens
+dubaiphone_eg = ["category:air-fryer", "category:kettle-coffee-maker", "category:blenders-mixers", "category:microwaves", "category:oven", "category:waffle-sandwich-maker"]
 
 # The rest of the small appliances (kettles, irons, toasters, grinders...): low priority.
 [[watch]]
@@ -582,6 +606,7 @@ dream2000_eg = [
     "category:water-filters",
 ]
 carrefour_eg = ["category:NFEGY4040300", "category:NFEGY4040700", "category:NFEGY4040113"]  # irons, toasters & grills, water dispensers
+dubaiphone_eg = "category:irons"
 
 [[watch]]
 name = "Cooking & dishwashers"
@@ -623,6 +648,25 @@ carrefour_eg = [
     "category:NFEGY4100800",  # built-in ovens
     "category:NFEGY4100150",  # other built-in
 ]
+
+
+# Gaming mice, keyboards, gamepads, microphones and webcams: Hardware Market's whole trade (and Dubai Phone's
+# keyboards and mice). Amazon, noon and Jumia aren't crawled for these (thousands of cheap listings).
+[[watch]]
+name = "Gaming peripherals"
+label = "ماوس وكيبورد وإكسسوارات جيمنج"
+min_price = 1000
+interval_minutes = 30
+max_interval_minutes = 60
+hardwaremarket_eg = [
+    "category:41",    # Mouse
+    "category:15",    # Keyboards
+    "category:148",   # Gamepad
+    "category:1109",  # Streaming (microphones, webcams, capture cards)
+    "deals:41",       # fast lane: the 50 most recently modified mice
+    "deals:15",       # ... and keyboards
+]
+dubaiphone_eg = ["category:keyboard-mouse", "category:gaming-mouse-and-keyboard"]
 
 # Jumia's flash-sales page: the only place its flash prices are marked (category cards show the same
 # price with no marker), mixed categories, about 400 products (86 above 1,500 EGP). Crawled as its own

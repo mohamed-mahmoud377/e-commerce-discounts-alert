@@ -31,7 +31,8 @@ KIND_TITLE = {
 }
 SITE_NAME = {"amazon_eg": "أمازون مصر", "noon_eg": "نون مصر", "jumia_eg": "جوميا مصر",
              "cairosales_eg": "كايرو سيلز", "2b_eg": "توبي (2B)", "btech_eg": "بي تك (B.TECH)",
-             "dream2000_eg": "دريم 2000", "carrefour_eg": "كارفور مصر"}
+             "dream2000_eg": "دريم 2000", "carrefour_eg": "كارفور مصر",
+             "dubaiphone_eg": "دبي فون", "hardwaremarket_eg": "هاردوير ماركت"}
 CONFIDENCE = {"high": "عالية", "medium": "متوسطة", "low": "منخفضة"}
 SIGNAL_TEXT = {
     "only_left": "متبقٍ {n} فقط",

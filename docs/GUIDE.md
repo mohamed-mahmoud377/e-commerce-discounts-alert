@@ -9,7 +9,7 @@ the science behind the rules below).
 
 ## Overview
 
-The system crawls whole categories on amazon.eg, noon.com (Egypt), jumia.com.eg, cairosales.com, 2b.com.eg, btech.com, dream2000.com and carrefouregypt.com, stores every product's price
+The system crawls whole categories on amazon.eg, noon.com (Egypt), jumia.com.eg, cairosales.com, 2b.com.eg, btech.com, dream2000.com, carrefouregypt.com, dubaiphone.net and hardwaremarket.net, stores every product's price
 history, and sends an Arabic Telegram alert when a price is genuinely low compared with that product's
 own history. It tracks about 50,000 products on Amazon and noon plus about 14,000 on Jumia, in 14 groups: TVs, refrigerators, air conditioners, gaming consoles,
 phones, tablets, laptops, desktops, monitors, PC components, headphones, kitchen machines (fryers, coffee
@@ -35,7 +35,7 @@ crawling from their own internet connections.
 | --- | --- | --- |
 | Coordinator (`deals serve`) | Droplet 207.154.206.127 | Owns the SQLite database, hands out crawl jobs, stores results, detects deals, runs the Telegram bot, watches for problems, takes daily backups |
 | Worker (`deals worker`) | Your Mac, the droplet, any friend's PC | Asks for a job, downloads the shop pages, sends the products back. Holds no database |
-| Site adapters (`sites/amazon_eg.py`, `sites/noon_eg.py`, `sites/jumia_eg.py`, `sites/cairosales_eg.py`, `sites/twob_eg.py`, `sites/btech_eg.py`, `sites/dream2000_eg.py`, `sites/carrefour_eg.py`) | Inside each worker | Know how to fetch and read one listing page of each shop |
+| Site adapters (`sites/amazon_eg.py`, `sites/noon_eg.py`, `sites/jumia_eg.py`, `sites/cairosales_eg.py`, `sites/twob_eg.py`, `sites/btech_eg.py`, `sites/dream2000_eg.py`, `sites/carrefour_eg.py`, `sites/dubaiphone_eg.py`, `sites/hardwaremarket_eg.py`) | Inside each worker | Know how to fetch and read one listing page of each shop |
 | Telegram bot (@Jerrys_deals_bot) | Inside the coordinator | Sends deal alerts to approved subscribers and system warnings to you |
 
 Workers only make outgoing requests to the coordinator, so nothing needs to be opened on your Mac or on a
@@ -44,7 +44,7 @@ Jumia, Cairo Sales, 2B and B.TECH's API always); the droplet's worker is a fallb
 
 ```mermaid
 flowchart TB
-    shops["amazon.eg, noon.com, jumia.com.eg,<br/>cairosales.com, 2b.com.eg, btech.com, dream2000.com,<br/>carrefouregypt.com<br/>category listing pages and APIs"]
+    shops["amazon.eg, noon.com, jumia.com.eg,<br/>cairosales.com, 2b.com.eg, btech.com, dream2000.com,<br/>carrefouregypt.com, dubaiphone.net, hardwaremarket.net<br/>category listing pages and APIs"]
     shops --> mac["Your Mac (launchd)<br/>all five shops<br/>does most of the crawling"]
     shops --> dw["Droplet worker<br/>amazon only<br/>fallback: often refused"]
     shops --> fr["Friend's PC (optional)<br/>any shop it can reach"]
@@ -260,6 +260,22 @@ stay under 1,200), and an unknown id answers exactly like an empty price range (
 category). Out-of-stock products are hidden; a third of the products are marketplace sellers. Too fast a pace
 earns HTTP 429. Details: [CARREFOUR.md](CARREFOUR.md).
 
+**dubaiphone.net.** Dubai Phone is a Next.js shop on Vercel. Each category page (`/en/category/<slug>`)
+renders a `shopData` object (asked with the `RSC: 1` header, the page sends only that data): 100 products a
+page, sorted newest first so pages don't shift, an exact count, an inclusive price filter on the selling
+price. Vercel caches every page for 10 minutes, so the URL carries the current minute (`t=`) to read prices
+as they are now. Vercel's bot challenge refuses plain clients and the droplet; Chrome's fingerprint passes
+from home. Traps: sold-out phones listed at 1 EGP (recorded as no price), pre-orders at their 500 EGP deposit
+(skipped), "coming soon" products (not in stock). robots.txt asks every non-search bot to stay away; the
+user chose to crawl it anyway (30 October 2026). Details: [DUBAIPHONE.md](DUBAIPHONE.md).
+
+**hardwaremarket.net.** Hardware Market (gaming peripherals and accessories) is WooCommerce, whose public
+Store API answers JSON: 100 products a page, the count in `X-WP-Total`, categories by id with their children,
+a price filter in piastres. Sold-out products are hidden unless every `stock_status` is asked for (they are),
+and `_fields` trims a page from 4 MB to 100 KB. Cloudflare passes any home connection and refuses the
+droplet. 98% of products show a crossed-out "regular" price, so it is only the shop's claim. Details:
+[HARDWAREMARKET.md](HARDWAREMARKET.md).
+
 **Which machine can reach which shop** (tested 25 October 2026):
 
 | Shop | Home IP (your Mac) | Droplet (DigitalOcean Frankfurt) |
@@ -271,20 +287,22 @@ earns HTTP 429. Details: [CARREFOUR.md](CARREFOUR.md).
 | btech.com | Works, plain curl too (tested 27 October) | Pages load, the API host times out (firewalled) |
 | dream2000.com | Works (tested 27 October) | Works (Shopify) |
 | carrefouregypt.com | Works with a browser fingerprint (tested 28 October) | Works too (40 pages in a row); plain curl is refused |
+| dubaiphone.net | Works with Chrome's fingerprint; plain curl gets Vercel's challenge (tested 30 October) | Always refused (Vercel challenge, HTTP 429, any fingerprint) |
+| hardwaremarket.net | Works, plain curl too (tested 30 October) | Always refused (Cloudflare challenge, HTTP 403) |
 | 2b.com.eg | Works with Chrome's fingerprint, HTML and GraphQL (tested 27 October) | Always refused (Cloudflare challenge) |
 
 **What is read from each product card** (no extra requests):
 
-| Signal | amazon.eg | noon | Jumia | Cairo Sales | 2B | B.TECH | Dream 2000 | Carrefour |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Price | The featured offer's price | The offer's sale price, else its price | The product's price | The price (hidden when out of stock) | `final_price` | `final_price` (coupons included) | The cheapest available variant of the group | `sellingPrice` (the buy-box offer, before coupons) |
-| Crossed-out price | "Was:" (Amazon's own recent price, trusted) or "List:" (brand RRP, often inflated) | Seller-set, treated like an RRP | Seller-set (on 88% of cards), treated like an RRP | The shop's "regular" price (every card), treated like an RRP | `regular_price` (every product), treated like an RRP | `base_price`: B.TECH's own offers (a promotion on a fifth of them) count as "was", third-party sellers' as an RRP | `compare_at_price` (83% of the catalogue), treated like an RRP | `markedPrice`: Carrefour's own (a timed promotion on a fifth of TVs) counts as "was", a marketplace seller's as an RRP |
-| Stock left | "Only 3 left in stock" | "Only 3 left" | "1 item left" (45% of cards say 3 or fewer, so not evidence) | none | `only_x_left_in_stock` (57% of products, so not evidence) | none | none (a "Last Piece" collection exists, not used) | `lowStock` with a count on 42% of TVs (so not evidence); "Only N left" is the order limit |
-| Deal badge | "Limited time deal" | "Deal", "Mega Deal" | none on category pages (flash sales are only marked on `/flash-sales/`) | none | none | none | none | "Ends in N hrs" (timed discount), read as a limited-time deal |
-| Shop's own price history | none | "Lowest price in 30 days", "in a year" | none | none | none | `price_drop_amount` (not used yet) | none | none |
-| Demand | "300+ bought in past month" | "200+ sold recently", "Selling out fast", bestseller | none | none | none | `is_best_seller` (half the TVs) | none | none |
-| Rating | Stars and review count | Stars and review count | Stars and review count | none | `rating_summary`, `review_count` | none | none | Stars and review count (on a tenth of products) |
-| Seller | not shown | Store name | not shown (one seller per SKU) | the shop | the shop | `seller_name` (half the offers are third-party, each its own sku) | the shop | `shopName` (a third are marketplace sellers) |
+| Signal | amazon.eg | noon | Jumia | Cairo Sales | 2B | B.TECH | Dream 2000 | Carrefour | Dubai Phone | Hardware Market |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Price | The featured offer's price | The offer's sale price, else its price | The product's price | The price (hidden when out of stock) | `final_price` | `final_price` (coupons included) | The cheapest available variant of the group | `sellingPrice` (the buy-box offer, before coupons) | `selling_price` (1 EGP placeholders count as no price; pre-orders skipped) | `prices.price` |
+| Crossed-out price | "Was:" (Amazon's own recent price, trusted) or "List:" (brand RRP, often inflated) | Seller-set, treated like an RRP | Seller-set (on 88% of cards), treated like an RRP | The shop's "regular" price (every card), treated like an RRP | `regular_price` (every product), treated like an RRP | `base_price`: B.TECH's own offers (a promotion on a fifth of them) count as "was", third-party sellers' as an RRP | `compare_at_price` (83% of the catalogue), treated like an RRP | `markedPrice`: Carrefour's own (a timed promotion on a fifth of TVs) counts as "was", a marketplace seller's as an RRP | `price` when above the selling price (4 products), treated like an RRP | `regular_price` (98% of products), treated like an RRP |
+| Stock left | "Only 3 left in stock" | "Only 3 left" | "1 item left" (45% of cards say 3 or fewer, so not evidence) | none | `only_x_left_in_stock` (57% of products, so not evidence) | none | none (a "Last Piece" collection exists, not used) | `lowStock` with a count on 42% of TVs (so not evidence); "Only N left" is the order limit | none | `low_stock_remaining` ("Only 1 left", 7% of in-stock products) |
+| Deal badge | "Limited time deal" | "Deal", "Mega Deal" | none on category pages (flash sales are only marked on `/flash-sales/`) | none | none | none | none | "Ends in N hrs" (timed discount), read as a limited-time deal | none (`is_flash_sale` is never set) | none |
+| Shop's own price history | none | "Lowest price in 30 days", "in a year" | none | none | none | `price_drop_amount` (not used yet) | none | none | none | none |
+| Demand | "300+ bought in past month" | "200+ sold recently", "Selling out fast", bestseller | none | none | none | `is_best_seller` (half the TVs) | none | none | none | none |
+| Rating | Stars and review count | Stars and review count | Stars and review count | none | `rating_summary`, `review_count` | none | none | Stars and review count (on a tenth of products) | none | not read (no reviews) |
+| Seller | not shown | Store name | not shown (one seller per SKU) | the shop | the shop | `seller_name` (half the offers are third-party, each its own sku) | the shop | `shopName` (a third are marketplace sellers) | the shop | the shop |
 
 **noon sellers.** One noon product can be sold by several sellers at very different prices. The same
 earbuds were seen at 7,550, 1,000 and 495 EGP, and which offer a listing shows depends on the price filter.
@@ -411,6 +429,8 @@ crawled like any other slice (same group, same interval and cap, same filters):
 | Jumia | `category:flash-sales` (its own watch group, "Jumia flash sales", 10 to 15 min) | the flash-sale page, all categories; the adapter marks these listings `limited_deal`, so a new product with a 30%+ claimed discount can alert the first time it is seen | 409, 86 above 1,500 EGP |
 | Cairo Sales, 2B | none found | | |
 | Carrefour | `filter=deal:true` ("Today's Deals") exists but is not used: every Carrefour root is a few pages, so the whole root costs what its deal feed would | | TVs 64 of 168 |
+| Hardware Market | `deals:<category id>` (the Store API sorted by last modified, one page of 50; a price edit moves a product to the top) | the category's most recently changed products | 50 a request |
+| Dubai Phone | none needed: every root is one or two pages, read past Vercel's 10-minute cache (`flash-sale` holds 2 earbuds under every minimum) | | |
 
 A product seen on a deal feed is the same product as on its category page (same key), so a drop seen there
 is judged against the same history. The feeds are about 20 Amazon pages and 30 noon pages per sweep in
@@ -802,6 +822,6 @@ changes. SQLite on this droplet is comfortable into the millions of products; Po
 it beyond that, or with several coordinators.
 
 To crawl more or faster, add workers on other connections (a friend's PC, an always-on Raspberry Pi at
-home). That needs a token in the config and no code change. Adding another shop (Raya, Carrefour)
+home). That needs a token in the config and no code change. Adding another shop (Raya)
 needs one new adapter file and a saved-page test; the planner, scheduler, alerts and bot are shared. See
 [ROADMAP.md](ROADMAP.md) and the improvements in [REVIEW-2026-10-25.md](REVIEW-2026-10-25.md).
