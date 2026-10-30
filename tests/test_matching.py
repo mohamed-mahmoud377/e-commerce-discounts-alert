@@ -473,6 +473,30 @@ def test_a_link_code_matches_a_title_code_on_another_shop(cfg):
     assert pm[tv] == pm[other] == "hyundai L43HYNDA630" and pm[dream] is None  # Dream 2000's links are not trusted
 
 
+def test_a_link_code_that_contradicts_the_title_is_not_trusted(cfg):
+    """B.TECH reuses a product's link for another offering ("...-d40eubkne-..." selling the red C40): the
+    title's own code wins unless the link's code spells it ("hob90000ss" for HOB90SS)."""
+    conn = db.connect(cfg.db_path)
+
+    def add(site, sku, title, url, price, brand):
+        with conn:
+            return db.record(conn, Listing(site, sku, title, url, price, None, "EGP", True, brand=brand), now=NOW).product_id
+    red = add("btech_eg", "B1", "Nespresso Inissia Espresso Machine , Red Black - C40-EU-RE-NE5",
+              "https://btech.com/en/p/nespresso-coffee-machine-d40eubkne-5sleeves-voucher?offering_id=f9", 1_299_900, "Nespresso")
+    black = add("2b_eg", "T1", "Nespresso inissia Coffee Machine Black - D40-EU-BK-NE", "https://2b.com.eg/x", 699_900, "Nespresso")
+    also = add("carrefour_eg", "C1", "Nespresso Inissia Coffee Machine - Black - D40-EU-BK-NE", "https://www.carrefouregypt.com/x",
+               699_900, "Nespresso")
+    hob = add("btech_eg", "B2", "Kenwood Gas Built in Hob , 90 Centimeter 5 Burners - HOB90SS",
+              "https://btech.com/en/p/kenwood-built-in-gas-hob-90cm-hob90000ss?offering_id=c4", 1_500_000, "Kenwood")
+    hob2 = add("jumia_eg", "J1", "Kenwood Built-in Gas Hob 90 cm HOB90.000SS", "https://jumia/x", 1_550_000, "Kenwood")
+    matching.rebuild(conn, NOW)
+    pm = {r[0]: r[1] for r in conn.execute("SELECT product_id, model FROM product_models")}
+    assert pm[black] == pm[also] == "nespresso D40EUBKNE" and pm[red] == "nespresso C40EURENE5"
+    assert pm[hob] == pm[hob2] == "kenwood HOB90000SS"
+    assert matching.related("65S90F", "QA65S90FAEXEG") and matching.related("MX52002", "MX5200")
+    assert not matching.related("CH200", "CH140STS")
+
+
 def test_link_ids_are_not_codes_and_one_odd_price_does_not_spoil_a_model():
     assert matching.slug_codes("https://btech.com/en/p/b4b8405b-78f5-448b-a25e-f5790b734e9a?offering_id=4a") == []
     prices = [3_799_900, 4_159_900, 4_247_500, 4_159_900, 7_599_900]

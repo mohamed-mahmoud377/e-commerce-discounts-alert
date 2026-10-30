@@ -328,7 +328,12 @@ On 30 Oct: 5,892 such products on 2+ shops.
 - **Codes in product links** (`slug_codes`): B.TECH, Cairo Sales and Carrefour end a product's link with its
   model code ("...-receiver-l43hynda630"); used like a page's model number. Not Dream 2000 (one link covers every
   size of a product: its "55 inch" and "50 inch" listings carry the 75-inch code), not Jumia (sellers write
-  theirs), and not B.TECH links that are a random id (`/p/b4b8405b-78f5-...`).
+  theirs), and not B.TECH links that are a random id (`/p/b4b8405b-78f5-...`). A link's code counts only when the
+  title has no code or the link spells the title's code (`hob90000ss` for HOB90SS, `65s90f` for QA65S90FAEXEG: one
+  holds the other once zeros are dropped, `matching.related`): B.TECH reuses a product's link for another seller's
+  offering (`...-d40eubkne-...` selling the red C40-EU-RE-NE5 at 12,999 against the black D40's 6,999; `...-ch200`
+  selling the CH140STS freezer). Found on 30 Oct by reading the 88 listings whose code came from the link while
+  the title had its own: 86 were spellings of one code, those 2 were not.
 - **Page and link codes only when another shop has them**: an unshared one would only pull a listing out of a
   working product-line match (Itel P55 and its model number `A666L`).
 - **Prices are compared per shop**: the reference is the median of each shop's cheapest listing, so one shop

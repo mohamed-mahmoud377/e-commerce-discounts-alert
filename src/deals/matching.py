@@ -41,7 +41,7 @@ from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 from functools import lru_cache
-from itertools import groupby
+from itertools import chain, groupby
 from pathlib import Path
 
 from deals import db
@@ -607,6 +607,14 @@ def slug_codes(url: str) -> list[str]:
     return [c for c in (norm_code(w) for w in words if w) if is_code(c)]  # 5+ characters: no short pieces
 
 
+def related(a: str, b: str) -> bool:
+    """Are two codes spellings of one model number ('HOB90SS' and 'HOB90000SS', 'MX5200' and
+    'MX52002', '65S90F' and 'QA65S90FAEXEG')? One holds the other once zeros are dropped;
+    'D40EUBKNE' and 'C40EURENE5' are two models."""
+    a, b = a.replace("0", ""), b.replace("0", "")
+    return a in b or b in a
+
+
 def _fold(brands: Counter) -> dict[str, str]:
     """Each brand spelling -> the group's canonical (shortest) spelling."""
     groups = brand_groups(brands)
@@ -654,16 +662,15 @@ def _group(conn: sqlite3.Connection, now: datetime) -> None:
     conn.executescript("""
         CREATE TEMP TABLE idx AS SELECT product_id, code, rank FROM product_code_index;
         CREATE INDEX idx_code ON idx (code);""")
-    page_codes = {}
+    page_codes, link_codes = {}, {}
     for pid, codes in conn.execute("SELECT product_id, codes FROM product_details WHERE status = 'ok' AND codes != ''"):
         page_codes[pid] = codes.split()
     for pid, url in conn.execute(f"SELECT id, url FROM products WHERE site IN ({','.join('?' * len(SLUG_SITES))})",
                                  SLUG_SITES):
-        for c in slug_codes(url):
-            if c not in page_codes.setdefault(pid, []):
-                page_codes[pid].append(c)
+        if codes := [c for c in slug_codes(url) if c not in page_codes.get(pid, ())]:
+            link_codes[pid] = codes
     _chunked(conn, "INSERT INTO idx VALUES (?, ?, ?)",
-             ((pid, c, 100 + n) for pid, cs in page_codes.items() for n, c in enumerate(cs)))
+             ((pid, c, 100 + n) for pid, cs in chain(page_codes.items(), link_codes.items()) for n, c in enumerate(cs)))
 
     # 2. Spec words, learned: a code that many brands use is not a model ("1355U", "DCIP3").
     spec = {}
@@ -690,6 +697,12 @@ def _group(conn: sqlite3.Connection, now: datetime) -> None:
             # the page's and the link's model numbers, after the title's, and only when another shop has
             # them too: an unshared one would only pull a listing out of a product-line match
             own += [c for c in page_codes.get(pid, ()) if c not in own and c in shared]
+            # a link's code only when the title has none or it spells the title's ("hob90000ss" for
+            # HOB90SS): B.TECH reuses a product's link for another offering ("...-d40eubkne-..." selling
+            # the red C40-EU-RE-NE5)
+            title = [c for c in own if not c.startswith("GTIN")]
+            own += [c for c in link_codes.get(pid, ()) if c not in own and c in shared
+                    and (not title or any(related(c, t) for t in title))]
             if used:
                 yield pid, None, "", "used", "renewed / refurbished / used listing"
             elif accessory:
@@ -824,7 +837,8 @@ def _group(conn: sqlite3.Connection, now: datetime) -> None:
             brand, code, capacity = (model.split(" ", 2) + [None])[:3]
             score, evidence = confidence(
                 kind=members[0][10], status=status, sites=len(sites), code=code, brand_known=brand != "-",
-                barcode=model in barcoded, page=any(code in page_codes.get(m[0], ()) for m in listed), prices=kept,
+                barcode=model in barcoded, prices=kept,
+                page=any(code in page_codes.get(m[0], ()) or code in link_codes.get(m[0], ()) for m in listed),
                 clash=spec_clash([m[11] for m in listed]))
             yield "m", (model, members[0][10], code, capacity, None if brand == "-" else brand, status, len(listed), len(sites),
                         ",".join(sites), kept[0] if kept else None, int(statistics.median(kept)) if kept else None,
