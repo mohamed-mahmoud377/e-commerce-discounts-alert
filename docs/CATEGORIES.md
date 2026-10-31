@@ -72,6 +72,10 @@ Facts that shaped the crawler:
   object form in the page URL is rejected). Each product carries `price.priceToPay`, `price.basisPrice`
   with label `Was:` or `List:`, `dealBadge` ("26% off" / "Limited time deal"), `dealDetails.type`
   (`BEST_DEAL`, `LIGHTNING_DEAL`), `productCategory.productType` and `meta.departmentIds`.
+  A node with no deals left answers `{"startIndex":0,"products":[],"refinements":[]}` (no `nextIndex`);
+  small `deals:` slices (1-2 kitchen deals at 2000+) empty out like this within a day, so the parser
+  reports it as an empty slice, not a layout change (31 Oct 2026: two such slices had failed 17 runs
+  and sent 3 false "parser" alerts before the fix).
   Measured 27 Oct: about 2,300 distinct deals across the six departments above (17 requests); the
   whole-site default list is 500, two fifths of it fashion; 94 deals had started that day; the 54 to 80%
   band was almost all shoes and shirts. Only 185 of the 2,300 were products we track and **every one was

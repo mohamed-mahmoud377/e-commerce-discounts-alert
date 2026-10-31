@@ -184,7 +184,10 @@ def parse_deals_api(body: str) -> PageResult:
         ))
     products = data.get("products") or []
     has_next = len(products) >= DEALS_PAGE_SIZE and data.get("nextIndex") is not None
-    return PageResult(listings=listings, has_next=has_next, total=None)
+    # A node's deals end: the first page answers `"products": []`, so the slice is empty now,
+    # not unparsed (a missing `products` key still counts as a layout change).
+    empty = data.get("startIndex") == 0 and data.get("products") == []
+    return PageResult(listings=listings, has_next=has_next, total=0 if empty else None)
 
 
 def _api_money(node: dict | None) -> int | None:

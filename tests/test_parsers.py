@@ -492,6 +492,12 @@ def test_amazon_deals_api_page():
     assert any(LIMITED_DEAL in l.badges for l in result.listings)
     assert all(l.price for l in result.listings)  # products without a deal price are skipped
 
+    # A node whose deals ended (kitchen appliances 2000+, 31 Oct 2026): empty, not a parse failure
+    empty = parse_deals_api(fixture_text("amazon_deals_api_empty.json.gz"))
+    assert empty.total == 0 and not empty.listings and not empty.has_next
+    assert parse_deals_api('{"startIndex":0,"items":[]}').total is None  # unknown shape: layout check
+    assert parse_deals_api('{"startIndex":40,"products":[]}').total is None  # past the first page
+
     url = deals_api_url(Slice.from_key("deals:21832982031|price:3000-"), 2)
     assert url.startswith("https://www.amazon.eg/d2b/api/v1/products/search?")
     assert "startIndex=200" in url and "%2221832982031%22" in url
