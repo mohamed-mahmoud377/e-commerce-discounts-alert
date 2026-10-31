@@ -89,12 +89,14 @@ stock).
 | Monitors | monitors, gaming-monitors | 40 + 20 |
 | PC components | nividia-rtx50 (graphics cards), internal-hard, storage | 28 + 4 + 26 |
 | Headphones | airbuds, wired-headphone, bluethooth-headphones, headset, gaming-headset | 123 + 63 + 25 + 24 + 45 |
+| Wearables (from 31 Oct) | wearables (smart-watch 104 and smart-band 9 are subsets) | 108 |
+| Chargers & power banks (from 31 Oct) | chargers, power-bank, wireless-chargers, car-chargers (`ravpower` 50 is a brand subset) | 164 + 106 + 13 + 40 |
 | Kitchen machines | air-fryer, kettles-and-coffee-makers ("Coffee Makers"), blender-and-mixers, hand-blender, mixers, food-processor, microwave, electric-oven | about 250 |
 | Kitchen appliances | kattle (kettles), irons, grill, sandwich-maker, water-dispenser-and-filters, water-filters | about 190 |
 | Cooking & dishwashers | stoves, flat-stove, oven, built-in, dish-washers | 25 + 15 + 6 + 14 + 6 |
 
-Not tracked: accessories 841, mobile-accessories 551, appliances 697 (everything electrical), wearables 97,
-power-bank 114, chargers 168, cables 202, vacuum-cleaner 45, fans 64, water-heaters 18, security cameras.
+Not tracked: accessories 841, mobile-accessories 551, appliances 697 (everything electrical),
+cables 202, vacuum-cleaner 45, fans 64, water-heaters 18, security cameras.
 
 ## Performance and capacity
 

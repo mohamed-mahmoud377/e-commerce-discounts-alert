@@ -668,6 +668,60 @@ hardwaremarket_eg = [
 ]
 dubaiphone_eg = ["category:keyboard-mouse", "category:gaming-mouse-and-keyboard"]
 
+[[watch]]
+name = "Wearables"
+label = "ساعات ذكية وأساور رياضية"
+interval_minutes = 60
+min_price = 1200        # real smartwatches and bands; straps, chargers and no-name watches are cheaper
+amazon_eg = [
+    "category:21832958031",  # Smartwatches
+    "category:21858460031",  # Activity Trackers (fitness bands: Huawei Band, Whoop)
+    "category:21832958031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
+    "deals:21832958031",  # fast lane: Amazon Today's Deals API for this node (finds products the search listing omits)
+]
+noon_eg = [
+    "category:electronics-and-mobiles/wearable-technology/smart-watches-and-accessories/smartwatches",
+    "category:electronics-and-mobiles/wearable-technology/fitness-trackers-and-accessories/fitness-trackers",
+    "category:electronics-and-mobiles/wearable-technology/smart-watches-and-accessories/smartwatches?f[min_offer_price]=7_days",  # fast lane: noon's "lowest price in 7 days" feed
+]
+jumia_eg = "category:smart-watches"
+cairosales_eg = "category:mobiles-tablets/smart-watches"
+2b_eg = "category:893"  # Wearables: smart watches 256, smart bands 894, accessories 895
+btech_eg = "category:wearables"  # smart watches and fitness trackers with their accessories
+dream2000_eg = "category:wearables"
+carrefour_eg = "category:NFEGY1220300"  # Smart Watches & Wearables
+dubaiphone_eg = ["category:smart-watch-2", "category:smart-band", "category:apple-watch"]
+
+[[watch]]
+name = "Chargers & power banks"
+label = "شواحن وباور بانك"
+interval_minutes = 60
+min_price = 500         # branded chargers and power banks; no-name chargers and cables are cheaper
+amazon_eg = [
+    "category:21833004031",  # Chargers: mains, car, wireless, charging stations, power banks
+    "category:21833004031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
+    "deals:21833004031",  # fast lane: Amazon Today's Deals API for this node (finds products the search listing omits)
+]
+noon_eg = [
+    "category:electronics-and-mobiles/mobiles-and-accessories/accessories-16176/chargers-17982",
+    "category:electronics-and-mobiles/mobiles-and-accessories/accessories-16176/power-banks",
+    "category:electronics-and-mobiles/mobiles-and-accessories/accessories-16176/car-chargers-18279",
+    "category:electronics-and-mobiles/mobiles-and-accessories/accessories-16176/power-banks?f[min_offer_price]=7_days",  # fast lane: noon's "lowest price in 7 days" feed
+    "category:electronics-and-mobiles/mobiles-and-accessories/accessories-16176/chargers-17982?f[min_offer_price]=7_days",  # fast lane
+]
+jumia_eg = ["category:mobile-phone-battery-chargers", "category:phones-battery-packs"]
+2b_eg = ["category:186", "category:171"]  # chargers, power banks (Cairo Sales has neither)
+btech_eg = [
+    "category:mobiles-tablets/wall-chargers",
+    "category:mobiles-tablets/power-banks",
+    "category:mobiles-tablets/wireless-chargers",
+    "category:mobiles-tablets/car-chargers",
+]
+dream2000_eg = ["category:chargers", "category:power-bank", "category:wireless-chargers", "category:car-chargers"]
+carrefour_eg = ["category:NFEGY1210200", "category:NFEGY1210700"]  # chargers, cables & convertors; power banks
+dubaiphone_eg = ["category:power-bank", "category:cables-docks"]  # Chargers & Docks
+hardwaremarket_eg = ["category:4396", "category:4470"]  # Chargers, Power Banks
+
 # Jumia's flash-sales page: the only place its flash prices are marked (category cards show the same
 # price with no marker), mixed categories, about 400 products (86 above 1,500 EGP). Crawled as its own
 # fast lane every 10 to 15 minutes; its listings carry the limited-deal badge. Products already known

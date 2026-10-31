@@ -165,7 +165,7 @@ another group tracks it.
   `ValueError` with the API's message.
 - `max_slice_total` is 1,000 (10 pages): each page costs the shop about 3 s, so bigger roots are split by price.
 - **Groups**: Headphones (`39`, `deals:39`), PC components (`433`, `120`), Gaming peripherals (`41`, `15`, `148`,
-  `1109`, `deals:41`, `deals:15`). About 1,550 products above the group minimums (340 in stock; sold-out ones are
+  `1109`, `deals:41`, `deals:15`), Chargers & power banks (Chargers `4396` 58, Power Banks `4470` 16; from 31 Oct). About 1,550 products above the group minimums (340 in stock; sold-out ones are
   read too, so a sell-out is seen), about 20 pages a pass.
 - **Politeness**: 1 to 2 s between requests (`[sites.hardwaremarket_eg]`).
 

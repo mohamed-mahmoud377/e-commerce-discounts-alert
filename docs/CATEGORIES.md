@@ -20,7 +20,8 @@ then lists its children. Department aliases follow amazon.com (`videogames`, `co
 | Tablets | 21832915031 | under Computers 21832872031 (293 products) |
 | Laptops | 21832907031 | Computers; Desktops 21832914031, Monitors 21832909031, Components 21832913031, Data Storage 21832918031 |
 | Headphones | 21832887031 | |
-| Wearables | 21832878031 | not tracked yet (smartwatches, fitness bands) |
+| Wearables | 21832958031 Smartwatches, 21858460031 Activity Trackers | both under Wearables 21832878031 (the menu's "Wearable Technology"), which also holds VR headsets, glasses, single-ear headsets and "Wristbands" 21832960031 (7 above 1,200 EGP, mostly anti-static straps), so only these two children are used: 872 + 136 above 1,200 EGP (31 Oct 2026) |
+| Chargers & power banks | 21833004031 | Accessories 21832886031 > Chargers (the menu's "Power Banks & Chargers"): mains, car, wireless, charger sets, charging stations, Portable Power Banks 21833176031. Over 1,000 above 500 EGP, so the planner splits it. Not tracked: Cases & Covers 21833002031, Cables & Adapters 21833005031 (cheap, huge) |
 | Video Games department | 18022560031 | Platform nodes: PlayStation 5 21868828031, Xbox Series X&S 21868824031, Nintendo Switch 21868826031, Switch 2 206233785031, Handheld systems 92555823031, PlayStation 4 21868821031, Xbox One 21868820031, PC 21868814031. **Don't watch a platform node**: it mixes consoles, games and accessories, and a split recursed into the Games / Downloadable Content children (tried 26 Oct, when the planner still split by sub-category: 470 controller covers landed in the consoles group). Only Nintendo has console-only children: Switch > Consoles 21868896031 (222 items), Switch 2 > Consoles 206233788031. PlayStation and Xbox have no Consoles child in the sidebar, so those use `search:playstation 5 console` etc. with `min_price` 8,000. Even then the searches and the Nintendo Consoles node return racing wheels, headsets and Pro controllers above 8,000 EGP (160 of the first 160 recorded items were mostly accessories), hence the `require_words` / `exclude_words` title filters on that group. Sponsored cards ignore `p_36`, so the group minimum is also enforced when recording |
 | Small kitchen appliances | 21863827031 | children: Fryers 21863949031, Coffee Machines 21864088031, Blenders/Mixers/Food Processors 21863955031, Pressure/Slow Cookers 21863956031, Bread Makers 21863959031, Hot Plates 21863960031, Electric Utensils 21863962031, Juicers 21863952031, Kettles 21863961031, Mills & Grinders 21863957031, Sandwich Makers 21863958031, Specialty 21863950031, Toasters 21863951031, Vacuum Sealers 21863954031, Waffle Makers 21863948031, Water Purifiers 51375552031 |
 | Microwaves & countertop ovens | 21863820031 | |
@@ -116,6 +117,8 @@ Root for the `categories` command: `electronics-and-mobiles`, `home-and-kitchen`
 | Monitors | electronics-and-mobiles/computers-and-accessories/computer-accessories/monitor-accessories/monitors-17248 |
 | PC components | electronics-and-mobiles/computers-and-accessories/computer-accessories/computer-components-15997 |
 | Headphones | electronics-and-mobiles/portable-audio-and-video/headphones-24056 |
+| Wearables | electronics-and-mobiles/wearable-technology/smart-watches-and-accessories/smartwatches (1,542 above 1,200 EGP), .../fitness-trackers-and-accessories/fitness-trackers (84); the parents mix in straps and chargers |
+| Chargers & power banks | electronics-and-mobiles/mobiles-and-accessories/accessories-16176/chargers-17982 (1,907 above 500 EGP), .../power-banks (1,849), .../car-chargers-18279 (872) |
 | Small appliances | home-and-kitchen/home-appliances-31235/small-appliances (16,349 products; 28 children, e.g. fryers, coffee-makers, blenders-appliance, mixers-18509, food-processors, ovens-and-toasters, electric-cookers, kettles, irons-and-steamers...) |
 | Ranges / cooktops / dishwashers | home-and-kitchen/home-appliances-31235/large-appliances/ranges, .../cooktops, .../dishwashers |
 
@@ -151,6 +154,8 @@ Full analysis (access, traps, signals, sizes): [JUMIA.md](JUMIA.md). Ids are the
 | Phones / Tablets | smartphones / tablets |
 | Laptops / Desktops / Monitors / PC components | laptops / desktop-computers / monitors / computer-components |
 | Headphones | electronics-headphone, mobile-phone-bluetooth-headsets (earbuds such as AirPods are filed there) |
+| Wearables | smart-watches (under mobile-accessories; `wearable-technology` redirects there): 821 above 1,200 EGP |
+| Chargers & power banks | mobile-phone-battery-chargers (892 above 500 EGP), phones-battery-packs (740) |
 | Kitchen machines | air-fryers, deep-fryers, coffee-makers, espresso-machines, espresso-machine-coffeemaker-combos, blenders, mixers, food-processors, electric-pressure-cookers, slow-cooker, rice-cooker, small-appliances-microwave, ovens-toasters |
 | Kitchen appliances | the other children of kitchen-dinning-small-appliances, coffee-tea-espresso-appliances (kettles), coffee-machine-grinder-accessories, small-appliances-ironing-laundry, water-coolers-filters |
 | Cooking & dishwashers | cooking-appliances, ranges, wall-ovens, dishwashers |
@@ -187,6 +192,7 @@ Full analysis: [CAIROSALES.md](CAIROSALES.md). Ids are the URL paths under `/en/
 | Laptops / Desktops | computer-accessories/laptops-desktop-computers / computer-accessories/desktop-computers |
 | Monitors | computer-accessories/computer-monitors, gaming-accessories/gaming-monitors |
 | Headphones | home-theaters-speakers/headphones, gaming-accessories/gaming-headphones |
+| Wearables | mobiles-tablets/smart-watches (110); no chargers or power banks on Cairo Sales |
 | Kitchen machines | small-appliances/fryers, coffee-maker, blenders, hand-stand-mixers, food-processors, kitchen-machines, chopper, ovens-toasters, cookers; microwaves |
 | Kitchen appliances | small-appliances/kettle, juicer, grills, meat-grinders, sandwich-maker, iron; water-dispenser/water-dispenser, water-dispenser/filters |
 | Cooking & dishwashers | cookers-ovens, dishwashers, built-in-kitchen-products/built-in-ovens, built-in-kitchen-products/built-in-hobs |
@@ -216,6 +222,8 @@ Appliances `2370`, Televisions `1932`, Audio `2382`, Gaming `120`, Electronics `
 | Phones / Tablets | 119 / 122 |
 | Laptops / Desktops / Monitors / PC components | 273 / 159 / 2381 / 1826 |
 | Headphones | 592 |
+| Wearables | 893 (smart watches 256, smart bands 894, accessories 895) |
+| Chargers & power banks | 186 chargers, 171 power banks (both under Mobile Accessories 147) |
 | Kitchen machines | 1973 air fryers, 1972 coffee makers, 1967 blenders, 2395 hand blenders, 1969 mixers, 1970 food processors, 313 microwaves & ovens |
 | Kitchen appliances | 1971 kettles, 1964 sandwich makers & grills, 326 irons, 324 water dispensers, 284 water filters |
 | Cooking & dishwashers | 2416 cookers, 314 dishwashers, 611 built-in |

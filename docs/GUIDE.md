@@ -11,9 +11,10 @@ the science behind the rules below).
 
 The system crawls whole categories on amazon.eg, noon.com (Egypt), jumia.com.eg, cairosales.com, 2b.com.eg, btech.com, dream2000.com, carrefouregypt.com, dubaiphone.net and hardwaremarket.net, stores every product's price
 history, and sends an Arabic Telegram alert when a price is genuinely low compared with that product's
-own history. It tracks about 50,000 products on Amazon and noon plus about 14,000 on Jumia, in 14 groups: TVs, refrigerators, air conditioners, gaming consoles,
-phones, tablets, laptops, desktops, monitors, PC components, headphones, kitchen machines (fryers, coffee
-machines, blenders, microwaves), other kitchen appliances, and cooking and dishwashers.
+own history. It tracks about 50,000 products on Amazon and noon plus about 14,000 on Jumia, in 18 groups: TVs, refrigerators, air conditioners, gaming consoles,
+phones, tablets, laptops, desktops, monitors, PC components, headphones, wearables (smartwatches and fitness
+bands), chargers and power banks, gaming peripherals, kitchen machines (fryers, coffee
+machines, blenders, microwaves), other kitchen appliances, cooking and dishwashers, and Jumia's flash sales.
 
 **The principle that drives the design (stated by the user, 27 October 2026).** Flash sales and big drops on
 these shops can be gone in minutes, so two things come before everything else: *notice a drop fast* and
@@ -438,6 +439,14 @@ A product seen on a deal feed is the same product as on its category page (same 
 is judged against the same history. The feeds are about 20 Amazon pages and 30 noon pages per sweep in
 total, so they cost almost nothing.
 
+An Amazon `deals:` feed often has nothing above the group minimum (a kitchen node, a console node), and
+deals come and go within a day. The planner keeps such a feed as one empty slice instead of dropping it,
+so it is still polled at the group interval and a deal that starts later is seen on the next pass; an
+emptied feed answers `"products": []`, which counts as an empty slice, not a parser failure. Until 31 Oct
+2026 an empty feed was dropped until the weekly re-plan: nine feeds (laptops, tablets, desktops, two console
+nodes, four kitchen nodes) went unpolled for a week, and two feeds that emptied after planning raised 17
+false "layout changed" failures.
+
 **Capacity.** The tracked groups hold about 17,000 Amazon and 27,000 noon products: roughly 700 Amazon
 pages and 540 noon pages for a full pass. Two workers crawl Amazon (Mac and droplet) and one crawls noon
 (the Mac).
@@ -462,6 +471,7 @@ backed off to its 3x ceiling because nothing had changed for a while), with the 
 | TVs, Refrigerators, Laptops, Monitors | 20 | 10 to 60 min | 10 to 30 min | ~30 min + crawl |
 | Jumia flash sales (new) | 10 | | 10 to 15 min | ~15 min |
 | Headphones | 60 | 10 to 180 min | unchanged (3x) | ~3 h |
+| Wearables, Chargers & power banks (added 31 Oct, with the Amazon and noon fast lanes) | 60 | | 10 to 180 min (3x) | ~3 h |
 | PC components, Desktops | 60 | 10 to 180 min | unchanged | ~3 h |
 | Kitchen machines (fryers, coffee, blenders, microwaves) | 30 | 10 to 90 min | unchanged | ~1.5 h |
 | Cooking & dishwashers | 60 (was 120) | 48 to 293 min | 10 to 90 min (was up to 360) | ~1.5 h (was ~6 h) |

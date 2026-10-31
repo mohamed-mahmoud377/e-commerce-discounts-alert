@@ -130,6 +130,8 @@ Products counted on 28 October 2026 (in stock; before the group's minimum price 
 | Laptops | NFEGY4070500 Laptops | 20 |
 | Monitors | NFEGY4070600 Monitors | 6 |
 | Headphones | NFEGY1210300 Headphones & Earphone | 94 |
+| Wearables (from 31 Oct) | NFEGY1220300 Smart Watches & Wearables (missing from the Mobile and Smartwatches tree) | 55 |
+| Chargers & power banks (from 31 Oct) | NFEGY1210200 Chargers, Cables & Convertors, NFEGY1210700 Power Banks (both in Mobile Accessories NFEGY1210000) | 174 + 31 |
 | Kitchen machines | NFEGY4040200 Food Preparation (blenders 152, air fryers 74...), NFEGY4040400 Kettles & Coffee Machines, NFEGY4040600 Microwave Ovens & Portable Hobs | 420 + 150 + 82 |
 | Kitchen appliances | NFEGY4040300 Irons & Steamers, NFEGY4040700 Toasters & Grills, NFEGY4040113 Water Dispenser | 76 + 40 + 40 |
 | Cooking & dishwashers | NFEGY4100200 Cookers, NFEGY4100300 Dish Washer, NFEGY4100100 Built-In Dish Washer, NFEGY4100130 Built-In Hob, NFEGY4100800 Built-In Oven, NFEGY4100150 Other Built-In | 83 + 29 + 2 + 20 + 19 + 2 |
@@ -140,8 +142,7 @@ Appliances NFEGY4040000 1,084, Large Appliances NFEGY4100000 363, Computers, Off
 219, TVs & Projectors NFEGY4080000 168, Batteries & Power 112, Water Heater 41, PlayStation 5 12, Home Cinema &
 Audio 8), Smartphones, Tablets & Wearables NFEGY1200000 (453). The rest of the shop is groceries and household
 (`FEGY...`, `NFEGY2000000` personal care, `NFEGY3000000` cleaning, `NFEGY8000000` home & garden...).
-Not tracked: washers & dryers 79, built-in hoods 37, vacuum cleaners 73, fans and heaters, water heaters 41,
-smartwatches 56, chargers and cables.
+Not tracked: washers & dryers 79, built-in hoods 37, vacuum cleaners 73, fans and heaters, water heaters 41.
 
 ## Performance and capacity
 

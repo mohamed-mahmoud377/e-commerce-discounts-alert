@@ -43,3 +43,13 @@ def test_products_that_sit_on_a_parent_category_are_not_lost():
     assert all(p.slice.value == "root" for p in planned)
     covered = set().union(*({sku for sku, _, _ in site.matches(p.slice)} for p in planned))
     assert covered == {sku for sku, _, _ in catalog}
+
+
+def test_an_empty_deal_feed_is_kept_but_an_empty_category_is_not():
+    # A deal feed with no deals right now must still be polled: deals start any minute and the
+    # plan is redone only weekly (31 Oct 2026: nine Amazon feeds sat unpolled for a week).
+    site = FakeSite(make_catalog(50))
+    feed = Slice("deals", "node", price_min=10**9)
+    assert [(p.slice, p.total) for p in plan(site, feed, delay=(0, 0), report=lambda _: None)] == [(feed, 0)]
+    empty = Slice("category", "root", price_min=10**9)
+    assert plan(site, empty, delay=(0, 0), report=lambda _: None) == []

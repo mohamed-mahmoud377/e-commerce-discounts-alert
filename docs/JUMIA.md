@@ -215,7 +215,7 @@ Notes on the tree (top level: `electronics`, `phones-tablets`, `computing`, `hom
   returns steam mops), so the group's `require_words` / `exclude_words` filters matter here too.
 - Computing is small on Jumia: 287 laptops, 8 desktops, 87 monitors.
 - Not tracked (not in our groups): washers & dryers (`appliances-washers-dryers`), range hoods
-  (`range-hoods`, 435 above 5,000), smart watches.
+  (`range-hoods`, 435 above 5,000).
 
 ## Performance and capacity
 

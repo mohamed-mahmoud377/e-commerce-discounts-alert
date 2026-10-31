@@ -201,6 +201,8 @@ Categories that fit the existing watch groups (in stock at or above the group's 
 | Laptops (8,000) | `all-laptops` (`asus-rtx` 16 is ASUS gaming laptops, a subset) | 84 | 50 |
 | Monitors (2,500) | `monitors` | 18 | 8 |
 | Headphones (800) | `headphones`, `tws`, `gaming-headset`, `earphones` | 141 | 86 |
+| Wearables (1,200; from 31 Oct) | `smart-watch-2`, `smart-band`, `apple-watch` (the menu's `mobile-wearable`, 243, adds straps and earbuds) | 69 + 5 + 2 | |
+| Chargers & power banks (500; from 31 Oct) | `power-bank`, `cables-docks` (Chargers & Docks) | 63 + 84 | |
 | Air conditioners (8,000) | `air-conditioner` | 13 | 1 |
 | Gaming consoles (8,000) | `ps-consoles` (1 PS5; `games` mixes a PS5 with e-scooters) | 1 | 1 |
 | Kitchen machines (1,500) | `air-fryer`, `kettle-coffee-maker`, `blenders-mixers`, `microwaves`, `oven`, `waffle-sandwich-maker` | 82 | 56 |
@@ -231,7 +233,8 @@ earbuds at 499, both out of stock) and `last-piece` (3).
   `ps-consoles`, Phones `mobiles-all-2`, Tablets `tablets`, Laptops `all-laptops`, Monitors `monitors`,
   Headphones `headphones`, `tws`, `gaming-headset`, `earphones`, Kitchen machines (fryers, kettles and coffee,
   blenders, microwaves, ovens, waffle makers), Kitchen appliances `irons`, Gaming peripherals `keyboard-mouse`,
-  `gaming-mouse-and-keyboard`. About 510 products above the group minimums (360 in stock), one or two pages per root.
+  `gaming-mouse-and-keyboard`, Wearables `smart-watch-2`, `smart-band`, `apple-watch`, Chargers & power banks
+  `power-bank`, `cables-docks`. About 510 products above the group minimums (360 in stock), one or two pages per root.
 - **Politeness**: 1 to 2 s between requests (`[sites.dubaiphone_eg]`).
 
 ## Running and checking it

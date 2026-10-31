@@ -129,6 +129,8 @@ Products counted on 27 October 2026 (in stock, before the group's minimum price)
 | Monitors | laptop-pc/monitors | 101 |
 | PC components | laptop-pc/pc-components | 209 |
 | Headphones | audio-recording/headphones (on-ear 30, over-ear 116) | 146 |
+| Wearables (from 31 Oct) | wearables (smart watches 336, fitness trackers 6, bands and chargers below the minimum) | 347 |
+| Chargers & power banks (from 31 Oct) | mobiles-tablets/wall-chargers 216, power-banks 155, wireless-chargers 27, car-chargers 49 (a third segment, `mobiles-tablets/mobile-accessories/wall-chargers`, also works: only the last one is used) | 447 |
 | Kitchen machines | small-home-appliances/fryers 225, kettles-coffee-makers 458, blenders-mixers 605, choppers 143, food-processors-grinders 104, kitchen-machines 16, microwaves-ovens 174 | about 1,700 |
 | Kitchen appliances | juicers-cirtus-juicers 59, grills 100, toasters-sandwich-makers 92, irons 278, hot-plates-electric-stoves 55, specialty-appliances-and-tools 100, water-dispensers 128, water-coolers-and-filters 184 | about 1,000 |
 | Cooking & dishwashers | large-home-appliances/cookers 177, dishwashers 80, built-in-ovens 163, built-in-hobs 223 | 643 |
@@ -136,7 +138,7 @@ Products counted on 27 October 2026 (in stock, before the group's minimum price)
 Departments (`deals categories btech_eg <slug>`): tvs-projectors 502, large-home-appliances 1,987,
 small-home-appliances 4,009, mobiles-tablets 2,593 (1,711 accessories), laptop-pc 2,242, audio-recording 428,
 gaming-area 306, electronics 1,093, wearables 339, personal-care 1,057, non-electronics 5, tech-care 4.
-Not tracked: washing machines & dryers 320, water heaters 203, vacuum cleaners 302, fans 341, smartwatches 334,
+Not tracked: washing machines & dryers 320, water heaters 203, vacuum cleaners 302, fans 341,
 portable speakers 234, printers 222, cameras.
 
 ## Performance and capacity

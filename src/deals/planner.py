@@ -59,7 +59,9 @@ def plan(
             total = len(result.listings)  # single page (or empty) without a count banner
 
         if total is not None and total <= site.max_slice_total:
-            if total:
+            if total or (current.kind == "deals" and current == root):
+                # An empty deal feed is kept and polled: deals start any minute, and a plan
+                # runs only weekly (empty category ranges are dropped as before).
                 leaves.append(PlannedSlice(current, total))
             report(f"  ok      {current}  ({total} products)")
         elif children := split_price(current):

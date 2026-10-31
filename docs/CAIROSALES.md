@@ -128,6 +128,7 @@ the first page (sorted by price, so a number under 60 is the whole in-stock coun
 | Monitors | computer-accessories/computer-monitors, gaming-accessories/gaming-monitors | 115 (7) + 42 (0) |
 | PC components | none (no such category) | |
 | Headphones | home-theaters-speakers/headphones, gaming-accessories/gaming-headphones | 231 (21) + 21 (3) |
+| Wearables (from 31 Oct) | mobiles-tablets/smart-watches | 110 |
 | Kitchen machines | small-appliances/fryers, coffee-maker, blenders, hand-stand-mixers, food-processors, kitchen-machines, chopper, ovens-toasters, cookers; microwaves | about 1,370 |
 | Kitchen appliances | small-appliances/kettle, juicer, grills, meat-grinders, sandwich-maker, iron; water-dispenser/water-dispenser, water-dispenser/filters | about 530 |
 | Cooking & dishwashers | cookers-ovens, dishwashers, built-in-kitchen-products/built-in-ovens, built-in-kitchen-products/built-in-hobs | 516 + 206 + 755 + 814 |
@@ -139,7 +140,7 @@ Notes on the tree (from `/en/sitemap`; `deals categories cairosales_eg <slug>` l
 - Children are mostly sizes or types (TVs by inch, fridges by feet, washers by kg); the parent is always
   used, as on every shop.
 - Not tracked: washers-dryers (`washers-dryers`), kitchen hoods, water heaters, vacuum cleaners, fans and
-  heaters (`small-appliances/fans`, `small-appliances/heaters`), smart watches, home theaters and speakers.
+  heaters (`small-appliances/fans`, `small-appliances/heaters`), home theaters and speakers.
 
 ## Performance and capacity
 
