@@ -147,6 +147,7 @@ Lines worth reacting to:
 | `dubaiphone_eg: no shopData in the page` | The shop answered an error page (it does for `per_page` over 100 or an unknown sort) or changed its layout | Open the URL from the log in a browser; retried by itself |
 | `blocked: hardwaremarket_eg: HTTP 403` | Cloudflare's challenge: expected from any cloud IP | Pauses by itself; keep `hardwaremarket_eg` off cloud workers; see [HARDWAREMARKET.md](HARDWAREMARKET.md) |
 | `hardwaremarket_eg: no category 'x'` | Unknown WooCommerce category id or slug | `deals categories hardwaremarket_eg <id>` or the category list URL in the message |
+| `blocked: amazon_now_eg: Amazon Now lists nothing here (delivery location not served)` | That worker's delivery location has no Amazon Now dark store (expected on the droplet and cloud machines) | Pauses by itself; keep `amazon_now_eg` out of that worker's `DEALS_SITES`; see [AMAZON_NOW.md](AMAZON_NOW.md) |
 | `lease lost` | The device was too slow (over 5 min between pages) and the job went to another device | Fine occasionally |
 
 ## Telegram warnings

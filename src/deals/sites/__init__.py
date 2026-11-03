@@ -1,4 +1,5 @@
 from deals.sites.amazon_eg import AmazonEG
+from deals.sites.amazon_now_eg import AmazonNowEG
 from deals.sites.btech_eg import BtechEG
 from deals.sites.cairosales_eg import CairoSalesEG
 from deals.sites.carrefour_eg import CarrefourEG
@@ -20,4 +21,5 @@ SITES = {
     CarrefourEG.name: CarrefourEG,
     DubaiPhoneEG.name: DubaiPhoneEG,
     HardwareMarketEG.name: HardwareMarketEG,
+    AmazonNowEG.name: AmazonNowEG,
 }

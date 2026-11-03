@@ -1,7 +1,8 @@
 # deals: e-commerce price tracker and real-discount alerts
 
 `deals` crawls whole categories on **amazon.eg**, **noon.com (Egypt)**, **jumia.com.eg**, **cairosales.com**, **btech.com**, **dream2000.com**,
-**carrefouregypt.com**, **dubaiphone.net**, **hardwaremarket.net** and **2b.com.eg**, keeps the
+**carrefouregypt.com**, **dubaiphone.net**, **hardwaremarket.net**, **2b.com.eg** and **Amazon Now** (amazon.eg's
+20-minute grocery store, tracked as its own shop), keeps the
 price history of every product, and sends you a **Telegram** message when a price
 is genuinely low, judged against the product's own history rather than the
 "was" price a shop shows.
@@ -34,9 +35,9 @@ Each worker only takes jobs for the sites its internet connection can reach.
   your Mac (launchd)            friend's PC (optional)
   deals worker                  deals worker
   noon, amazon, jumia,          any shop it can reach
-  cairosales, 2b, btech, dream2000,  (home connections: all ten;
+  cairosales, 2b, btech, dream2000,  (home connections: all eleven;
   carrefour, dubaiphone,        cloud: amazon, dream2000, carrefour)
-  hardwaremarket
+  hardwaremarket, amazon_now
 ```
 
 ## What it tracks
@@ -44,7 +45,7 @@ Each worker only takes jobs for the sites its internet connection can reach.
 The groups live in `config.toml` (see [config.example.toml](config.example.toml)):
 TVs, refrigerators, air conditioners, gaming consoles, phones, tablets, laptops, desktops, monitors, PC components,
 headphones, kitchen machines (fryers, coffee machines, blenders, microwaves), other kitchen
-appliances, and cooking & dishwashers, each on all three sites, with a
+appliances, and cooking & dishwashers, each on all three sites, plus the whole Amazon Now store, with a
 minimum price so cables and cases don't flood the crawl.
 
 ## Quick start (everything on your Mac)
@@ -181,7 +182,8 @@ home don't.
 src/deals/
   sites/amazon_eg.py, noon_eg.py, jumia_eg.py,  fetch + parse one listing page per site
   cairosales_eg.py, twob_eg.py, btech_eg.py, dream2000_eg.py, carrefour_eg.py,
-  dubaiphone_eg.py, hardwaremarket_eg.py
+  dubaiphone_eg.py, hardwaremarket_eg.py,
+  amazon_now_eg.py (amazon_eg under the Amazon Now root node)
   planner.py      split a category into slices each site lets us page through completely
   scheduler.py    job queue: leases, adaptive revisit intervals, per-IP block cooldowns
   coordinator.py  HTTP API for workers + watchdog (stalls, offline workers, backups)

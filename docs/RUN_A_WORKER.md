@@ -4,6 +4,8 @@ This page is written to be followed literally, by a person or by an AI assistant
 one computer as a **worker** for an existing deals server: the computer downloads shop pages (amazon.eg,
 noon.com, jumia.com.eg, cairosales.com, 2b.com.eg, btech.com, dream2000.com, carrefouregypt.com, dubaiphone.net and hardwaremarket.net) and sends the products it finds to the server. It keeps no data, sends no messages, and changes
 nothing on the server. Background explanation is in [GETTING_STARTED.md](GETTING_STARTED.md), path A.
+Amazon Now (`amazon_now_eg`) is left out of the shop lists below on purpose: what it lists depends on the
+computer's delivery location ([AMAZON_NOW.md](AMAZON_NOW.md)).
 
 ## 0. Inputs you must have before starting
 

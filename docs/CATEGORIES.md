@@ -290,6 +290,14 @@ Mobile Accessories `4395`; `all` is the whole shop. A category includes its chil
 counts are stale (WooCommerce's cached term counts): Mouse says 259, while 795 products are tagged and 249 are in
 stock. `deals categories hardwaremarket_eg <id>` lists the children. Details: [HARDWAREMARKET.md](HARDWAREMARKET.md).
 
+## Amazon Now browse nodes
+
+The Amazon Now root is `211761638031`; the adapter puts it in front of every query, so the children are ordinary
+amazon.eg nodes: Grocery `18020637031`, Health & Household `18021875031`, Beauty `18017988031`, Baby `18017931031`,
+Electronics `18018102031`, Home & Kitchen `18021933031`, Pet Supplies `18022332031`. Without the root those nodes
+list the regular Amazon offers. `deals categories amazon_now_eg 211761638031` lists the children. Details:
+[AMAZON_NOW.md](AMAZON_NOW.md).
+
 ## Parent categories hold products their children don't (all shops)
 
 Measured 26 October 2026 by comparing a category's count with the sum of its children's counts (same price

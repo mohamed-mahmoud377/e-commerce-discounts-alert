@@ -91,6 +91,58 @@ def test_amazon_site_treats_decoy_as_block(tmp_path, monkeypatch):
     assert len(site.fetch_page(Slice("search:playstation 5 console", 8000, None), 1).listings) >= 40
 
 
+def test_amazon_now_queries_carry_its_root_node(tmp_path):
+    from urllib.parse import parse_qs, urlparse
+    from deals.models import UnknownTarget
+    from deals.sites.amazon_now_eg import AmazonNowEG
+    site = AmazonNowEG(tmp_path)
+
+    def query(key: str, page: int = 1) -> dict:
+        return {k: v[0] for k, v in parse_qs(urlparse(site.search_url(Slice.from_key(key), page)).query).items()}
+
+    # without the root a child node lists the regular Amazon offers, not Amazon Now's
+    assert query("category:18020637031|price:20-40") == {"rh": "n:211761638031,n:18020637031,p_36:2000-4000"}
+    assert query("category:211761638031", 3) == {"rh": "n:211761638031,p_36:0-", "page": "3"}
+    assert query("category:211761638031,p_n_deal_type:26901036031")["rh"] == \
+        "n:211761638031,p_n_deal_type:26901036031,p_36:0-"
+    assert query("search:milk") == {"k": "milk", "rh": "n:211761638031"}
+    with pytest.raises(UnknownTarget):  # the Today's Deals API has nothing under Amazon Now
+        site.fetch_page(Slice.from_key("deals:211761638031"), 1)
+    # amazon_eg's own queries are unchanged by the refactor
+    from deals.sites.amazon_eg import AmazonEG
+    assert AmazonEG(tmp_path).search_url(Slice.from_key("category:18020637031"), 1) == \
+        "https://www.amazon.eg/-/en/s?rh=n%3A18020637031%2Cp_36%3A0-"
+
+
+def test_amazon_now_pages(tmp_path, monkeypatch):
+    from deals.sites.amazon_now_eg import AmazonNowEG
+    site = AmazonNowEG(tmp_path)
+    # The Amazon Now root (3 Nov 2026): "over 1,000", departments as children, the Amazon Now
+    # price of an ASIN that regular Amazon sold for EGP 275.95 at the same moment
+    monkeypatch.setattr(site, "_get", lambda url: fixture_text("amazon_now_root.html.gz"))
+    root = site.fetch_page(Slice.from_key("category:211761638031"), 1)
+    assert root.total is None and root.has_next and not root.decoy
+    assert ("18020637031", "Grocery") in [(c.id, c.name) for c in root.subcategories]
+    milk = next(x for x in root.listings if x.sku == "B0CVW9DPCB")
+    assert (milk.site, milk.price, milk.list_price, milk.list_price_kind) == ("amazon_now_eg", 28975, 34000, "list")
+    assert milk.url == "https://www.amazon.eg/-/en/dp/B0CVW9DPCB?almBrandId=sAuWWBROaG&fpw=alm"
+
+    # Grocery, 20-40 EGP: an exact total, Grocery's children, 33 cards a page, a sold-out card with no price
+    monkeypatch.setattr(site, "_get", lambda url: fixture_text("amazon_now_node.html.gz"))
+    node = site.fetch_page(Slice.from_key("category:18020637031|price:20-40"), 1)
+    assert node.total == 965 and node.has_next and len(node.listings) == 33
+    assert ("21840237031", "Baby Foods") in [(c.id, c.name) for c in node.subcategories]
+    assert all(x.site == "amazon_now_eg" for x in node.listings)
+    assert any(not x.in_stock and x.price is None for x in node.listings)
+
+    # An unserved delivery location (the droplet's) gets "no results" for the whole store: a block, not an empty shop
+    from deals.models import Blocked
+    monkeypatch.setattr(site, "_get", lambda url: fixture_text("amazon_no_results.html.gz"))
+    with pytest.raises(Blocked, match="not served"):
+        site.fetch_page(Slice.from_key("category:211761638031"), 1)
+    assert site.fetch_page(Slice.from_key("category:18020637031|price:20-40"), 1).total == 0  # a narrow slice may be empty
+
+
 def test_amazon_no_results_page_is_empty_not_a_failure():
     result = parse_search_page(fixture_text("amazon_no_results.html.gz"), "21833039031")
     assert result.listings == [] and result.total == 0 and not result.has_next and not result.decoy

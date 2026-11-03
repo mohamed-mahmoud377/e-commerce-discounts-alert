@@ -9,12 +9,12 @@ the science behind the rules below).
 
 ## Overview
 
-The system crawls whole categories on amazon.eg, noon.com (Egypt), jumia.com.eg, cairosales.com, 2b.com.eg, btech.com, dream2000.com, carrefouregypt.com, dubaiphone.net and hardwaremarket.net, stores every product's price
+The system crawls whole categories on amazon.eg, noon.com (Egypt), jumia.com.eg, cairosales.com, 2b.com.eg, btech.com, dream2000.com, carrefouregypt.com, dubaiphone.net, hardwaremarket.net and Amazon Now (amazon.eg's 20-minute store), stores every product's price
 history, and sends an Arabic Telegram alert when a price is genuinely low compared with that product's
-own history. It tracks about 50,000 products on Amazon and noon plus about 14,000 on Jumia, in 18 groups: TVs, refrigerators, air conditioners, gaming consoles,
+own history. It tracks about 50,000 products on Amazon and noon plus about 14,000 on Jumia, in 19 groups: TVs, refrigerators, air conditioners, gaming consoles,
 phones, tablets, laptops, desktops, monitors, PC components, headphones, wearables (smartwatches and fitness
 bands), chargers and power banks, gaming peripherals, kitchen machines (fryers, coffee
-machines, blenders, microwaves), other kitchen appliances, cooking and dishwashers, and Jumia's flash sales.
+machines, blenders, microwaves), other kitchen appliances, cooking and dishwashers, Jumia's flash sales, and the whole Amazon Now store.
 
 **The principle that drives the design (stated by the user, 27 October 2026).** Flash sales and big drops on
 these shops can be gone in minutes, so two things come before everything else: *notice a drop fast* and
@@ -279,6 +279,14 @@ and `_fields` trims a page from 4 MB to 100 KB. Cloudflare passes any home conne
 droplet. 98% of products show a crossed-out "regular" price, so it is only the shop's claim. Details:
 [HARDWAREMARKET.md](HARDWAREMARKET.md).
 
+**Amazon Now.** amazon.eg's 20-minute grocery store (from July 2026) is the ordinary amazon.eg search under its own
+browse root, node `211761638031`, so the amazon_eg parser and cookies serve it unchanged. It is a shop of its own
+because an ASIN on Amazon Now is a separate offer at its own price (Juhayna 6×1 L: EGP 275.95 from Amazon, 289.75
+on Amazon Now, 3 November 2026); one price history per offer keeps the reference honest. The root must be in every
+query (a node without it lists the regular offers). There is no deals feed (the deals API and the discount facet
+are empty), and the whole store, about 10,000 products, is tracked from 50 EGP. What a session sees depends on its
+delivery location: the Mac's is served, the droplet's lists nothing. Details: [AMAZON_NOW.md](AMAZON_NOW.md).
+
 **Which machine can reach which shop** (tested 25 October 2026):
 
 | Shop | Home IP (your Mac) | Droplet (DigitalOcean Frankfurt) |
@@ -293,6 +301,7 @@ droplet. 98% of products show a crossed-out "regular" price, so it is only the s
 | dubaiphone.net | Works with Chrome's fingerprint; plain curl gets Vercel's challenge (tested 30 October) | Always refused (Vercel challenge, HTTP 429, any fingerprint) |
 | hardwaremarket.net | Works, plain curl too (tested 30 October) | Always refused (Cloudflare challenge, HTTP 403) |
 | 2b.com.eg | Works with Chrome's fingerprint, HTML and GraphQL (tested 27 October) | Always refused (Cloudflare challenge) |
+| Amazon Now (amazon.eg) | Works, the default delivery location is served (tested 3 November) | Pages load but list nothing: the droplet's location has no Amazon Now store |
 
 **What is read from each product card** (no extra requests):
 

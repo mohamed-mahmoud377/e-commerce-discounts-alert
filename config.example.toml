@@ -95,6 +95,10 @@ max_delay = 2.0
 min_delay = 1.0
 max_delay = 2.0
 
+[sites.amazon_now_eg]  # amazon.eg search under the Amazon Now root; same IP and WAF as amazon_eg, so slower
+min_delay = 3.0
+max_delay = 5.0
+
 # ---------------------------------------------------------------------------
 # What to track. Each [[watch]] is a product group with one root per site:
 #   amazon_eg = "category:<browse node id>"
@@ -108,6 +112,8 @@ max_delay = 2.0
 #   dubaiphone_eg = "category:<slug>"  (the slug after /category/, e.g. mobiles-all-2; Mac only; docs/DUBAIPHONE.md)
 #   hardwaremarket_eg = "category:<id>"  (WooCommerce id or slug, e.g. 39 = Headsets; "deals:<id>" = its 50 most
 #                       recently modified products, a fast lane; Mac only; docs/HARDWAREMARKET.md)
+#   amazon_now_eg = "category:<browse node id>"  (amazon.eg node; the Amazon Now root 211761638031 is added to every
+#                   query; no deals feed; docs/AMAZON_NOW.md)
 # (or "search:<keywords>"; a list of roots also works). Find ids with:
 #   deals categories amazon_eg 18018102031
 #   deals categories noon_eg electronics-and-mobiles
@@ -119,6 +125,7 @@ max_delay = 2.0
 #   deals categories carrefour_eg NFEGY4000000
 #   deals categories dubaiphone_eg mobiles-all-2  (every slug: https://www.dubaiphone.net/sitemap-categories.xml)
 #   deals categories hardwaremarket_eg 15
+#   deals categories amazon_now_eg 211761638031
 # label is the name shown in alerts (optional, defaults to name).
 # min_price (EGP) skips cheap accessories/junk both when crawling and alerting.
 # interval_minutes is the starting revisit interval; it adapts per slice.
@@ -733,3 +740,16 @@ interval_minutes = 10
 max_interval_minutes = 15
 min_price = 1500
 jumia_eg = "category:flash-sales"
+
+# Amazon Now (amazon.eg's 20-minute delivery from dark stores): groceries, household, beauty, baby,
+# some electronics, about 8,000 to 12,000 products. An ASIN on Amazon Now is a separate offer at its
+# own price, so it is its own shop. The whole store is one root; the planner splits it by price.
+# Crossed-out prices on ~44% of cards are "List:" RRP claims, so alerts lean on its own history.
+# min_price keeps cheap snacks out of the alerts and shrinks the crawl. docs/AMAZON_NOW.md.
+[[watch]]
+name = "Amazon Now"
+label = "أمازون ناو"
+interval_minutes = 30
+max_interval_minutes = 60
+min_price = 50
+amazon_now_eg = "category:211761638031"

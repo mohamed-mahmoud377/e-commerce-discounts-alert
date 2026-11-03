@@ -371,7 +371,7 @@ const TABS = ['Overview', 'Deals', 'Products', 'Devices', 'Jobs', 'Logs', 'Queri
 const LABEL = {Rules: 'Rules & watches'};
 const SITES = [['amazon_eg', 'Amazon', 'A'], ['noon_eg', 'noon', 'N'], ['jumia_eg', 'Jumia', 'J'], ['cairosales_eg', 'Cairo Sales', 'C'],
   ['2b_eg', '2B', '2B'], ['btech_eg', 'B.TECH', 'BT'], ['dream2000_eg', 'Dream 2000', 'D'], ['carrefour_eg', 'Carrefour', 'CF'],
-  ['dubaiphone_eg', 'Dubai Phone', 'DP'], ['hardwaremarket_eg', 'Hardware Market', 'HM']];
+  ['dubaiphone_eg', 'Dubai Phone', 'DP'], ['hardwaremarket_eg', 'Hardware Market', 'HM'], ['amazon_now_eg', 'Amazon Now', 'AN']];
 const KINDS = {price_drop: ['Price drop', 'info'], all_time_low: ['All-time low', 'ok'], early_drop: ['Early drop', 'idle'],
   new_product: ['New product', 'new'], price_error: ['Price error', 'fail'], system: ['System', 'warn']};
 let tab = 'Overview', timer = null, ov = null, toastTimer = null;

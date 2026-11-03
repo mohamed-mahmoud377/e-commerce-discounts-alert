@@ -333,6 +333,9 @@ def cmd_categories(args) -> None:
         print("give a category id to list its children; known roots:")
         for name, cid in {"amazon_eg": [("Electronics", "18018102031"), ("Home", "18021933031"),
                                         ("Appliances", "21863792031"), ("Video Games", "18022560031")],
+                          "amazon_now_eg": [("Everything (the Amazon Now root)", "211761638031"), ("Grocery", "18020637031"),
+                                            ("Health & Household", "18021875031"), ("Beauty", "18017988031"),
+                                            ("Baby", "18017931031"), ("Electronics", "18018102031")],
                           "noon_eg": [("Electronics & Mobiles", "electronics-and-mobiles"),
                                       ("Home & Kitchen", "home-and-kitchen")],
                           "jumia_eg": [("Electronics", "electronics"), ("Phones & Tablets", "phones-tablets"),

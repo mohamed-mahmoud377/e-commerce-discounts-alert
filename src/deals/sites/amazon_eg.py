@@ -44,9 +44,11 @@ class AmazonEG:
     name = "amazon_eg"
     # Amazon only shows an exact count up to 1,000 and pages through that fully.
     max_slice_total = 1000
+    # Appended to product links (Amazon Now's offer of an ASIN has its own page).
+    dp_query = ""
 
     def __init__(self, state_dir: Path):
-        self._cookie_file = state_dir / "amazon_eg_cookies.json"
+        self._cookie_file = state_dir / f"{self.name}_cookies.json"
         self._session = requests.Session(impersonate="chrome")
         if self._cookie_file.exists():
             self._load_cookies(json.loads(self._cookie_file.read_text()))
@@ -54,12 +56,29 @@ class AmazonEG:
     def fetch_page(self, slice: Slice, page: int) -> PageResult:
         if slice.kind == "deals":
             return self._fetch_deals(slice, page)
-        params = {}
-        refinements = []
-        if slice.kind == "search":
-            params["k"] = slice.value
-        else:
-            refinements.append(f"n:{slice.value}")
+        url = self.search_url(slice, page)
+        html = self._get(url)
+        if html is None:
+            self._bootstrap_cookies()
+            html = self._get(url)
+            if html is None:
+                raise Blocked(f"{self.name}: still challenged after refreshing cookies")
+        current_node = slice.value if slice.kind == "category" else None
+        result = self._parse(html, current_node)
+        if result.decoy:
+            # A soft block: the page is a random listing with no result count. Amazon
+            # distrusts this cookie session, so get a fresh one (as for a challenge) and try
+            # once more; if it is still a decoy the coordinator pauses this IP for a while.
+            self._bootstrap_cookies()
+            html = self._get(url)
+            result = self._parse(html, current_node) if html else result
+            if html is None or result.decoy:
+                raise Blocked(f"{self.name}: decoy page (no result bar) for {slice.key()}")
+        return result
+
+    def search_url(self, slice: Slice, page: int) -> str:
+        params = {"k": slice.value} if slice.kind == "search" else {}
+        refinements = self._nodes(slice)
         # A bare category page is a "landing" layout with no product grid; any
         # price filter (even 0-unbounded) switches it to normal search results.
         if slice.has_price or slice.kind == "category":
@@ -72,26 +91,14 @@ class AmazonEG:
         if page > 1:
             params["page"] = page
         # The /-/en/ prefix forces English titles.
-        url = f"{BASE}/-/en/s?{urlencode(params)}"
+        return f"{BASE}/-/en/s?{urlencode(params)}"
 
-        html = self._get(url)
-        if html is None:
-            self._bootstrap_cookies()
-            html = self._get(url)
-            if html is None:
-                raise Blocked(f"{self.name}: still challenged after refreshing cookies")
-        current_node = slice.value if slice.kind == "category" else None
-        result = parse_search_page(html, current_node)
-        if result.decoy:
-            # A soft block: the page is a random listing with no result count. Amazon
-            # distrusts this cookie session, so get a fresh one (as for a challenge) and try
-            # once more; if it is still a decoy the coordinator pauses this IP for a while.
-            self._bootstrap_cookies()
-            html = self._get(url)
-            result = parse_search_page(html, current_node) if html else result
-            if html is None or result.decoy:
-                raise Blocked(f"{self.name}: decoy page (no result bar) for {slice.key()}")
-        return result
+    def _nodes(self, slice: Slice) -> list[str]:
+        """The browse-node refinements of a slice (a category value may carry more, e.g. p_n_deal_type)."""
+        return [] if slice.kind == "search" else [f"n:{slice.value}"]
+
+    def _parse(self, html: str, current_node: str | None) -> PageResult:
+        return parse_search_page(html, current_node, site=self.name, dp_query=self.dp_query)
 
     def _fetch_deals(self, slice: Slice, page: int) -> PageResult:
         url = deals_api_url(slice, page)
@@ -198,7 +205,8 @@ def _api_money(node: dict | None) -> int | None:
         return None
 
 
-def parse_search_page(html: str, current_node: str | None = None) -> PageResult:
+def parse_search_page(html: str, current_node: str | None = None, site: str = AmazonEG.name,
+                      dp_query: str = "") -> PageResult:
     tree = LexborHTMLParser(html)
     # "No results for your search query" lives in a MESSAGING widget (the result-info bar
     # is empty on that page) and the grid may still show unrelated recommendations.
@@ -211,7 +219,7 @@ def parse_search_page(html: str, current_node: str | None = None) -> PageResult:
         title_node = card.css_first("h2")
         if not asin or asin in listings or title_node is None:
             continue
-        listings[asin] = _parse_card(card, asin, title_node.text(strip=True))
+        listings[asin] = _parse_card(card, asin, title_node.text(strip=True), site, dp_query)
 
     has_next = tree.css_first("a.s-pagination-next") is not None
     return PageResult(
@@ -223,7 +231,7 @@ def parse_search_page(html: str, current_node: str | None = None) -> PageResult:
     )
 
 
-def _parse_card(card, asin: str, title: str) -> Listing:
+def _parse_card(card, asin: str, title: str, site: str, dp_query: str) -> Listing:
     price = list_price = None
     for node in card.css("span.a-price"):
         amount = parse_money(_text(node.css_first("span.a-offscreen")))
@@ -244,10 +252,10 @@ def _parse_card(card, asin: str, title: str) -> Listing:
     badges = (LIMITED_DEAL,) if "Limited time deal" in text else ()
 
     return Listing(
-        site=AmazonEG.name,
+        site=site,
         sku=asin,
         title=title,
-        url=f"{BASE}/-/en/dp/{asin}",
+        url=f"{BASE}/-/en/dp/{asin}{dp_query}",
         price=price,
         list_price=list_price,
         currency="EGP",
