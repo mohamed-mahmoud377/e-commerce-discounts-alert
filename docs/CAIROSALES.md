@@ -184,3 +184,13 @@ Cairo Sales challenged the friend's Mac (197.127.x) while it crawled Jumia, noon
 owner's Mac paused, nobody crawled Cairo Sales for 1.7 hours and the watchdog's stall alarm fired, correctly.
 Pausing the owner's Mac on Cairo Sales therefore stops it entirely.
 
+## Alert screenshots (3 Nov 2026)
+
+`/ar/<path>.html` is the Arabic page. In headless Chromium from the Mac the HTML comes in under 1 s with no
+Cloudflare challenge; the screenshot takes 8 to 10 s (the page keeps loading side widgets). PrestaShop 1.6
+ids: `.content_prices` (clearfix around `#our_price_display`, `#reduction_percent_display` "-12%",
+`#old_price_display`; the inner `div` is shorter than the floated price), `h1`, `#image-block`. The price
+sits under the short description, which on some products is long: the crop then keeps the price and drops
+the title. Cairo Sales sells its own stock, so there is no seller box. The page has a seasonal background
+(autumn leaves on 3 Nov), which shows at the crop's edges. Saved page:
+`tests/fixtures/cairosales_product_rendered.html.gz`.

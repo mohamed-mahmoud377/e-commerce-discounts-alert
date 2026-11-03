@@ -189,3 +189,16 @@ SELECT kind, count(*), sum(failures > 0) failing, min(next_due_at) FROM jobs WHE
 | `ValueError: no listing data in the page` | The page no longer embeds the listing object | Save a fresh page into `tests/fixtures/carrefour_category.html.gz`; look for `"pagination"` in the decoded `self.__next_f` chunks and adjust `listing_data` |
 | A slice suddenly parses 0 products | The card layout changed (`master-product-card`, `additionalAttributes`) | Same as above; fix `_parse_card` |
 | Prices differ from what a browser shows | The browser has a delivery area set (`storeInfo`, area cookies); the worker always sees the default `mafegy` store | Expected; prices are consistent between crawls |
+
+## Alert screenshots (3 Nov 2026)
+
+Expected to be refused (Akamai), but it is not: `/mafegy/ar/...` loads in headless Chromium from the Mac (the
+full Chromium in new headless mode with a normal Chrome user agent, as for noon) in 2 s, with the price at
+4 s; the screenshot takes about 5 s. MAF's storefront has Tailwind classes and few hooks, so the spec uses
+structure: the price row is the one around the left-to-right amount, `main div:has(> div.force-ltr)` (EGP
+6,849.00, the crossed-out 16,999.00 and "خصم 60%"); the seller card is
+`main div.flex-col:has(> div.flex-col > span > strong)`, "يتم بيعه وتوصيله من قِبَل: Electro Zone" for a
+marketplace seller, just "Carrefour" for Carrefour's own stock. Title `main h1`, image
+`[data-testid="productimage-container"]`. The cookie bar ("بالنقر فوق «متابعة»...") is fixed and hidden, never
+answered. The browser has no delivery area set, so it sees the default store's price, as the crawler does.
+Saved page: `tests/fixtures/carrefour_product_rendered.html.gz`.

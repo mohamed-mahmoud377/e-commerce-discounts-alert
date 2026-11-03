@@ -33,7 +33,7 @@ owns one job.
 | `health.py` | 207 | Health checks and the daily report | db, alerts |
 | `matching.py` | 590 | The same product on different shops: model codes read from titles once (`product_codes`), the hourly grouping streamed through SQL into `models` / `product_models` (in a `nice 19` subprocess), `same_model()` for the views. See [MATCHING.md](MATCHING.md) | db |
 | `details.py` | 150 | Product page parsers per shop (barcode, model number, specs) and `fetch_details`, which never retries a challenge | models |
-| `shots.py` | 210 | The alert screenshot, worker side: per-shop `SPECS` (page to open, elements to box in red, context for the crop), `crop()` (pure geometry), `annotate()` (hide overlays, draw the frames, cut out a JPEG) and the `Shooter` thread with its one headless Chromium | playwright |
+| `shots.py` | 290 | The alert screenshot, worker side: per-shop `SPECS` for all eleven shops (`arabic` URL swap, `boxes` to frame in red, `context` for the crop, `ready` element, `hide` and `block`), `crop()` (pure geometry), `annotate()` (hide overlays, draw the frames, cut out a JPEG) and the `Shooter` thread with its one headless Chromium (full build, new headless mode, a normal Chrome user agent) | playwright |
 | `shotq.py` | 125 | The alert screenshot, coordinator side: `add()` a `shots` row when a screenshot worker crawls the shop, `lease()` it in a reply, `record()` the upload; `IMAGES`, the in-memory store the alert sender reads (nothing on disk) | config, shots |
 | `detailq.py` | 170 | The coordinator's side of product pages: offer one to an idle worker (paced, capped, paused after a refusal), record what it gave, refill the queue | db, config |
 | `monitor.py` | 166 | Device states, events (logs), the dashboard page | db, scheduler |

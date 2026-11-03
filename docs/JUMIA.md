@@ -264,3 +264,16 @@ list: `SKU` (Jumia's own, e.g. `OP872MP2AYIUTNAFAMZ`), `GTIN Barcode`, `Model` (
 `Production Country`. The barcode is on about 1 page in 4 (5 of 20 in the pilot), the model on most.
 Only the Safari TLS fingerprint gets the page (Chrome's got HTTP 403 twice in testing), as for listings.
 `details.parse_jumia` reads the JSON-LD only; the visible spec list also shows other products' codes.
+
+## Alert screenshots (3 Nov 2026)
+
+`/ar/<path>` is the Arabic page. In headless Chromium from the Mac the page answers at once, with no block (the
+plain-HTTP crawler needs Safari's fingerprint, the browser does not), and the screenshot takes 3 to 4 s.
+The page is server-rendered with Jumia's utility classes and no ids on the product, so the spec holds on to
+structure: the price row (price, crossed-out price, `bdg _dsct` badge with `data-disc="20%"`) is
+`.col10 .-phm > .-hr.-pvm`, right under the title `.col10 h1`; the seller card ("بيانات البائع", a link to the
+seller's store, then the name, rating and followers) is `section.card:has(> a > h2)`, of which the box is the
+`.-hr.-pam` part with the name; main image `#imgs`. The gallery images are lazy: `src` is a 1-pixel SVG until
+the script swaps in `data-src`, hence the wait for the context image. A newsletter popup ("أهلاً بك في جوميا")
+and a cookie bar are fixed overlays and are hidden, never answered. Saved page:
+`tests/fixtures/jumia_product_rendered.html.gz`.

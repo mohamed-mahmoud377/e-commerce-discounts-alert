@@ -201,3 +201,12 @@ curl -s -D - -o /dev/null 'https://hardwaremarket.net/wp-json/wc/store/v1/produc
 curl -s 'https://hardwaremarket.net/wp-json/wc/store/v1/products?per_page=5&orderby=modified&order=desc&_fields=id,name,prices.price,prices.regular_price,is_in_stock'
 ssh root@207.154.206.127 "curl -s -o /dev/null -w '%{http_code}\n' https://hardwaremarket.net/wp-json/wc/store/v1/products?per_page=1"   # 403 from the droplet
 ```
+
+## Alert screenshots (3 Nov 2026)
+
+There is no Arabic page (English only), so the screenshot is the English page. In headless Chromium from the
+Mac it answers in 2 to 3 s with no Cloudflare challenge; the screenshot takes about 8 s. WooCommerce
+(WoodMart) hooks: `.summary p.price` (`<del>` 2.999,00 EGP, `<ins>` 1.999,00 EGP), `h1.product_title` (long:
+5 lines at 1280 px), `.woocommerce-product-gallery__image` (the first slide, with the "-33%" label and the
+brand logo on it). The social links on the right are fixed and hidden. Hardware Market sells its own stock,
+so there is no seller box. Saved page: `tests/fixtures/hardwaremarket_product_rendered.html.gz`.

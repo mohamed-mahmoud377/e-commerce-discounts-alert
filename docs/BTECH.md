@@ -178,3 +178,14 @@ SELECT kind, count(*), sum(failures > 0) failing, min(next_due_at) FROM jobs WHE
 The page's React data has spec pairs as `{"key": ..., "value": ...}` (Brand, Display Type, Model Name...); the
 maker's model number is often not among them but is in the product description meta ("Model Number:
 L43HYNDA630") and in the URL slug. No barcodes seen (0 of 25 in the pilot). `details.parse_btech` reads both.
+
+## Alert screenshots (3 Nov 2026)
+
+`/ar/p/<id>?offering_id=…` is the Arabic page. Next.js with Tailwind classes; in headless Chromium from the Mac
+DOMContentLoaded came after 12 s in one run, and the screenshot takes about 11 s (the delivery and payment blocks are still
+grey skeletons then; they are not in the boxes). Hooks: `[data-testid="pdp-price"]` (price and the
+crossed-out price), `h1`, the gallery is the parent of `[data-testid="pdp-gallery-zoom"]`. The saving shows as
+a "هتوفر 13000 ج.م" badge on the image, not as a percentage. The seller is a row of the details card ("يباع من
+الحريري جروب لأعمال التكييف") with no hook of its own except its icon, `/_next/static/media/pdp-seller-store.<hash>.svg`,
+so the box is `div:has(> div > img[src*="pdp-seller-store"])`. A sticky price bar (`pdp-sticky-bar`) is fixed
+and hidden. Saved page: `tests/fixtures/btech_product_rendered.html.gz`.

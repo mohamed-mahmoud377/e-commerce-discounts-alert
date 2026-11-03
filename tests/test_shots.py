@@ -25,17 +25,57 @@ def fresh_state():
     shotq.IMAGES.clear()
 
 
-@pytest.mark.parametrize("site,fixture", [("amazon_eg", "amazon_product_ar.html.gz"),
-                                          ("amazon_now_eg", "amazon_now_product.html.gz")])
-def test_every_box_and_context_element_is_on_a_saved_page(site, fixture):
+# Each shop's product page as the screenshot browser saw it (Playwright's page.content()), with what its price
+# box and its seller box (if the shop shows one) must contain.
+SAVED = [
+    ("amazon_eg", "amazon_product_ar.html.gz", ("%", "جنيه"), "Electro.Zone"),
+    ("amazon_now_eg", "amazon_now_product.html.gz", ("%", "جنيه"), "Amazon Now"),
+    ("jumia_eg", "jumia_product_rendered.html.gz", ("2,799.00 جنيه", "3,499.00", "20%"), "Miracle Trading"),
+    ("noon_eg", "noon_product_rendered.html.gz", ("13999.00", "14999.00", "خصم 6%"), "Elsweedyphone"),
+    ("btech_eg", "btech_product_rendered.html.gz", ("113,335", "124,335"), "الحريري جروب"),
+    ("2b_eg", "2b_product_rendered.html.gz", ("70,999", "96,899", "27%"), None),
+    ("cairosales_eg", "cairosales_product_rendered.html.gz", ("10,270", "11,670", "-12%"), None),
+    ("dubaiphone_eg", "dubaiphone_product_rendered.html.gz", ("5,599",), None),  # no crossed-out price on the page
+    ("hardwaremarket_eg", "hardwaremarket_product_rendered.html.gz", ("1.999,00", "2.999,00"), None),
+    ("dream2000_eg", "dream2000_product_rendered.html.gz", ("25,499.00", "28,900.00"), None),
+    ("carrefour_eg", "carrefour_product_rendered.html.gz", ("6,849", "16,999.00", "خصم 60%"), "Electro Zone"),
+]
+
+
+@pytest.mark.parametrize("site,fixture,price,seller", SAVED, ids=[s[0] for s in SAVED])
+def test_every_box_and_context_element_is_on_a_saved_page(site, fixture, price, seller):
     tree = LexborHTMLParser(fixture_text(fixture))
     spec = shots.SPECS[site]
-    for alternatives in spec.boxes:
-        assert any(tree.css_first(s) is not None for s in alternatives), alternatives
+    found = [next((tree.css_first(s) for s in alternatives if tree.css_first(s) is not None), None)
+             for alternatives in spec.boxes]
+    assert all(found), spec.boxes
     for s in (*spec.context, spec.ready):
         assert tree.css_first(s) is not None, s
-    price = next(tree.css_first(s) for s in spec.boxes[0] if tree.css_first(s) is not None)
-    assert "%" in price.text() and ("EGP" in price.text() or "جنيه" in price.text())  # the discount and the price
+    assert all(p in found[0].text() for p in price), found[0].text()[:300]
+    assert (len(spec.boxes) == 2) == (seller is not None)  # a seller box where the shop shows a seller
+    if seller:
+        assert seller in found[1].text()
+
+
+def test_every_shop_with_alerts_has_a_spec():
+    assert set(shots.SPECS) == {s[0] for s in SAVED}
+
+
+@pytest.mark.parametrize("site,url,arabic", [
+    ("amazon_eg", "https://www.amazon.eg/-/en/dp/B0976DNC9B", "https://www.amazon.eg/-/ar/dp/B0976DNC9B"),
+    ("jumia_eg", "https://www.jumia.com.eg/beko-iron-131373891.html", "https://www.jumia.com.eg/ar/beko-iron-131373891.html"),
+    ("noon_eg", "https://www.noon.com/egypt-en/hot-60i/N70204493V/p/", "https://www.noon.com/egypt-ar/hot-60i/N70204493V/p/"),
+    ("btech_eg", "https://btech.com/en/p/e2bc?offering_id=f87a", "https://btech.com/ar/p/e2bc?offering_id=f87a"),
+    ("2b_eg", "https://2b.com.eg/en/dell-latitude-5450.html", "https://2b.com.eg/ar/dell-latitude-5450.html"),
+    ("cairosales_eg", "https://cairosales.com/en/monitors/dell-e2216hv.html", "https://cairosales.com/ar/monitors/dell-e2216hv.html"),
+    ("dubaiphone_eg", "https://www.dubaiphone.net/en/shop/anker-maggo", "https://www.dubaiphone.net/shop/anker-maggo"),
+    ("hardwaremarket_eg", "https://hardwaremarket.net/product/h858/", "https://hardwaremarket.net/product/h858/"),  # English only
+    ("dream2000_eg", "https://dream2000.com/en/products/haier?variant=1", "https://dream2000.com/products/haier?variant=1"),
+    ("carrefour_eg", "https://www.carrefouregypt.com/mafegy/en/hob/beko/p/513309",
+     "https://www.carrefouregypt.com/mafegy/ar/hob/beko/p/513309"),
+])
+def test_the_arabic_page(site, url, arabic):
+    assert shots.SPECS[site].page_url(url) == arabic
 
 
 def test_amazon_now_seller_line_and_arabic_page():
@@ -221,7 +261,9 @@ def test_screenshot_jobs_go_to_screenshot_workers_once_and_not_too_late(client, 
                                   "('price_drop', 'x', ?, ?)", (iso(now), iso(now)))
         assert not shotq.add(client.conn, cfg, cur.lastrowid, "amazon_eg", "https://www.amazon.eg/-/en/dp/X", now)
         shotq.seen_shooter(["amazon_eg"], now)
-        assert not shotq.add(client.conn, cfg, cur.lastrowid, "noon_eg", "https://noon/x", now)  # no spec yet
+        assert not shotq.add(client.conn, cfg, cur.lastrowid, "noon_eg", "https://noon/x", now)  # nobody shoots noon
+        shotq.seen_shooter(["other_eg"], now)
+        assert not shotq.add(client.conn, cfg, cur.lastrowid, "other_eg", "https://other/x", now)  # no spec
         assert shotq.add(client.conn, cfg, cur.lastrowid, "amazon_eg", "https://www.amazon.eg/-/en/dp/X", now)
     r = client.post("/api/lease", json={"sites": ["amazon_eg"]}, headers=W1).json()
     assert "shot" not in r  # this worker doesn't take screenshots

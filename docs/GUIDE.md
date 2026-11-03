@@ -781,8 +781,26 @@ seller on noon, the confidence and the score. Product names stay as the shop wri
 
 Above each deal alert comes a photo of the product's own page on the shop, in Arabic, with red boxes around
 the price block (price, discount, crossed-out price) and the seller line ("shipped and sold by Amazon.eg"),
-cropped to the title, the main image and the boxes: a friend sees the deal as the shop shows it. Shops with
-boxes so far: amazon.eg and Amazon Now (`SPECS` in `shots.py`); the others' alerts are text only.
+cropped to the title, the main image and the boxes: a friend sees the deal as the shop shows it. Every shop
+has its boxes (`SPECS` in `shots.py`, 3 Nov 2026). The seller box is there where the shop names one: Amazon,
+Amazon Now, noon, Jumia, B.TECH and Carrefour (marketplaces); 2B, Cairo Sales, Dubai Phone, Hardware Market
+and Dream 2000 sell their own stock and get the price box alone.
+
+| Shop | Page | Price box | Seller box | Context | Time (Mac) |
+|---|---|---|---|---|---|
+| amazon_eg, amazon_now_eg | `/-/ar/dp/` | `#corePriceDisplay_desktop_feature_div` | `#offerDisplayFeatures_desktop`, `#fresh-merchant-info` | title, image | 5 to 8 s |
+| noon_eg | `/egypt-ar/` | `div[class*="_priceOfferCtr_"]` | `a[class*="_partnerRatingsCtr_"]` | title only (the gallery comes 30 s late) | 15 to 20 s |
+| jumia_eg | `/ar/` | `.col10 .-phm > .-hr.-pvm` | `section.card:has(> a > h2) > .-hr.-pam` | title, image | 3 to 4 s |
+| btech_eg | `/ar/p/` | `[data-testid="pdp-price"]` | the "يباع من" row (its icon) | title, image | 11 s |
+| 2b_eg | `/ar/` | `.product-info-main div.price-wrapper` | | title, image | 9 s |
+| cairosales_eg | `/ar/` | `.content_prices` | | title, image | 8 to 10 s |
+| dubaiphone_eg | no `/en` | the price (no crossed-out price on the page) | | title, image | 9 s |
+| hardwaremarket_eg | English only | `.summary p.price` | | title, image | 8 s |
+| dream2000_eg | no `/en`, `?variant=` | `[id^="Price__"][id$="__main"]` | | title, image | 8 s |
+| carrefour_eg | `/mafegy/ar/` | the row around `div.force-ltr` | the bold seller name card | title, image | 5 s |
+
+The shop details (why each selector, what loads late) are in each shop's doc and, for Amazon and noon, in
+docs/CATEGORIES.md. Times include starting the browser and a 2 s wait for the page's last images.
 
 1. **Who takes it.** The droplet sends the alerts but most shops refuse its IP, and a browser per alert is
    heavy for 1 GB. So the worker that crawls the shop takes it: a worker started with `DEALS_SCREENSHOTS=1`
@@ -790,12 +808,19 @@ boxes so far: amazon.eg and Amazon Now (`SPECS` in `shots.py`); the others' aler
    worker asked for that shop's work in the last 10 minutes, the alert gets a `shots` row; the reply to the
    page upload that revealed the deal carries the job (`"shot"`), so the Mac starts at once, in a thread of
    its own (crawling never waits). Held low-confidence alerts get theirs when they are released.
-2. **Taking it.** One headless Chromium kept open between screenshots (closed after 5 idle minutes):
-   the Arabic page (`/-/ar/dp/<asin>`, locale `ar-EG`) at 1280×1000, 1.5× pixels; whatever floats over
-   the page (fixed or sticky elements such as a cookie bar) is hidden, nothing is clicked; red frames are
-   drawn into the page around the boxes; the crop is every box plus the title and image if the whole stays
-   under 820 CSS pixels high. JPEG quality 80: 130 to 190 KB, 5 to 6 s per page on the Mac (3 Nov 2026).
-   No price block on the page (a layout change, a gone product): no screenshot.
+2. **Taking it.** One headless Chromium kept open between screenshots (closed after 5 idle minutes). It is
+   Playwright's full Chromium in the new headless mode (`channel="chromium"`) under a normal Chrome user
+   agent: noon's bot wall cuts the connection (`ERR_HTTP2_PROTOCOL_ERROR`) of the lighter headless shell and
+   of any agent that says "HeadlessChrome". The Arabic page (each spec's `arabic` swap of the URL, locale
+   `ar-EG`) at 1280×1000, 1.5× pixels. The page counts as loaded once the spec's `ready` element is visible
+   (not at DOMContentLoaded: noon streams its HTML for 30 s); then up to 5 s for the context elements to be
+   there with their first image loaded (lazy loaders show a 1-pixel placeholder first), and up to 2 s for
+   the rest. A spec can `block` URL patterns (Dream 2000's whole icon font, which a screenshot would wait
+   for). Whatever floats over the page (fixed or sticky elements such as a cookie bar or a newsletter popup)
+   is hidden, nothing is clicked; red frames are drawn into the page around the boxes; the crop is every
+   box plus the title and image if the whole stays under 820 CSS pixels high. JPEG quality 80: 40 to 200
+   KB, 3 to 20 s per page on the Mac (3 Nov 2026, table above). No price block on the page (a layout
+   change, a gone product): no screenshot.
 3. **Upload once, keep nothing.** The worker posts the JPEG to `POST /api/shots/{alert_id}` (three quick
    tries) and forgets it. The coordinator keeps it only in memory; after the first person's photo Telegram
    returns a `file_id`, which goes in `shots.file_id` for everyone else, and the bytes are dropped. Nothing
@@ -808,7 +833,9 @@ boxes so far: amazon.eg and Amazon Now (`SPECS` in `shots.py`); the others' aler
 
 **The speed principle.** The wait costs at most 30 s, against the minutes a slice takes to be revisited
 (the worst-case time to notice, above), and only when a screenshot worker is actually there; in the measured
-runs the photo was ready in 6 s. Turn it off with `[alerts] screenshots = false`.
+runs the photo was ready in 3 to 11 s, noon's in 15 to 20 s (its server takes 10 s before the first byte of a
+product page). Screenshots are taken one at a time, so a second noon deal found in the same minute can miss its
+30 s and go out as text. Turn it off with `[alerts] screenshots = false`.
 
 `deals shot <site> <url>` takes one screenshot on this machine (to check a shop's boxes); on the server,
 `deals test-alert <site> <sku>` sends the admin alone a test alert for a product with its screenshot.

@@ -276,3 +276,13 @@ print(r.status_code, r.headers.get("x-vercel-cache"), r.headers.get("age"), sd["
 print(s.get("https://www.dubaiphone.net/api/products/by-ids?locale=en&ids=500,2818").json())
 EOF
 ```
+
+## Alert screenshots (3 Nov 2026)
+
+The Arabic page is the URL without `/en` (`/shop/<slug>`). In headless Chromium from the Mac it answers in 1 s
+(Vercel lets the browser through; the droplet is refused either way) and the screenshot takes about 9 s. The
+product page shows the price alone, "5,599 ج.م" next to "أو 233 ج.م / شهرياً", even for a product whose listing
+has a crossed-out price (5,899 for the Anker MagGo station): the box is the price
+(`div.self-center > p:has(span.tabular-nums)`, Tailwind classes only). Title `h1.dp-product-title`, image
+`.embla__viewport` (the gallery slider). Dubai Phone sells its own stock, so there is no seller box. Saved
+page: `tests/fixtures/dubaiphone_product_rendered.html.gz`.

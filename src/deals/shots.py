@@ -25,27 +25,76 @@ class Spec:
     boxes: tuple[tuple[str, ...], ...]
     context: tuple[str, ...] = ()  # also in the crop if they fit, never boxed
     hide: tuple[str, ...] = ()  # in-page banners to remove (fixed and sticky ones are always hidden)
+    block: tuple[str, ...] = ()  # URL patterns not to load (a heavy icon font the screenshot would wait for)
     ready: str = "body"  # the page has rendered the product once this is visible
     locale: str = "ar-EG"
+    arabic: tuple[str, str] | None = None  # (English part, Arabic part) of the URL, replaced once
 
     def page_url(self, url: str) -> str:
-        return url
-
-
-@dataclass(frozen=True)
-class AmazonSpec(Spec):
-    def page_url(self, url: str) -> str:
-        return url.replace("/-/en/", "/-/ar/")  # same ids and layout, mirrored (right to left)
+        return url.replace(*self.arabic, 1) if self.arabic else url
 
 
 _AMAZON_PRICE = ("#corePriceDisplay_desktop_feature_div", "#corePrice_desktop", "#corePrice_feature_div")
+_AMAZON_AR = ("/-/en/", "/-/ar/")  # same ids and layout, mirrored (right to left)
 SPECS: dict[str, Spec] = {
     # Price, discount and list price in the centre column; "Shipper / Seller" rows in the buy box.
-    "amazon_eg": AmazonSpec(boxes=(_AMAZON_PRICE, ("#offerDisplayFeatures_desktop", "#merchantInfoFeature_feature_div")),
-                            context=("#productTitle", "#imgTagWrapperId"), hide=("#sp-cc",), ready="#productTitle"),
+    "amazon_eg": Spec(boxes=(_AMAZON_PRICE, ("#offerDisplayFeatures_desktop", "#merchantInfoFeature_feature_div")),
+                      context=("#productTitle", "#imgTagWrapperId"), hide=("#sp-cc",), ready="#productTitle",
+                      arabic=_AMAZON_AR),
     # Amazon Now's buy box has no seller rows: "Ships from and sold by Amazon Now." is under the price.
-    "amazon_now_eg": AmazonSpec(boxes=(_AMAZON_PRICE, ("#fresh-merchant-info", "#offerDisplayFeatures_desktop")),
-                                context=("#productTitle", "#imgTagWrapperId"), hide=("#sp-cc",), ready="#productTitle"),
+    "amazon_now_eg": Spec(boxes=(_AMAZON_PRICE, ("#fresh-merchant-info", "#offerDisplayFeatures_desktop")),
+                          context=("#productTitle", "#imgTagWrapperId"), hide=("#sp-cc",), ready="#productTitle",
+                          arabic=_AMAZON_AR),
+    # Server-rendered with utility classes (no ids): the price row (price, crossed-out price, % badge) under
+    # the title; the seller card ("بيانات البائع", a link to the seller's store) in the right column.
+    "jumia_eg": Spec(boxes=((".col10 .-phm > .-hr.-pvm",), ("section.card:has(> a > h2) > .-hr.-pam",)),
+                     context=(".col10 h1", "#imgs"), ready=".col10 h1",
+                     arabic=("jumia.com.eg/", "jumia.com.eg/ar/")),
+    # CSS-module classes (`_priceOfferCtr_1fgtw_1`): matched on the name, the hash changes with each build.
+    # The page shows the offer that wins the buy box, whose seller is a link to /seller/. No image: the
+    # gallery is drawn only once the page has streamed in whole, 30 s after the price (docs/CATEGORIES.md).
+    "noon_eg": Spec(boxes=(('div[class*="_priceOfferCtr_"]', '[data-qa="div-price-now"]'),
+                           ('a[class*="_partnerRatingsCtr_"]', 'a[href*="/seller/p-"]')),
+                    context=('h1[data-qa="pdp-product-name"]',),
+                    ready='div[class*="_priceOfferCtr_"]', arabic=("/egypt-en/", "/egypt-ar/")),
+    # Next.js with Tailwind classes; test ids on the price. The seller is the "يباع من" row of the details
+    # card, known by its icon; the saving ("هتوفر") is a badge on the image.
+    "btech_eg": Spec(boxes=(('[data-testid="pdp-price"]',), ('div:has(> div > img[src*="pdp-seller-store"])',)),
+                     context=("h1", 'div:has(> [data-testid="pdp-gallery-zoom"])'), ready='[data-testid="pdp-price"]',
+                     arabic=("btech.com/en/", "btech.com/ar/")),
+    # Magento: price, crossed-out price and the "% تخفيض" label share a wrapper. 2B sells its own stock: no
+    # seller line.
+    "2b_eg": Spec(boxes=((".product-info-main div.price-wrapper", ".product-info-main .price-box"),),
+                  context=("h1.page-title", '[data-gallery-role="gallery-placeholder"]'),
+                  ready=".product-info-main .price-box", arabic=("2b.com.eg/en/", "2b.com.eg/ar/")),
+    # PrestaShop 1.6 ids. The price sits under the short description, which can push it far below the title.
+    # Cairo Sales sells its own stock.
+    "cairosales_eg": Spec(boxes=((".content_prices", "#our_price_display"),), context=("h1", "#image-block"),
+                          ready="#our_price_display", arabic=("cairosales.com/en/", "cairosales.com/ar/")),
+    # Next.js with Tailwind classes. The product page shows the price alone (never the crossed-out one, even
+    # when the listing has it), next to "or N a month"; Dubai Phone sells its own stock. Arabic has no prefix.
+    "dubaiphone_eg": Spec(boxes=(("div.self-center > p:has(span.tabular-nums)",),),
+                          context=("h1.dp-product-title", ".embla__viewport"), ready="h1.dp-product-title",
+                          arabic=("dubaiphone.net/en/", "dubaiphone.net/")),
+    # WooCommerce (WoodMart theme), English only: <del> and <ins> prices in one line, the "-8%" label on the
+    # first gallery image. Hardware Market sells its own stock.
+    "hardwaremarket_eg": Spec(boxes=((".summary p.price", "p.price"),),
+                              context=("h1.product_title", ".woocommerce-product-gallery__image"),
+                              ready="h1.product_title"),
+    # Shopify. The page also holds a hidden quick-view copy of the product (same classes): the main section's
+    # ids end in "__main". Dream 2000 sells its own stock. Arabic is the default locale (no prefix). The whole
+    # Tabler icon font (jsDelivr, @latest) can take 10 s or more, and a screenshot waits for fonts.
+    "dream2000_eg": Spec(boxes=(('[id^="Price__"][id$="__main"]',),),
+                         context=("h1.product-title",
+                                  '[id^="MediaGallery__"][id$="__main"] .media-gallery__media-item.is-active'),
+                         ready='[id^="Price__"][id$="__main"]', arabic=("dream2000.com/en/", "dream2000.com/"),
+                         block=("**/@tabler/icons-webfont*/**",)),
+    # MAF's Next.js storefront, Tailwind classes only: the price row is the one around the left-to-right
+    # amount (price, crossed-out price, "خصم 19%"); the seller card has the seller's name in bold.
+    "carrefour_eg": Spec(boxes=(("main div:has(> div.force-ltr)",),
+                                ("main div.flex-col:has(> div.flex-col > span > strong)",)),
+                         context=("main h1", '[data-testid="productimage-container"]'),
+                         ready="main div:has(> div.force-ltr)", arabic=("/mafegy/en/", "/mafegy/ar/")),
 }
 
 VIEWPORT = {"width": 1280, "height": 1000}  # the desktop layout, like the shop's own page on a computer
@@ -96,6 +145,14 @@ _UNCOVER = """([extra, keep]) => {
   for (const s of extra) for (const e of document.querySelectorAll(s)) e.style.setProperty('display', 'none', 'important');
 }"""
 
+# True once every context element is on the page and its first image (the main product image) has loaded:
+# lazy loaders put a 1-pixel placeholder in `src` until the image is in view, and noon renders its gallery
+# after the price.
+_LOADED = """(context) => context.every(s => {
+  const e = document.querySelector(s), i = e && (e.tagName === 'IMG' ? e : e.querySelector('img'));
+  return e && (!i || (i.complete && i.naturalWidth > 1));
+})"""
+
 # Draws a red frame over each rectangle (page coordinates), above everything and ignoring clicks.
 _DRAW = """(rects) => {
   for (const [x, y, w, h] of rects) {
@@ -145,6 +202,7 @@ class Shooter(threading.Thread):
         self.jobs: queue.Queue = queue.Queue(maxsize=10)
         self._queued: set[int] = set()
         self._pw = self._browser = None
+        self._agent = ""
 
     def submit(self, shot: dict) -> None:
         """Queue a screenshot (from a coordinator reply); never blocks the crawl loop that got it."""
@@ -198,17 +256,28 @@ class Shooter(threading.Thread):
             from playwright.sync_api import sync_playwright
 
             self._pw = sync_playwright().start()
-            self._browser = self._pw.chromium.launch(headless=True)
-        ctx = self._browser.new_context(locale=spec.locale, viewport=VIEWPORT, device_scale_factor=SCALE)
+            # The full browser in its new headless mode, under a normal Chrome's user agent: noon's bot wall
+            # resets the connection of the headless shell, and of any "HeadlessChrome" agent.
+            self._browser = self._pw.chromium.launch(headless=True, channel="chromium")
+            probe = self._browser.new_page()
+            self._agent = probe.evaluate("navigator.userAgent").replace("HeadlessChrome", "Chrome")
+            probe.close()
+        ctx = self._browser.new_context(locale=spec.locale, viewport=VIEWPORT, device_scale_factor=SCALE,
+                                        user_agent=self._agent)
         try:
+            for pattern in spec.block:
+                ctx.route(pattern, lambda route: route.abort())
             page = ctx.new_page()
-            page.goto(spec.page_url(url), wait_until="domcontentloaded", timeout=PAGE_TIMEOUT * 1000)
+            # Not until the whole HTML is in: noon streams its page for 30 s, the price shows after 14.
+            page.goto(spec.page_url(url), wait_until="commit", timeout=PAGE_TIMEOUT * 1000)
             # A challenge page (Amazon's WAF) reloads itself into the product once solved.
             page.wait_for_selector(spec.ready, state="visible", timeout=PAGE_TIMEOUT * 1000)
-            try:
-                page.wait_for_load_state("load", timeout=5000)  # images and fonts, briefly
-            except Exception:
-                pass
+            for wait in (lambda: page.wait_for_function(_LOADED, arg=list(spec.context), timeout=5000),
+                         lambda: page.wait_for_load_state("load", timeout=2000)):  # the rest, briefly
+                try:
+                    wait()
+                except Exception:
+                    pass
             return annotate(page, spec)
         finally:
             ctx.close()

@@ -32,7 +32,7 @@ and drift.
 | Every collection, with counts (250 a page, 2 pages) | `https://dream2000.com/en/collections.json?limit=250&page=1` |
 | One collection's count and title | `https://dream2000.com/en/collections/mobiles.json` (HTTP 404 for an unknown handle) |
 | A collection's products | `https://dream2000.com/en/collections/mobiles/products.json?limit=250&page=1` (an unknown handle answers `{"products": []}` with HTTP 200, hence the separate count request) |
-| Product page | `https://dream2000.com/en/products/<handle>` |
+| Product page | `https://dream2000.com/en/products/<handle>`, `?variant=<id>` to open on one variant |
 | Arabic | the same URLs without `/en/` (titles in Arabic; `?locale=en` does nothing) |
 
 `https://dream2000.com/` sometimes refuses the TCP connection to plain `curl` while `www.dream2000.com` and the
@@ -134,3 +134,20 @@ Each variant's `sku` is its GTIN-13 barcode for almost every product (481 of 498
 collection page pass the check digit; e.g. Samsung Galaxy A17 `8806097657460`). The parser passes the
 barcodes of a listing's variants (its colours) as `Listing.gtins`; matching uses them as its strongest
 evidence (docs/MATCHING.md).
+
+## Alert screenshots (3 Nov 2026)
+
+The Arabic page is the URL without `/en`. In headless Chromium from the Mac the HTML comes in under 1 s and
+the price is visible at 3 to 5 s; the screenshot takes about 8 s. The theme loads the whole Tabler icon font
+from jsDelivr (`@tabler/icons-webfont@latest`), which was still loading after 10 s, and a
+screenshot waits for fonts (one took 13 s): the spec blocks it, at the cost of a few icons. The page also
+holds a hidden quick-view copy of the product with the same classes, so the selectors go through the main
+section's ids, which end in `__main`: `[id^="Price__"][id$="__main"]` (price, compare-at price, "-12%" label),
+`[id^="MediaGallery__"][id$="__main"] .media-gallery__media-item.is-active`, and `h1.product-title`. A popup
+("اختيار قدرة الجهاز") is fixed and hidden. Dream 2000 sells its own stock, so there is no seller box.
+
+A product that is several listings (1.5 HP and 3 HP air conditioners, 4/128 and 8/256 phones) has one page
+for all of them, opened on the default variant. Since 3 Nov 2026 such a listing's URL carries
+`?variant=<id>` (its cheapest variant in stock), so the link in the alert and the screenshot show that
+variant's price; a product that is one listing keeps the plain URL. Saved page:
+`tests/fixtures/dream2000_product_rendered.html.gz`.

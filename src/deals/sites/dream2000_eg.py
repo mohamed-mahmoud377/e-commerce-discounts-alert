@@ -95,7 +95,9 @@ def product_listings(product: dict) -> list[Listing]:
             site=Dream2000EG.name,
             sku=str(product["id"]) + (f":{_slug(suffix)}" if suffix else ""),
             title=(product.get("title") or "").strip() + (f" ({suffix})" if suffix else ""),
-            url=f"{BASE}/products/{product.get('handle', '')}",
+            # the page opens on this group's variant (its price, for the link and the alert's screenshot)
+            url=f"{BASE}/products/{product.get('handle', '')}"
+                + (f"?variant={cheapest['id']}" if suffix and cheapest.get("id") else ""),
             price=price,
             # Shopify's "compare at" price is the shop's own claim (set on 83% of the catalogue).
             list_price=compare if compare and price and compare > price else None,

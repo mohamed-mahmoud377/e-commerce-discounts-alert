@@ -438,7 +438,7 @@ def test_dream2000_variants_fold_into_listings():
     big = next(x for x in a17 if x.sku.endswith("8gb-256gb"))
     assert (big.price, big.list_price, big.list_price_kind, big.in_stock) == (2049000, 2460000, "list", True)
     assert big.title == "Samsung Galaxy A17 (8GB / 256GB)" and big.brand == "Samsung"
-    assert big.url == "https://dream2000.com/en/products/galaxy-a17"
+    assert big.url == "https://dream2000.com/en/products/galaxy-a17?variant=47061098037387"  # its cheapest in stock
     small = next(x for x in a17 if x.sku.endswith("4gb-128gb"))
     assert small.price == 1333000 and not small.in_stock  # sold out, price still shown
     # a product whose only option is colour (or none at all) is one listing keyed by its id
@@ -451,6 +451,7 @@ def test_dream2000_variants_fold_into_listings():
                             {"option1": "Pink", "price": "1200.00", "compare_at_price": None, "available": True}]}
     (watch,) = product_listings(product)
     assert (watch.sku, watch.price, watch.list_price, watch.in_stock, watch.title) == ("1", 120000, None, True, "Watch")
+    assert watch.url == "https://dream2000.com/en/products/watch"  # one listing: no variant to pick
     product["variants"][1]["available"] = False
     (watch,) = product_listings(product)
     assert (watch.price, watch.list_price, watch.in_stock) == (100000, 150000, False)
