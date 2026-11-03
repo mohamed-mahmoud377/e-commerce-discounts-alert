@@ -43,6 +43,21 @@ run against the saved pages `tests/fixtures/amazon_now_root.html.gz` (the whole 
   `[sites.amazon_now_eg]` waits 3 to 5 s between pages (amazon_eg 2 to 4 s). The adapter keeps its own cookie file
   (`amazon_now_eg_cookies.json`) and solves the challenge in a headless browser when it has none.
 
+## Alert screenshots
+
+Amazon Now alerts carry a screenshot of the product's Amazon Now page (GUIDE.md, "Alert screenshots"), taken by the
+Mac (the only worker in a served delivery location). The page is the Arabic one, `/-/ar/dp/<asin>?almBrandId=sAuWWBROaG&fpw=alm`:
+the same element ids as amazon.eg, mirrored right to left. Measured 3 November 2026 in headless Chromium at 1280 px:
+
+| What | Element |
+| --- | --- |
+| Price, discount, crossed-out price ("-37% 93.45 جنيه, سعر القائمة: 148.50") | `#corePriceDisplay_desktop_feature_div` (as on amazon.eg) |
+| Seller line ("شحن من ومباع بواسطة Amazon Now.") | `#fresh-merchant-info`, under the price in the centre column. The buy box has no "Shipper / Seller" rows (`#offerDisplayFeatures_desktop` is absent) and shows only the price and "FREE 15-25 mins delivery" |
+| Title, main image | `#productTitle`, `#imgTagWrapperId` |
+
+The page loads in about 2 s and the screenshot takes 5 to 6 s with the browser start; 140 KB. The saved rendered page
+is `tests/fixtures/amazon_now_product.html.gz` (`tests/test_shots.py`).
+
 ## What we track
 
 One watch group, "Amazon Now" (أمازون ناو), with the whole store as its root (`category:211761638031`):

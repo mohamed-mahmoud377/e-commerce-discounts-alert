@@ -1,4 +1,5 @@
 import argparse
+import html
 import logging
 import os
 import secrets
@@ -57,7 +58,8 @@ def cmd_worker(args) -> None:
     if not url or not token:
         sys.exit("need --coordinator and --token (or DEALS_COORDINATOR / DEALS_TOKEN)")
     run(url, token, [s.strip() for s in sites if s.strip()],
-        Path(args.data_dir or os.environ.get("DEALS_DATA_DIR", "data")))
+        Path(args.data_dir or os.environ.get("DEALS_DATA_DIR", "data")),
+        screenshots=os.environ.get("DEALS_SCREENSHOTS", "0") == "1")  # a headless browser per alert: not on the droplet
 
 
 def cmd_local(args) -> None:
@@ -499,6 +501,49 @@ def cmd_token(args) -> None:
     print(secrets.token_urlsafe(24))
 
 
+def cmd_shot(args) -> None:
+    """Take one alert screenshot here (no coordinator), to check a shop's spec."""
+    from deals import shots
+
+    if args.site not in shots.SPECS:
+        sys.exit(f"no screenshot spec for {args.site}; shops with one: {', '.join(shots.SPECS)}")
+    shooter = shots.Shooter(lambda *_: None, threading.Event())
+    started = time.monotonic()
+    try:
+        image = shooter.shoot(shots.SPECS[args.site], args.url)
+    finally:
+        shooter._close()
+    if image is None:
+        sys.exit("price block not found on the page: the alert would go out without a screenshot")
+    Path(args.out).write_bytes(image)
+    print(f"{args.out}: {len(image) // 1024} KB in {time.monotonic() - started:.1f}s")
+
+
+def cmd_test_alert(args) -> None:
+    """On the server: send the admin alone a test alert for one product, with its screenshot (taken by a
+    worker started with DEALS_SCREENSHOTS=1 on its next request for that shop)."""
+    from deals import shotq
+
+    cfg, now = _config(args), utcnow()
+    conn = db.connect(cfg.db_path)
+    p = db.find_product(conn, args.site, args.sku)
+    if p is None or not cfg.telegram_chat_id:
+        sys.exit("no such product" if p is None else "no [telegram] chat_id in the config")
+    last = conn.execute("SELECT message FROM alerts WHERE product_id = ? ORDER BY id DESC LIMIT 1", (p["id"],)).fetchone()
+    body = last["message"] if last else f"<a href=\"{html.escape(p['url'])}\">{html.escape(p['title'][:150], quote=False)}</a>\n💰 {_egp(p['price'])}"
+    with conn:
+        # A system alert (admins only, never counted as a deal) handed to the admin alone, already "fanned out".
+        alert_id = conn.execute(
+            "INSERT INTO alerts (kind, dedupe_key, message, created_at, next_attempt_at, sent_at) VALUES ('system', ?, ?, ?, ?, ?)",
+            (f"test-alert:{iso(now)}", "🧪 <b>تجربة: تنبيه مع صورة الصفحة</b>\n\n" + body, iso(now), iso(now), iso(now))).lastrowid
+        conn.execute("INSERT INTO deliveries (alert_id, chat_id, next_attempt_at) VALUES (?, ?, ?)",
+                     (alert_id, int(cfg.telegram_chat_id), iso(now)))
+        queued = shotq.add(conn, cfg, alert_id, p["site"], p["url"], now, force=True, wait_seconds=args.wait)
+    print(f"test alert {alert_id} queued for the admin; " + (
+        f"waiting up to {args.wait}s for a worker's screenshot (SELECT * FROM shots WHERE alert_id = {alert_id})"
+        if queued else "no screenshot (no spec for this shop, or [alerts] screenshots = false)"))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="deals", description="e-commerce price tracker and deal alerts")
     parser.add_argument("-v", "--verbose", action="store_true")
@@ -581,6 +626,14 @@ def main() -> None:
             p.add_argument("--pages", type=int, default=1)
             p.add_argument("--show", type=int, default=10)
 
+    p = add("shot", cmd_shot, "take an alert screenshot of a product page here (checks a shop's boxes)", config=False)
+    p.add_argument("site")
+    p.add_argument("url", help="the product's link as stored (the English one; the Arabic page is opened)")
+    p.add_argument("--out", default="shot.jpg")
+    p = add("test-alert", cmd_test_alert, "send the admin alone a test alert for a product, with its screenshot")
+    p.add_argument("site", choices=sorted(SITES))
+    p.add_argument("sku")
+    p.add_argument("--wait", type=int, default=180, help="seconds to wait for the screenshot (default 180)")
     p = add("telegram", cmd_telegram, "find your chat id, or --test sending")
     p.add_argument("--test", action="store_true")
     p = add("backup", cmd_backup, "write a consistent copy of the database")

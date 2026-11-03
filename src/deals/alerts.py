@@ -11,15 +11,17 @@ import sqlite3
 import threading
 import time
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
-from curl_cffi import requests
+from curl_cffi import CurlMime, requests
 
-from deals import db, matching
+from deals import db, matching, shotq
 from deals.config import Config
 from deals.db import iso, parse_iso, utcnow
 from deals.pricing import LOW_STOCK_EVERYWHERE, Deal, Point, PriceStats, ProductView, compute_stats, evaluate
 
 log = logging.getLogger(__name__)
+CAIRO = ZoneInfo("Africa/Cairo")
 
 # Alert messages are in Arabic (Telegram renders them right-to-left).
 KIND_TITLE = {
@@ -91,12 +93,14 @@ def check_product(conn: sqlite3.Connection, cfg: Config, product_id: int, *, boo
             message = append_other_shops(message, p, deal.price, matching.other_shops(conn, product_id, now, cfg.alerts.other_shops_min_confidence), now)
         except Exception:
             log.exception("other shops' prices for %s", p["sku"])
-    conn.execute(
+    cur = conn.execute(
         """INSERT INTO alerts (product_id, kind, price, reference_price, drop_pct, score, message,
                                created_at, next_attempt_at, confirm_until)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (product_id, deal.kind, deal.price, deal.reference, deal.drop, deal.score, message, iso(now), iso(now), confirm),
     )
+    if confirm is None:  # a held alert gets its screenshot when it is released (AlertSender.confirm)
+        shotq.add(conn, cfg, cur.lastrowid, p["site"], p["url"], now)
     return deal
 
 
@@ -258,6 +262,11 @@ def _days(days: float) -> str:
     return f"{n} أيام" if n <= 10 else f"{n} يومًا"
 
 
+def shot_caption(site: str, taken_at: str | None) -> str:
+    when = f" ({parse_iso(taken_at).astimezone(CAIRO):%H:%M} بتوقيت القاهرة)" if taken_at else ""
+    return f"📸 صفحة المنتج على {SITE_NAME.get(site, site)} وقت رصد العرض{when}: السعر والبائع في المربعات الحمراء"
+
+
 class TelegramError(RuntimeError):
     def __init__(self, status: int, description: str, retry_after: int | None = None):
         super().__init__(f"telegram HTTP {status}: {description}")
@@ -276,6 +285,10 @@ class Telegram:
     def call(self, method: str, http_timeout: float = 20, **params) -> dict | list | bool:
         r = requests.post(f"https://api.telegram.org/bot{self.token}/{method}",
                           json={k: v for k, v in params.items() if v is not None}, timeout=http_timeout)
+        return self._result(r)
+
+    @staticmethod
+    def _result(r) -> dict | list | bool:
         try:
             data = r.json()
         except ValueError:
@@ -289,6 +302,19 @@ class Telegram:
         return self.call("sendMessage", chat_id=chat_id, text=text, parse_mode="HTML",
                          link_preview_options={"is_disabled": False, "prefer_small_media": True},
                          reply_markup={"inline_keyboard": buttons} if buttons else None)
+
+    def send_photo(self, chat_id: int | str, photo: bytes | str, caption: str) -> dict:
+        """A JPEG (uploaded) or a photo Telegram already has (its file_id)."""
+        if isinstance(photo, str):
+            return self.call("sendPhoto", chat_id=chat_id, photo=photo, caption=caption, parse_mode="HTML")
+        form = CurlMime()
+        form.addpart(name="photo", content_type="image/jpeg", filename="deal.jpg", data=photo)
+        try:
+            r = requests.post(f"https://api.telegram.org/bot{self.token}/sendPhoto", timeout=60, multipart=form,
+                              data={"chat_id": str(chat_id), "caption": caption, "parse_mode": "HTML"})
+        finally:
+            form.close()
+        return self._result(r)
 
     def updates(self, offset: int | None = None, wait: int = 0) -> list[dict]:
         """Incoming messages; with wait > 0 this long-polls (Telegram holds the request open)."""
@@ -348,7 +374,8 @@ class AlertSender(threading.Thread):
         out anyway: nothing disproved them.
         """
         held = conn.execute(
-            """SELECT a.id, a.price, a.created_at, a.confirm_until, p.price AS now_price, p.in_stock, p.last_seen_at
+            """SELECT a.id, a.price, a.created_at, a.confirm_until, p.price AS now_price, p.in_stock, p.last_seen_at,
+                      p.site, p.url
                FROM alerts a JOIN products p ON p.id = a.product_id
                WHERE a.sent_at IS NULL AND a.confirm_until IS NOT NULL""").fetchall()
         for a in held:
@@ -361,6 +388,7 @@ class AlertSender(threading.Thread):
             with conn:
                 if still:
                     conn.execute("UPDATE alerts SET confirm_until = NULL WHERE id = ?", (a["id"],))
+                    shotq.add(conn, self.cfg, a["id"], a["site"], a["url"], now)  # the page as it is now
                 else:
                     log.info("alert %s cancelled: price was %s, now %s (in stock: %s)",
                              a["id"], a["price"], a["now_price"], bool(a["in_stock"]))
@@ -369,15 +397,22 @@ class AlertSender(threading.Thread):
 
     def deliver(self, conn: sqlite3.Connection, now: datetime | None = None) -> int:
         now = now or utcnow()
+        # An alert whose screenshot is being taken waits for it (until wait_until at most).
         pending = conn.execute(
-            """SELECT d.id, d.chat_id, d.attempts, a.message FROM deliveries d
+            """SELECT d.id, d.chat_id, d.attempts, d.photo_sent_at, a.id AS alert_id, a.message,
+                      sh.status AS shot, sh.site AS shot_site, sh.taken_at AS shot_at
+               FROM deliveries d
                JOIN alerts a ON a.id = d.alert_id JOIN subscribers s ON s.chat_id = d.chat_id
+               LEFT JOIN shots sh ON sh.alert_id = a.id
                WHERE d.sent_at IS NULL AND d.attempts < 10 AND d.next_attempt_at <= ?
                  AND (s.status = 'active' OR s.is_admin = 1)
-               ORDER BY d.id LIMIT 30""", (iso(now),)).fetchall()
+                 AND NOT (COALESCE(sh.status, '') IN ('pending', 'taking') AND sh.wait_until > ?)
+               ORDER BY d.id LIMIT 30""", (iso(now), iso(now))).fetchall()
         sent = 0
         for d in pending:
             try:
+                if d["shot"] == "ok" and d["photo_sent_at"] is None:
+                    self._send_photo(conn, d, now)  # first, so the text reads as its caption
                 self.telegram.send(d["chat_id"], d["message"])
             except TelegramError as exc:
                 with conn:
@@ -399,6 +434,29 @@ class AlertSender(threading.Thread):
                                  (iso(now), d["id"]))
                 time.sleep(1)  # stay far below Telegram's per-chat limit
         return sent
+
+    def _send_photo(self, conn: sqlite3.Connection, d: sqlite3.Row, now: datetime) -> None:
+        """The alert's screenshot to one person: uploaded once, then by Telegram's file_id (and the image
+        leaves memory). A photo that fails is skipped, never the text; only a block (403) is passed on."""
+        file_id = conn.execute("SELECT file_id FROM shots WHERE alert_id = ?", (d["alert_id"],)).fetchone()["file_id"]
+        photo = file_id or shotq.IMAGES.get(d["alert_id"])
+        if photo is None:  # the coordinator restarted since: text only
+            return
+        try:
+            result = self.telegram.send_photo(d["chat_id"], photo, shot_caption(d["shot_site"], d["shot_at"]))
+        except Exception as exc:
+            if isinstance(exc, TelegramError) and exc.forbidden:
+                raise
+            log.warning("screenshot of alert %s to %s failed (%s); sending the text alone", d["alert_id"], d["chat_id"], exc)
+            if not isinstance(exc, TelegramError) or exc.status >= 500 or exc.status == 429:
+                return  # passing trouble: tried again with the text's retry, if the text fails too
+            result = None
+        with conn:
+            conn.execute("UPDATE deliveries SET photo_sent_at = ? WHERE id = ?", (iso(now), d["id"]))
+            sizes = (result or {}).get("photo") or []
+            if not file_id and sizes:
+                conn.execute("UPDATE shots SET file_id = ? WHERE alert_id = ?", (sizes[-1]["file_id"], d["alert_id"]))
+                shotq.IMAGES.drop(d["alert_id"])
 
     @staticmethod
     def _retry_later(conn, d, exc, now: datetime, retry_after: int | None = None) -> None:

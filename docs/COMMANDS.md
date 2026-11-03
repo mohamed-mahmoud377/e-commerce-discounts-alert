@@ -117,6 +117,7 @@ server and delete the secret.
 | Install (start at login, restart on crash) | `make install-mac-worker` (needs `make mac-worker-env` once) |
 | Remove | `make uninstall-mac-worker` |
 | Run in the foreground instead | `make mac-worker` (Ctrl+C stops) |
+| Alert screenshots on/off | `DEALS_SCREENSHOTS=1` (or `0`) in `worker.env`, then `make install-mac-worker` |
 | Force Amazon to solve its challenge again | `rm data/amazon_eg_cookies.json`, then `make restart-mac-worker` |
 
 ## Server services
@@ -152,7 +153,7 @@ database, so run them on the server as shown above.
 | Command | What it does | Where |
 | --- | --- | --- |
 | `serve` | Runs the coordinator | server (systemd) |
-| `worker` | Runs a worker (`DEALS_COORDINATOR`, `DEALS_TOKEN`, `DEALS_SITES`) | any machine |
+| `worker` | Runs a worker (`DEALS_COORDINATOR`, `DEALS_TOKEN`, `DEALS_SITES`; `DEALS_SCREENSHOTS=1` takes alert screenshots) | any machine |
 | `local` | Coordinator + worker in one process, local database | your Mac, for experiments |
 | `health` | Pass/warn/fail checks | server |
 | `status` | Workers, blocks, backlog, freshness | server |
@@ -165,6 +166,8 @@ database, so run them on the server as shown above.
 | `categories SITE [ID]` | Child categories, to find ids for the config | anywhere |
 | `plan SITE ROOT` | Dry-run the planner for a category | anywhere |
 | `crawl SITE TARGET [--pages N]` | Fetch and print pages (check a parser) | anywhere |
+| `shot SITE URL [--out F]` | Take one alert screenshot here (checks a shop's red boxes) | your Mac |
+| `test-alert SITE SKU [--wait S]` | Send the admin alone a test alert with the product's screenshot (a `DEALS_SCREENSHOTS=1` worker takes it) | server |
 | `telegram [--test]` | Find your chat id / send a test | server |
 | `backup [DEST]` | Compressed copy of the database | server |
 | `token` | A random worker token | anywhere |

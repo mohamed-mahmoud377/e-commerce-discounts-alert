@@ -169,6 +169,15 @@ problem does not flood the chat.
 
 ## Runbook
 
+**Alerts come without a screenshot.** Only amazon.eg and Amazon Now alerts have one, and only while a
+`DEALS_SCREENSHOTS=1` worker (the Mac) crawls the shop. `make sql`, then
+`SELECT alert_id, site, status, worker, attempts, bytes, error, taken_at FROM shots ORDER BY alert_id DESC LIMIT 10`:
+no rows (the Mac is offline or its `worker.env` lacks `DEALS_SCREENSHOTS=1`: add it, `make install-mac-worker`),
+`none` with "price block not found" (the shop changed its page: `deals shot <site> <url>` on the Mac, fix the
+selectors in `shots.py`), `late` (the screenshot took longer than `screenshot_wait_seconds`), `pending` /
+`taking` left over (the Mac's reply never came: `make worker-log`, search "screenshot"). `make worker-log`
+shows each one as "screenshot for alert N: 137 KB in 6.0s".
+
 **Mac worker stopped or offline.**
 
 1. `make devices`: is `mac` offline?

@@ -44,6 +44,15 @@ Facts that shaped the crawler:
   2) answers with "No results for your search query" and sometimes a grid of 48 unrelated recommendations.
   The parser returns an empty page for it (not a decoy, not a failure), and a crawl that finds 0 products
   only counts as a failure when the slice was expected to hold 10 or more.
+- **Product pages for alert screenshots (3 Nov 2026).** In headless Chromium from the Mac, `/-/ar/dp/<asin>`
+  (Arabic, `dir=rtl`, the same element ids as `/-/en/`) loads in 2 to 7 s with no challenge. The price block
+  with the discount and the crossed-out price is `#corePriceDisplay_desktop_feature_div` (filled by JavaScript:
+  empty in a plain HTTP fetch, so the screenshot needs the browser); the buy box's "Shipper / Seller" rows
+  ("التوصيل بواسطة Amazon.eg · يباع من Electro.Zone.") are `#offerDisplayFeatures_desktop`; title
+  `#productTitle`, main image `#imgTagWrapperId`. Now and then a cookie-preferences bar ("حدد تفضيلات ملفات
+  تعريف الارتباط") is fixed over the bottom of the page; the screenshot hides fixed elements and `#sp-cc`
+  instead of answering it. The browser keeps its own cookies (not the crawler's), a handful of page views a
+  day. See GUIDE.md, "Alert screenshots"; the saved page is `tests/fixtures/amazon_product_ar.html.gz`.
 - **Decoy pages.** A session Amazon distrusts (seen on 26 Oct after a burst of test fetches from the Mac,
   which shares the worker's IP) gets a plausible-looking listing of random groceries (milk, tissues, rice;
   48 cards, no result-count bar, "over N results" missing) instead of the requested page. Counting it

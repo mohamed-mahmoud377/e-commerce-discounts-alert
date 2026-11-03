@@ -31,6 +31,10 @@ class AlertRules:
     realert_extra_drop: float = 0.05  # re-alert sooner if the price falls this much further
     show_other_shops: bool = True  # end each alert with the same product's price on the other shops (text only)
     other_shops_min_confidence: int = 75  # ... only for matches at least this sure (matching.confidence, 0-100)
+    # A screenshot of the product page (price and seller boxed in red) above each deal alert, taken by a
+    # worker started with DEALS_SCREENSHOTS=1. The alert waits for it this long at most, then goes as text.
+    screenshots: bool = True
+    screenshot_wait_seconds: int = 30
 
 
 @dataclass(frozen=True)

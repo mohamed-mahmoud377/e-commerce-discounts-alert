@@ -7,6 +7,7 @@ Workers anywhere (droplet, your Mac, a friend's PC) call:
   POST /api/jobs/{id}/blocked   -> the site challenged this worker's IP
   POST /api/jobs/{id}/failed    -> anything else went wrong
   POST /api/jobs/{id}/release   -> worker is shutting down
+  POST /api/shots/{alert_id}    -> an alert's screenshot (shotq.py), handed out in lease/page replies
 Each worker authenticates with its own token from [workers] in the config.
 """
 
@@ -24,7 +25,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
-from deals import alerts, bot, db, detailq, health, matching, monitor, scheduler, webui
+from deals import alerts, bot, db, detailq, health, matching, monitor, scheduler, shotq, webui
 from deals.config import Config
 from deals.db import iso, utcnow
 from deals.models import Listing, Slice
@@ -62,6 +63,7 @@ class LeaseIn(BaseModel):
     sites: list[str]  # sites this request may get a job for
     worker_sites: list[str] | None = None  # every site the worker handles (for status)
     version: str | None = None
+    shoot: bool = False  # it takes alert screenshots (shots.py): a reply may carry one
 
 
 class PageIn(BaseModel):
@@ -70,6 +72,7 @@ class PageIn(BaseModel):
     listings: list[ListingIn]
     done: bool = False
     no_results: bool = False  # the site said the slice is empty now (not a parse failure)
+    shoot: bool = False  # as in LeaseIn
 
 
 class PlannedIn(BaseModel):
@@ -192,10 +195,13 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
         holds = {s: scheduler.paused(conn, worker, s, now) for s in body.sites}
         active = [s for s in body.sites if holds[s] is None]
         job = scheduler.lease(conn, cfg, worker, ip, active, now) if active else None
+        shot = take_shot(body.shoot, body.sites, worker, now)
         if job is None:
             due = scheduler.next_due(conn, active) if active else None
             wait = 30 if due is None else (due - now).total_seconds()
             reply = {"job": None, "retry_after": int(min(60, max(5, wait)))}
+            if shot:
+                reply["shot"] = shot
             # Nothing to crawl on this shop now: maybe one product page to read meanwhile (details.py).
             # Never lets a problem here cost the worker its answer.
             if len(body.sites) == 1 and not (holds[body.sites[0]] and holds[body.sites[0]]["pages"]):
@@ -211,7 +217,19 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
             "root": job["root"], "group": job["grp"], "lease_token": job["lease_token"],
             "expected_total": job["expected_total"],
             "min_delay": site.min_delay, "max_delay": site.max_delay,
-        }}
+        }, **({"shot": shot} if shot else {})}
+
+    def take_shot(shoot: bool, sites: list[str], worker: str, now: datetime) -> dict | None:
+        """For a worker that takes screenshots: note it can (so alerts on these shops get one), and hand it
+        one if an alert waits. Never lets a problem here cost the worker its answer."""
+        if not shoot:
+            return None
+        try:
+            shotq.seen_shooter(sites, now)
+            return shotq.lease(conn, sites, worker, now)
+        except Exception:
+            log.exception("screenshot lease for %s", worker)
+            return None
 
     @app.post("/api/jobs/{job_id}/page")
     async def page(job_id: int, body: PageIn, request: Request, worker: str = Depends(worker_name)):
@@ -223,6 +241,8 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
         watch = cfg.watch(job["grp"])
         floor = (watch.min_price or 0) * 100 if watch else 0
         changes = drops = deals = skipped = 0
+        if body.shoot:  # before the deals below, so they get a screenshot
+            shotq.seen_shooter([job["site"]], now)
         with conn:
             for item in body.listings:
                 listing = item.to_listing()
@@ -266,7 +286,10 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
             scheduler.worker_seen(conn, worker, ip, now, pages=1, jobs_done=int(body.done))
             if body.done and job["kind"] == "crawl":
                 _finish_crawl(job_id, now)
-        return {"ok": True, "changes": changes, "deals": deals, "skipped": skipped}
+        reply = {"ok": True, "changes": changes, "deals": deals, "skipped": skipped}
+        if shot := take_shot(body.shoot, [job["site"]], worker, now):
+            reply["shot"] = shot  # usually a deal on this very page: the worker takes it at once
+        return reply
 
     def _finish_crawl(job_id: int, now: datetime) -> None:
         job = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
@@ -494,6 +517,15 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
         """What a worker read from a product page (or that the shop refused it: pauses that shop's pages)."""
         detailq.record(conn, cfg, product_id, body.site, client_ip(request), body.model_dump(), utcnow())
         return {"ok": True}
+
+    @app.post("/api/shots/{alert_id}")
+    async def shot_done(alert_id: int, request: Request, status: str = "ok", reason: str | None = None,
+                        worker: str = Depends(worker_name)):
+        """An alert's screenshot (raw JPEG body, status=ok) or why there is none (status=none, reason)."""
+        image = await request.body() if status == "ok" else None
+        if image is not None and (len(image) > shotq.MAX_BYTES or not image.startswith(b"\xff\xd8")):
+            raise HTTPException(422, "not a JPEG, or too big")
+        return {"ok": True, "status": shotq.record(conn, alert_id, worker, image, reason, utcnow())}
 
     class PauseIn(BaseModel):
         worker: str = "*"  # a device name, or '*' for all

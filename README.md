@@ -5,7 +5,8 @@
 20-minute grocery store, tracked as its own shop), keeps the
 price history of every product, and sends you a **Telegram** message when a price
 is genuinely low, judged against the product's own history rather than the
-"was" price a shop shows.
+"was" price a shop shows. Amazon and Amazon Now alerts come with a screenshot of the
+shop's own page, the price and the seller boxed in red ([docs/GUIDE.md](docs/GUIDE.md), "Alert screenshots").
 
 It runs as one **coordinator** (database, scheduler, alerts) and any number of
 **workers** (the crawlers) on your own machines: the server, your Mac, a friend's PC.

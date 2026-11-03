@@ -403,6 +403,27 @@ MIGRATIONS = [
     ALTER TABLE models ADD COLUMN confidence INTEGER;
     ALTER TABLE models ADD COLUMN evidence TEXT;
     """,
+    """
+    -- An alert's screenshot of the product page (shotq.py): who takes it and how it went. The image is
+    -- never stored: the coordinator holds it in memory until Telegram has it, then keeps Telegram's file_id.
+    CREATE TABLE shots (
+        alert_id     INTEGER PRIMARY KEY REFERENCES alerts(id),
+        site         TEXT NOT NULL,
+        url          TEXT NOT NULL,
+        status       TEXT NOT NULL,  -- pending | taking | ok | none (no price block, error) | late
+        created_at   TEXT NOT NULL,
+        wait_until   TEXT NOT NULL,  -- the alert waits for the screenshot until then
+        worker       TEXT,
+        leased_until TEXT,
+        attempts     INTEGER NOT NULL DEFAULT 0,
+        taken_at     TEXT,
+        bytes        INTEGER,
+        file_id      TEXT,           -- Telegram's id for the uploaded photo, reused for every recipient
+        error        TEXT
+    );
+    CREATE INDEX shots_open ON shots (status, site);
+    ALTER TABLE deliveries ADD COLUMN photo_sent_at TEXT;
+    """,
 ]
 
 # Price moves smaller than this are noise (amazon.eg prices creep by a piastre per

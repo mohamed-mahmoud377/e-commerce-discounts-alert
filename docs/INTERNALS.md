@@ -33,6 +33,8 @@ owns one job.
 | `health.py` | 207 | Health checks and the daily report | db, alerts |
 | `matching.py` | 590 | The same product on different shops: model codes read from titles once (`product_codes`), the hourly grouping streamed through SQL into `models` / `product_models` (in a `nice 19` subprocess), `same_model()` for the views. See [MATCHING.md](MATCHING.md) | db |
 | `details.py` | 150 | Product page parsers per shop (barcode, model number, specs) and `fetch_details`, which never retries a challenge | models |
+| `shots.py` | 210 | The alert screenshot, worker side: per-shop `SPECS` (page to open, elements to box in red, context for the crop), `crop()` (pure geometry), `annotate()` (hide overlays, draw the frames, cut out a JPEG) and the `Shooter` thread with its one headless Chromium | playwright |
+| `shotq.py` | 125 | The alert screenshot, coordinator side: `add()` a `shots` row when a screenshot worker crawls the shop, `lease()` it in a reply, `record()` the upload; `IMAGES`, the in-memory store the alert sender reads (nothing on disk) | config, shots |
 | `detailq.py` | 170 | The coordinator's side of product pages: offer one to an idle worker (paced, capped, paused after a refusal), record what it gave, refill the queue | db, config |
 | `monitor.py` | 166 | Device states, events (logs), the dashboard page | db, scheduler |
 | `webui.py` | 1182 | The web UI page (one HTML + CSS + JS string, light and dark themes) and its queries | health, monitor, alerts |
@@ -102,13 +104,18 @@ every function on the way. Reading the code in this order is the fastest way to 
 
 **Delivery**
 
-15. `AlertSender` (a thread in the coordinator, every 3 s): `fan_out()` creates one `deliveries` row per
-    recipient; `deliver()` calls `Telegram.send()` for each, one per second, retrying failures with backoff
-    and marking people who blocked the bot.
+15. If a worker that takes screenshots (`"shoot": true`) asked for this shop's work in the last 10 minutes,
+    `shotq.add()` gives the alert a `shots` row, and the page reply carries `"shot": {alert_id, site, url}`.
+    The worker's `Shooter` thread opens the Arabic page, boxes the price and seller (`shots.annotate()`) and
+    posts the JPEG to `/api/shots/{alert_id}`; `shotq.record()` keeps it in `shotq.IMAGES` (memory only).
+16. `AlertSender` (a thread in the coordinator, every 3 s): `fan_out()` creates one `deliveries` row per
+    recipient; `deliver()` skips an alert whose screenshot is pending until `shots.wait_until` (30 s), then
+    for each recipient `_send_photo()` (the upload, then Telegram's `file_id`, and the bytes are dropped) and
+    `Telegram.send()`, one per second, retrying failures with backoff and marking people who blocked the bot.
 
 **Worker again**
 
-16. After the last page, `_crawl()` logs `done ... products, pages, changes, seconds`, waits the shop's
+17. After the last page, `_crawl()` logs `done ... products, pages, changes, seconds`, waits the shop's
     random delay, and `_loop` asks for the next job.
 
 ## The database in detail
@@ -142,6 +149,7 @@ many have run, and `db.connect()` runs the missing ones in a transaction on star
 | 15 | `product_details`, `detail_queue`, `detail_state` (product pages read for barcodes and model numbers) |
 | 16 | `crawl_pauses` (crawling paused by hand per device and/or shop, with an end time) |
 | 17 | `models.confidence`, `models.evidence` (how sure a match is, and why) |
+| 18 | `shots` (alert screenshots: who takes one, how it went, Telegram's `file_id`; never the image), `deliveries.photo_sent_at` |
 
 **Tables and columns** (prices are integer piastres; times are UTC ISO text, which sorts correctly as text):
 
@@ -154,7 +162,8 @@ many have run, and `db.connect()` runs the missing ones in a transaction on star
 | `worker_sites` | `(worker, site)` | `last_ok_at`, `last_error_at`, `last_error`, `pages`, `products`, `blocks` |
 | `blocks` | `(site, ip)` | `strikes`, `until`, `reason`, `updated_at`; deleted on the IP's next successful page |
 | `alerts` | `id`; indexes on product, dedupe key, created | `product_id` (null for system), `kind`, `dedupe_key`, `price`, `reference_price`, `drop_pct`, `score`, `message` (final Arabic HTML), `created_at`, `sent_at` (= handed to recipients), `error` (`cancelled: price not confirmed` when a held alert's price reverted), `confirm_until` (held until then or until the product is seen again) |
-| `deliveries` | `id`; unique `(alert_id, chat_id)` | `sent_at`, `attempts`, `next_attempt_at`, `error` |
+| `deliveries` | `id`; unique `(alert_id, chat_id)` | `sent_at`, `attempts`, `next_attempt_at`, `error`, `photo_sent_at` (the screenshot went before the text, or was refused) |
+| `shots` | `alert_id`; index `(status, site)` | An alert's screenshot: `site`, `url`, `status` (`pending`, `taking`, `ok`, `none` = no price block or an error, `late` = arrived after the text went out), `created_at`, `wait_until` (the alert waits until then), `worker`, `leased_until`, `attempts` (2 at most), `taken_at`, `bytes`, `file_id` (Telegram's, reused for every recipient), `error`. The image itself is kept only in the coordinator's memory |
 | `subscribers` | `chat_id` | `name`, `username`, `status` (`pending`, `active`, `rejected`, `removed`, `stopped`, `blocked`), `is_admin` (the owner), `is_manager` (helper admin: also gets system alerts and the daily report), `approved_at` |
 | `events` | `id`; indexes on time and source | `at`, `source`, `level`, `message`; pruned after 7 days |
 | `kv` | `key` | `telegram_offset` (last Telegram update handled) |
@@ -182,8 +191,9 @@ Base address `http://207.154.206.127:8787` (port 8787 open in the firewall). Wor
 | Method and path | Who | Body | Answer |
 | --- | --- | --- | --- |
 | `GET /health` | anyone | | `{"ok": true, "version"}` |
-| `POST /api/lease` | worker | `{"sites": [...], "worker_sites": [...], "version"}` | `{"job": {id, kind, site, target, root, group, lease_token, expected_total, min_delay, max_delay}}` or `{"job": null, "retry_after": 5-60}` |
-| `POST /api/jobs/{id}/page` | worker | `{lease_token, page, listings: [Listing], done}` | `{ok, changes, deals}` |
+| `POST /api/lease` | worker | `{"sites": [...], "worker_sites": [...], "version", "shoot"}` | `{"job": {id, kind, site, target, root, group, lease_token, expected_total, min_delay, max_delay}}` or `{"job": null, "retry_after": 5-60}`; with `shoot: true`, maybe `"shot": {alert_id, site, url}` |
+| `POST /api/jobs/{id}/page` | worker | `{lease_token, page, listings: [Listing], done, shoot}` | `{ok, changes, deals}`, maybe `"shot"` as above |
+| `POST /api/shots/{alert_id}?status=ok\|none&reason=` | worker | the JPEG (`status=ok`, at most 2 MB) or nothing | `{ok, status}`: `ok`, `late` (the text already went out: dropped), `none`, `unknown` |
 | `POST /api/jobs/{id}/plan` | worker | `{lease_token, slices: [{target, total, oversized}]}` | `{ok, slices}` |
 | `POST /api/jobs/{id}/blocked` | worker | `{lease_token, reason}` | `{ok, paused_until}` |
 | `POST /api/jobs/{id}/failed` | worker | `{lease_token, reason}` | `{ok}` |
@@ -221,7 +231,8 @@ The interactive schema is at `/docs` on the same address (FastAPI's built-in pag
 ## Worker internals
 
 A worker is one process (`deals worker`) configured by `DEALS_COORDINATOR`, `DEALS_TOKEN`, `DEALS_SITES`
-and `DEALS_DATA_DIR` (or the matching flags). It keeps no database; its only local file is the Amazon cookie jar.
+and `DEALS_DATA_DIR` (or the matching flags), and `DEALS_SCREENSHOTS=1` to take alert screenshots (the Mac;
+not the droplet, where a browser per alert is too heavy and most shops refuse the IP). It keeps no database; its only local file is the Amazon cookie jar.
 
 **Threads.**
 
@@ -229,6 +240,7 @@ and `DEALS_DATA_DIR` (or the matching flags). It keeps no database; its only loc
 | --- | --- |
 | main | Starts the others, waits, handles Ctrl+C / SIGTERM by setting the stop event |
 | one per shop (`amazon_eg`, `noon_eg`, `jumia_eg`, `cairosales_eg`, `2b_eg`, `btech_eg`, `dream2000_eg`, `carrefour_eg`, `dubaiphone_eg`, `hardwaremarket_eg`, `amazon_now_eg`) | `_loop`: lease, crawl or plan, pause, repeat. Each holds its own shop adapter and HTTP session |
+| `screenshots` | Only with `DEALS_SCREENSHOTS=1`: takes the alert screenshots handed out in replies, one at a time, with one headless Chromium closed after 5 idle minutes; uploads each with three quick tries and forgets it |
 | `log-shipper` | Every 10 s posts up to 500 buffered log lines to `/api/logs`; keeps up to 1,000 while the server is unreachable |
 
 **Timeouts and retries.**
@@ -292,6 +304,8 @@ commented template.
 | `[alerts] realert_after_days` | 7 | No repeat alert within this many days... |
 | `[alerts] realert_extra_drop` | 0.05 | ...unless the price fell this much more |
 | `[alerts] other_shops_min_confidence` | 75 | Only matches at least this sure (0-100) are quoted |
+| `[alerts] screenshots` | true | A screenshot of the product page (price and seller boxed in red) before each deal alert, when a `DEALS_SCREENSHOTS=1` worker crawls the shop ([GUIDE.md](GUIDE.md), "Alert screenshots") |
+| `[alerts] screenshot_wait_seconds` | 30 | How long an alert waits for its screenshot before going out as text |
 | `[alerts] show_other_shops` | true | End each alert with the same product's price on the other shops ([MATCHING.md](MATCHING.md)); text only, appended after the decision |
 | `[schedule] min_interval_minutes` | 10 | Fastest revisit of a busy slice |
 | `[schedule] max_interval_factor` | 3.0 | Quiet slices slow down to group interval times this |

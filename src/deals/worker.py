@@ -114,7 +114,7 @@ class Coordinator:
 
 class Worker:
     def __init__(self, coordinator_url: str, token: str, sites: list[str], data_dir: Path,
-                 site_factory=None):
+                 site_factory=None, screenshots: bool = False):
         unknown = set(sites) - set(SITES)
         if unknown:
             raise ValueError(f"unknown sites {sorted(unknown)}; choose from {sorted(SITES)}")
@@ -124,6 +124,8 @@ class Worker:
         self.data_dir = data_dir
         self._site_factory = site_factory or (lambda name: SITES[name](data_dir))
         self._site_objects = {}
+        self.screenshots = screenshots  # takes the alert screenshots of its shops (shots.py)
+        self.shooter = None
 
     def site(self, name: str):
         if name not in self._site_objects:
@@ -138,8 +140,14 @@ class Worker:
         """One loop per site, in parallel: a slow Amazon crawl never holds up noon."""
         if ship_logs:
             logging.getLogger("deals").addHandler(LogShipper(self.api, self.stop))
-        log.info("worker %s started for %s", VERSION, ", ".join(self.sites))
-        loops = [threading.Thread(target=self._loop, args=([site],), name=site, daemon=True)
+        log.info("worker %s started for %s%s", VERSION, ", ".join(self.sites),
+                 " (takes alert screenshots)" if self.screenshots else "")
+        if self.screenshots:
+            from deals.shots import Shooter
+
+            self.shooter = Shooter(self.upload_shot, self.stop)
+            self.shooter.start()
+        loops =[threading.Thread(target=self._loop, args=([site],), name=site, daemon=True)
                  for site in self.sites]
         for t in loops:
             t.start()
@@ -152,9 +160,10 @@ class Worker:
         while not self.stop.is_set():
             try:
                 reply = self.api.call("/api/lease", {"sites": sites, "worker_sites": self.sites,
-                                                      "version": VERSION})
+                                                      "version": VERSION, "shoot": self.screenshots})
             except LeaseLost:
                 break
+            self.take_shot(reply)
             job = reply.get("job")
             if job is None:
                 started = time.monotonic()
@@ -193,6 +202,28 @@ class Worker:
         except LeaseLost:
             pass
 
+    def take_shot(self, reply: dict) -> None:
+        if reply.get("shot") and self.shooter is not None:
+            self.shooter.submit(reply["shot"])
+
+    def upload_shot(self, alert_id: int, image: bytes | None, reason: str | None) -> None:
+        """Hand a screenshot (or why there is none) to the coordinator, then forget it. Only a few quick
+        tries: the alert waits for it a short while only, and goes out as text without it."""
+        params = {"status": "ok"} if image else {"status": "none", "reason": (reason or "")[:300]}
+        headers = {**self.api.headers, "Content-Type": "image/jpeg" if image else "application/octet-stream"}
+        for wait in (2, 5, None):
+            try:
+                r = requests.post(f"{self.api.base_url}/api/shots/{alert_id}", params=params, data=image or b"",
+                                  headers=headers, timeout=20)
+                if r.status_code < 500:
+                    return
+                problem = f"HTTP {r.status_code}"
+            except Exception as exc:
+                problem = exc.__class__.__name__
+            if wait is None or self.stop.wait(wait):
+                log.info("screenshot for alert %s not delivered to the coordinator (%s)", alert_id, problem)
+                return
+
     def run_job(self, job: dict) -> None:
         log.info("%s %s %s", job["kind"], job["site"], job["target"])
         token = job["lease_token"]
@@ -221,8 +252,9 @@ class Worker:
             reply = self.api.call(path + "/page", {
                 "lease_token": job["lease_token"], "page": page,
                 "listings": [_listing_json(x) for x in result.listings], "done": not result.has_next,
-                "no_results": result.total == 0 and not result.listings,
+                "no_results": result.total == 0 and not result.listings, "shoot": self.screenshots,
             })
+            self.take_shot(reply)  # a deal this page revealed: its screenshot, taken now
             products += len(result.listings)
             changes += reply.get("changes", 0)
             if not result.has_next:
@@ -239,8 +271,9 @@ class Worker:
         def report_listings(listings: list[Listing]) -> None:
             nonlocal probes
             probes += 1
-            self.api.call(path + "/page", {"lease_token": job["lease_token"], "page": probes,
-                                           "listings": [_listing_json(x) for x in listings]})
+            self.take_shot(self.api.call(path + "/page", {"lease_token": job["lease_token"], "page": probes,
+                                                          "listings": [_listing_json(x) for x in listings],
+                                                          "shoot": self.screenshots}))
             if self.stop.is_set():
                 raise _Stopping()
 
@@ -305,7 +338,7 @@ def _listing_json(listing: Listing) -> dict:
     return data
 
 
-def run(coordinator_url: str, token: str, sites: list[str], data_dir: Path) -> None:
-    worker = Worker(coordinator_url, token, sites, data_dir)
+def run(coordinator_url: str, token: str, sites: list[str], data_dir: Path, screenshots: bool = False) -> None:
+    worker = Worker(coordinator_url, token, sites, data_dir, screenshots=screenshots)
     worker.install_signal_handlers()
     worker.run()

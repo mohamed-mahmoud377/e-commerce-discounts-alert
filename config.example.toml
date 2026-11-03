@@ -46,6 +46,8 @@ realert_after_days = 7        # don't repeat an alert for the same product withi
 realert_extra_drop = 0.05     # ...unless the price drops another 5%
 other_shops_min_confidence = 75  # only quote other shops for matches at least this sure (docs/MATCHING.md, Confidence)
 show_other_shops = true       # end each alert with the same product's price on the other shops (docs/MATCHING.md); never changes what is alerted
+screenshots = true            # a photo of the product page (price and seller boxed in red) before each alert, taken by a DEALS_SCREENSHOTS=1 worker
+screenshot_wait_seconds = 30  # ...the alert waits this long for it at most, then goes out as text
 
 [schedule]
 min_interval_minutes = 10     # fastest a slice is ever re-crawled (when its prices keep moving)

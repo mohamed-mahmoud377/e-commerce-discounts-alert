@@ -763,7 +763,8 @@ restart never loses one. A background loop in the coordinator runs every 3 secon
 
 1. **Hand out.** Each new alert gets one `deliveries` row per recipient: deal alerts go to every approved
    subscriber, system messages to you (the admin) and your helper admins.
-2. **Send.** Each delivery is sent on its own, one message per second. A failure is retried after 30
+2. **Send.** Each delivery is sent on its own, one message per second, its screenshot first when it has
+   one (waiting up to 30 s for it, see "Alert screenshots" below). A failure is retried after 30
    seconds, then 1, 2, 4 minutes and so on up to an hour, at most 10 times. Telegram's own "retry after"
    hint is respected.
 3. **Drop blockers.** If Telegram says a person blocked the bot (HTTP 403), they are marked "blocked" and
@@ -775,6 +776,42 @@ range of prices we have seen, the number of changes and how long we have tracked
 typical, all-time low, the price just before, an inflated crossed-out price to ignore); the signals (only 2
 left, limited-time deal, the shop's "lowest price in a year", rating); and finally the group, the shop, the
 seller on noon, the confidence and the score. Product names stay as the shop writes them.
+
+### Alert screenshots
+
+Above each deal alert comes a photo of the product's own page on the shop, in Arabic, with red boxes around
+the price block (price, discount, crossed-out price) and the seller line ("shipped and sold by Amazon.eg"),
+cropped to the title, the main image and the boxes: a friend sees the deal as the shop shows it. Shops with
+boxes so far: amazon.eg and Amazon Now (`SPECS` in `shots.py`); the others' alerts are text only.
+
+1. **Who takes it.** The droplet sends the alerts but most shops refuse its IP, and a browser per alert is
+   heavy for 1 GB. So the worker that crawls the shop takes it: a worker started with `DEALS_SCREENSHOTS=1`
+   (the Mac) says so in every request (`"shoot": true`). When a deal alert is ready to go out, and such a
+   worker asked for that shop's work in the last 10 minutes, the alert gets a `shots` row; the reply to the
+   page upload that revealed the deal carries the job (`"shot"`), so the Mac starts at once, in a thread of
+   its own (crawling never waits). Held low-confidence alerts get theirs when they are released.
+2. **Taking it.** One headless Chromium kept open between screenshots (closed after 5 idle minutes):
+   the Arabic page (`/-/ar/dp/<asin>`, locale `ar-EG`) at 1280×1000, 1.5× pixels; whatever floats over
+   the page (fixed or sticky elements such as a cookie bar) is hidden, nothing is clicked; red frames are
+   drawn into the page around the boxes; the crop is every box plus the title and image if the whole stays
+   under 820 CSS pixels high. JPEG quality 80: 130 to 190 KB, 5 to 6 s per page on the Mac (3 Nov 2026).
+   No price block on the page (a layout change, a gone product): no screenshot.
+3. **Upload once, keep nothing.** The worker posts the JPEG to `POST /api/shots/{alert_id}` (three quick
+   tries) and forgets it. The coordinator keeps it only in memory; after the first person's photo Telegram
+   returns a `file_id`, which goes in `shots.file_id` for everyone else, and the bytes are dropped. Nothing
+   is written to disk anywhere; a coordinator restart only means that alert goes out without its photo.
+4. **Sending.** The alert waits for its screenshot `[alerts] screenshot_wait_seconds` (30) at most, then
+   each person gets the photo with a one-line caption (shop and the time it was taken, Cairo time) and the
+   full alert text right after it. A Telegram caption holds 1,024 characters and our alerts are longer,
+   hence two messages. No screenshot in time, none possible, or a refused photo: the text alone, never later.
+   A passing photo failure (network, 5xx, 429) is tried again only together with a failing text.
+
+**The speed principle.** The wait costs at most 30 s, against the minutes a slice takes to be revisited
+(the worst-case time to notice, above), and only when a screenshot worker is actually there; in the measured
+runs the photo was ready in 6 s. Turn it off with `[alerts] screenshots = false`.
+
+`deals shot <site> <url>` takes one screenshot on this machine (to check a shop's boxes); on the server,
+`deals test-alert <site> <sku>` sends the admin alone a test alert for a product with its screenshot.
 
 **Who receives alerts.** The bot answers messages by long polling Telegram, so the server needs no public
 web address for it.

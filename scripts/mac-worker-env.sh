@@ -10,6 +10,7 @@ DEALS_COORDINATOR=http://${HOST#*@}:8787
 DEALS_TOKEN=$token
 DEALS_SITES=noon_eg,amazon_eg,jumia_eg,cairosales_eg,2b_eg
 DEALS_DATA_DIR=$PWD/data
+DEALS_SCREENSHOTS=1
 ENV
 chmod 600 worker.env
 echo "wrote worker.env (sites: noon_eg, amazon_eg, jumia_eg, cairosales_eg, 2b_eg)"
