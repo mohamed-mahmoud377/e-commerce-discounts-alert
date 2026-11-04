@@ -207,6 +207,9 @@ def test_cairosales_category_page():
     assert path == "/en/tvs-screens/" and url.endswith("/en/tvs-screens/?n=60&orderby=price&orderway=asc&price=3000-10000000&p=2")
     assert page_url(Slice("search", "playstation 5", 8000, 12000), 1)[1].endswith(
         "/en/search?controller=search&search_query=playstation+5&n=60&orderby=price&orderway=asc&price=8000-12000")
+    # a search with only the group's floor goes without the filter (Cloudflare refuses some of those)
+    assert page_url(Slice("search", "nintendo switch", 8000, None), 1)[1].endswith(
+        "/en/search?controller=search&search_query=nintendo+switch&n=60&orderby=price&orderway=asc")
     result = parse_listing_page(fixture_text("cairosales_category.html.gz"), "tvs-screens")
     assert len(result.listings) == 60 and result.total == 820 and result.has_next
     assert len({x.sku for x in result.listings}) == 60
@@ -232,6 +235,11 @@ def test_cairosales_out_of_stock_products_hide_their_price():
             '<p>Showing 61 - 120 of 263 items</p>')
     page = parse_listing_page(dead)
     assert page.total == 263 and len(page.listings) == 1 and not page.has_next
+    # search pages: the next link's first rel is "nofollow"
+    priced = ('<ul class="product_list"><li class="ajax_block_product" data-id-product="2"><a class="product-name" '
+              'href="https://cairosales.com/en/x.html">Xbox</a><div class="content_price"><span class="price product-price">EGP 25,000</span></div></li></ul>'
+              '<li id="pagination_next_bottom" class="pagination_next"><a rel="nofollow" href="?p=2" rel="next">Next</a></li>')
+    assert parse_listing_page(priced).has_next
 
 
 def test_cairosales_empty_page_redirect_and_challenge(monkeypatch):

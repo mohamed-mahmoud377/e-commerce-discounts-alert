@@ -39,7 +39,7 @@ the crawler uses; it is a personal tracker with 1.5 to 3 s between requests, far
 | --- | --- |
 | Category | `https://cairosales.com/en/<slug>/`, e.g. `/en/tvs-screens/`, `/en/small-appliances/fryers/` |
 | With price range, 60 per page, sorted, page 2 | `/en/tvs-screens/?n=60&orderby=price&orderway=asc&price=3000-10000000&p=2` |
-| Search | `/en/search?controller=search&search_query=playstation+5&n=60&...` (same filters) |
+| Search | `/en/search?controller=search&search_query=playstation+5&n=60&...` (same filters, but no price filter for a search with only a minimum: see "Searches with a price filter" below) |
 | Product | `https://cairosales.com/en/<category>/<name>-<reference>.html` (from the card) |
 | Sitemap (every category) | `/en/sitemap` (the mega menu; `deals categories cairosales_eg <slug>` lists children) |
 
@@ -169,6 +169,8 @@ SELECT kind, count(*), sum(failures > 0) failing, min(next_due_at) FROM jobs WHE
 | Symptom | Meaning | Fix |
 | --- | --- | --- |
 | `blocked: cairosales_eg: Cloudflare challenge` | Cloudflare refuses this connection or fingerprint | From home: `deals crawl cairosales_eg "category:tvs-screens\|price:3000-"` should print 60 products; if every page is challenged try another `IMPERSONATE` target in `cairosales_eg.py`. From a cloud IP: expected, remove `cairosales_eg` from that worker |
+| `blocked: cairosales_eg: Cloudflare challenge` on one search slice only, every time | Cloudflare refuses that search with a price filter (see below) | `deals crawl cairosales_eg "search:<words>"` passes and `"search:<words>\|price:8000-20000"` doesn't: take the price out of that slice (an open minimum already is) |
+| `UnknownTarget: search 'x' has N results, more than 3000` | A search fetched without its price filter is too big to crawl in one slice | Use narrower words or a category |
 | `UnknownTarget: /en/x/ redirected to /en/` | Wrong slug (the shop answers with its homepage) | Copy the slug from `deals categories cairosales_eg <parent>` or the sitemap |
 | A slice suddenly parses 0 products | Layout change (no `ul.product_list`, renamed classes) | Save a fresh page into `tests/fixtures/cairosales_category.html.gz` and fix the parser |
 | Every product of a slice is out of stock | Normal for phones, tablets, laptops and consoles on this shop | Nothing to do; the crawl stops after the first all-unpriced page |
@@ -194,3 +196,29 @@ sits under the short description, which on some products is long: the crop then 
 the title. Cairo Sales sells its own stock, so there is no seller box. The page has a seasonal background
 (autumn leaves on 3 Nov), which shows at the crop's edges. Saved page:
 `tests/fixtures/cairosales_product_rendered.html.gz`.
+
+## Searches with a price filter (4 Nov 2026)
+
+Cairo Sales sat uncrawled for 20 hours: every worker was paused on it, at strike 7 (`Cloudflare challenge`).
+The cause was one slice, `search:nintendo switch|price:8000-` (the gaming consoles group's minimum price). Cloudflare
+answers HTTP 403 with a challenge page to that search URL with `&price=…`, every time and from every IP, while the
+same search without the filter, every category with one, and the rest of the shop pass from the same session
+(plain `curl` gets 200 on category pages now too). Measured with the Chrome fingerprint from the owner's Mac:
+
+| URL | Answer |
+| --- | --- |
+| search `playstation 5`, `xbox series`, `nintendo`, `nintendo switch` with `price=8000-…` (or `0-8000`) | 403 challenge |
+| the same searches without `price` | 200 |
+| search `laptop`, `iphone`, `switch` with `price=8000-…`; `tvs-screens` with `price=8000-…` | 200 |
+
+It looks like a WAF rule on console searches with a price filter. A refused slice counts as a block, so the coordinator
+paused the whole shop on that IP and doubled the pause each time the same slice was retried. Since then a search
+with only a minimum price goes without the filter (`open_search` in `cairosales_eg.py`); the coordinator drops new
+products under the group's minimum anyway. Those searches are small (all prices: playstation 5 33, xbox series 229,
+nintendo switch 27), and a search that grew past 3,000 results would fail as `UnknownTarget` rather than loop the
+planner, because price ranges can't split a search fetched without its filter.
+
+The same day: search pages write their next link as `<a rel="nofollow" href="…&p=2" rel="next">`. An HTML parser
+keeps only the first `rel`, so search slices were read one page at a time (`xbox series`, 229 results: page 1 only).
+No loss so far, since page 2 of that search is all out of stock, but the parser now also takes
+`li.pagination_next a` (the last page has a `<span>` there, not a link).

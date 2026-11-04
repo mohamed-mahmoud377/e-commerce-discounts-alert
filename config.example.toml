@@ -201,7 +201,7 @@ jumia_eg = "category:air-conditioning"
 cairosales_eg = "category:air-conditioners"
 2b_eg = "category:262"  # air conditioners (the parent also holds coolers and purifiers, below 8,000)
 btech_eg = "category:large-home-appliances/air-conditioners"
-dream2000_eg = ["category:air-conditioners", "category:air-conditioner"]  # two overlapping collections
+dream2000_eg = "category:air-conditioners"  # "air-conditioner" was removed by the shop (4 Nov 2026)
 carrefour_eg = "category:NFEGY4040112"  # split ACs, inside Coolers, Heaters & Air Treatment
 dubaiphone_eg = "category:air-conditioner"
 

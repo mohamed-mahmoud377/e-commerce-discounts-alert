@@ -80,7 +80,7 @@ stock).
 | --- | --- | --- |
 | TVs | tvs (`brands` "All TV" 19 is a subset) | 78 |
 | Refrigerators | refrigerator-and-deep-freezer, deep-freezer-1 | 51 + 47 |
-| Air conditioners | air-conditioners, air-conditioner (two overlapping collections) | 61 + 71 |
+| Air conditioners | air-conditioners (air-conditioner, an overlapping second collection, was removed on 4 Nov 2026) | 56 |
 | Gaming consoles | consoles (PS5, Switch 2, a gamepad) | 6 |
 | Phones | mobiles | 112 |
 | Tablets | tablets | 31 |
@@ -151,3 +151,12 @@ for all of them, opened on the default variant. Since 3 Nov 2026 such a listing'
 `?variant=<id>` (its cheapest variant in stock), so the link in the alert and the screenshot show that
 variant's price; a product that is one listing keeps the plain URL. Saved page:
 `tests/fixtures/dream2000_product_rendered.html.gz`.
+
+## A removed collection (4 Nov 2026)
+
+`air-conditioner` (71 products on 27 Oct) disappeared: `/en/collections/air-conditioner.json` and the HTML page
+answer 404, `collections.json` no longer lists it, and `/en/collections/air-conditioner/products.json` still
+answers **200 with an empty list**. So the products endpoint alone can't tell a removed handle from an empty
+collection; the count request is what catches it (`UnknownTarget`, the slice fails every time). The
+Air conditioners group now uses `air-conditioners` alone (56 products; the brand collections, `carrier-`,
+`haier-`, `aux-`, `hisense-`, `fresh-air-conditioners`, 35 products, are all inside it).

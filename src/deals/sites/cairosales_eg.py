@@ -52,7 +52,12 @@ class CairoSalesEG:
             # An unknown slug lands on the homepage (HTTP 200); a renamed one elsewhere.
             raise UnknownTarget(f"{self.name}: {path} redirected to {served_path}")
         current = slice.value.strip("/") if slice.kind == "category" else None
-        return parse_listing_page(html, current)
+        result = parse_listing_page(html, current)
+        if slice.has_price and open_search(slice) and (result.total or 0) > self.max_slice_total:
+            # Price ranges can't split a search fetched without its filter: it would never shrink.
+            raise UnknownTarget(f"{self.name}: search {slice.value!r} has {result.total} results, "
+                                f"more than {self.max_slice_total}; use a narrower search or a category")
+        return result
 
     def _get(self, url: str) -> tuple[str, str] | None:
         """(page, served path), or None for a Cloudflare challenge."""
@@ -65,6 +70,14 @@ class CairoSalesEG:
         return r.text, urlparse(str(r.url)).path
 
 
+def open_search(slice: Slice) -> bool:
+    """A search with only a minimum price (the group's floor) is fetched without the price
+    filter: Cloudflare answers 403 to some searches that carry one ("playstation 5",
+    "xbox series", "nintendo" with any price; "laptop" passes; 4 Nov 2026), and the
+    coordinator drops new products under the floor anyway."""
+    return slice.kind == "search" and slice.price_max is None
+
+
 def page_url(slice: Slice, page: int) -> tuple[str, str]:
     """(path we expect to be served, full URL) of one listing page."""
     # Sorted by price so that paging is stable: the default order ("sales") is
@@ -75,7 +88,7 @@ def page_url(slice: Slice, page: int) -> tuple[str, str]:
         params = {"controller": "search", "search_query": slice.value, **params}
     else:  # category slug, e.g. tvs-screens or small-appliances/fryers
         path = f"/en/{slice.value.strip('/')}/"
-    if slice.has_price:
+    if slice.has_price and not open_search(slice):
         high = OPEN_MAX if slice.price_max is None else slice.price_max
         params["price"] = f"{slice.price_min or 0}-{high}"
     if page > 1:
@@ -99,7 +112,8 @@ def parse_listing_page(html: str, current_category: str | None = None) -> PageRe
     all_unpriced = bool(listings) and all(x.price is None for x in listings.values())
     return PageResult(
         listings=list(listings.values()),
-        has_next=tree.css_first('a[rel="next"]') is not None and not all_unpriced,
+        # Search pages write the link as rel="nofollow" ... rel="next" (only the first rel counts).
+        has_next=tree.css_first('a[rel="next"], li.pagination_next a') is not None and not all_unpriced,
         total=total,
         subcategories=_subcategories(tree) if current_category else [],
     )
