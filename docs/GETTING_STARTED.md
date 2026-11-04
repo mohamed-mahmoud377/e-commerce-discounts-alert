@@ -160,8 +160,8 @@ coordinator, and your own computers run workers. Everything is automated from yo
 3. Deploy: `make deploy`. On a fresh server this creates a `deals` user, installs Python packages and
    Chromium, writes `/etc/deals/config.toml` from the example with two new worker tokens (`droplet` and
    `mac`) and a web UI secret, installs two systemd services, opens port 8787 and checks it answers.
-4. Open the web UI with `make ui` (the install generated its secret `admin_token`; `make ui-token`
-   copies it for other devices).
+4. Open the web UI with `make ui` (the install generated its secret `admin_token`). Elsewhere, log in as
+   `jerry` or `feysal` (password `admin123` until you change it: `deals passwd`, see docs/COMMANDS.md).
 5. Telegram: create a bot with @BotFather, press Start in it, then `make telegram TOKEN=<bot token>`.
 6. Add your computer as a worker: `make mac-worker-env` (writes `worker.env` with the server's `mac` token),
    then `make install-mac-worker` (macOS) or the Linux service from path A. Optional: `make keep-awake`.

@@ -541,6 +541,20 @@ def cmd_token(args) -> None:
     print(secrets.token_urlsafe(24))
 
 
+def cmd_passwd(args) -> None:
+    """Set an admin's password (adds the admin if new). Logs them out everywhere."""
+    from getpass import getpass
+
+    from deals import auth
+
+    password = args.password or getpass(f"new password for {args.username}: ")
+    if len(password) < 6:
+        sys.exit("a password needs at least 6 characters")
+    conn = db.connect(_config(args).db_path)
+    new = auth.set_password(conn, args.username, password, utcnow())
+    print(f"{'added' if new else 'changed the password of'} {args.username}")
+
+
 def cmd_shot(args) -> None:
     """Take one alert screenshot here (no coordinator), to check a shop's spec."""
     from deals import shots
@@ -691,6 +705,9 @@ def main() -> None:
     p = add("backup", cmd_backup, "write a consistent copy of the database")
     p.add_argument("dest", nargs="?")
     add("token", cmd_token, "generate a random worker token", config=False)
+    p = add("passwd", cmd_passwd, "set an admin's web UI / API password (adds the admin if new)")
+    p.add_argument("username")
+    p.add_argument("--password", help="default: ask for it")
 
     args = parser.parse_args()
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,

@@ -74,3 +74,6 @@ Ordered by value for effort. "Why" says what problem each one solves.
 - New listings can only be judged by the shop's own claims plus signals until we have ~3 days of history.
 - noon's crossed-out price is seller-set and treated with suspicion; its "lowest price in N days" badge is trusted more.
 - Amazon category browsing works from home IPs only (tested 2026-10-25).
+- The coordinator speaks plain HTTP on port 8787: since 4 Nov 2026 the web UI and every data API need an admin
+  login (username + password, 90-day JWT), but the password and token cross the network unencrypted. HTTPS
+  (Caddy in front, with a domain) would close that.

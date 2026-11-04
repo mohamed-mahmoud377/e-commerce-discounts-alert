@@ -60,8 +60,9 @@ CATEGORIES: dict[str, tuple[str, str, str]] = {
                    "The alert goes out as text without it. If every shot fails, run `deals shot <shop> <url>` on "
                    "the device."),
     "login": ("Failed web UI login",
-              "Someone typed a wrong token at /ui/login.",
-              "One now and then is a typo. Many in a row is someone guessing: change [server] admin_token."),
+              "Someone typed a wrong username, password or token at /ui/login or /api/login.",
+              "One now and then is a typo. Many in a row is someone guessing (10 in 15 minutes lock that address out "
+              "for a while): change the admins' passwords (deals passwd) and [server] admin_token."),
     "bug": ("Bug",
             "The code raised an error it did not expect.",
             "Read the full line (Logs tab, same time) and fix the code."),

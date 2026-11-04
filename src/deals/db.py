@@ -470,6 +470,15 @@ MIGRATIONS = [
     CREATE INDEX status_changes_at ON status_changes (at);
     CREATE INDEX status_changes_subject ON status_changes (subject, at);
     """,
+    """
+    -- Admins who log in to the web UI and the API (auth.py). Rows are made at the first start.
+    CREATE TABLE users (
+        username      TEXT PRIMARY KEY COLLATE NOCASE,
+        password      TEXT NOT NULL,  -- a PBKDF2 hash; a plain password typed in by hand is hashed at the next login
+        created_at    TEXT NOT NULL,
+        last_login_at TEXT
+    );
+    """,
 ]
 
 # Price moves smaller than this are noise (amazon.eg prices creep by a piastre per

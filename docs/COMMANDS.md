@@ -13,21 +13,26 @@ Uptime (what is up and down, downtime, every change), Errors (the error book: ev
 with cause and fix; the admin marks rows resolved), Jobs, Logs (live), Queries (17 saved reports with search and filters), Subscribers, Rules & watches. Click a table
 header to sort by it. Light, dark or Auto (follows the device) from the switch at the bottom of the sidebar.
 
-A small website served by the coordinator itself: nothing to install or run. Worker tokens can only look; the
-admin token (what `make ui` uses) can also approve, reject, remove or promote subscribers (the same as the bot's
+A small website served by the coordinator itself: nothing to install or run. Only the admins get in (the
+`users` table: jerry and feysal); they can also approve, reject, remove or promote subscribers (the same as the bot's
 /subscribers buttons) and send the daily report now. Rules are shown, not edited: change them in
 `/etc/deals/config.toml` and restart the coordinator.
 
 | What | How |
 | --- | --- |
 | Open it, already logged in | `make ui` |
-| Open it from a phone or another computer | `make ui-token` (copies the token), then open http://207.154.206.127:8787/ui and paste it |
+| Open it from a phone or another computer | open http://207.154.206.127:8787/ui and log in with your username and password |
+| Call the API (Postman, curl) | `POST /api/login` with `{"username": "jerry", "password": "..."}`, then send `Authorization: Bearer <token>` (valid 90 days) |
+| Change a password (or add an admin) | `make ssh`, then `runuser -u deals -- /opt/deals/.venv/bin/deals passwd jerry --config /etc/deals/config.toml`; or in the database: `sqlite3 /var/lib/deals/deals.db "UPDATE users SET password = 'new-one' WHERE username = 'jerry'"` (hashed at the next login). Either way that admin is logged out everywhere |
 | Log out | "Log out" at the bottom of the sidebar (on a phone: More) |
 
-How the login works: the secret is `admin_token` in `/etc/deals/config.toml` (worker tokens also work). After
-logging in it is kept in a cookie for 30 days. To change it: `make ssh`, then
+How the login works: the admins log in with a username and password (stored as PBKDF2 hashes in `users`;
+the first start made `jerry` and `feysal` with the password `admin123`: change both). The login hands back a JWT
+valid 90 days, kept in an HttpOnly cookie. More than 10 wrong passwords from one address in 15 minutes are
+refused for a while. Worker tokens only crawl and read the device views (`make devices`, `make events`,
+`make dashboard`). `make ui` still logs in with the `admin_token` from `/etc/deals/config.toml`. To change that: `make ssh`, then
 `sed -i "s/^admin_token = .*/admin_token = \"$(/opt/deals/.venv/bin/deals token)\"/" /etc/deals/config.toml`
-and `make restart-server` (everyone is logged out). The UI only reads data, so using it cannot affect
+and `make restart-server` (whoever used it is logged out). The UI only reads data, so using it cannot affect
 crawling or alerts. It runs over plain HTTP: fine for a personal tool, but don't log in on untrusted Wi-Fi.
 
 ## Is everything OK?

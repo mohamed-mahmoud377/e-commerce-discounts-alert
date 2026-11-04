@@ -105,11 +105,13 @@ def test_web_ui_endpoints(cfg):
         with conn:
             audit.record(conn, "mac", "WARNING", "[noon_eg] noon_eg: captcha", utcnow().isoformat())
         eid = conn.execute("SELECT id FROM errors").fetchone()[0]
-        got = c.get("/api/errors", params={"token": "token-1"}).json()
-        assert got["errors"][0]["category"] == "blocked" and not got["admin"] and "blocked" in got["categories"]
+        assert c.get("/api/errors", params={"token": "token-1"}).status_code == 403  # admins only
         assert c.post(f"/api/errors/{eid}/resolve", headers=W1).status_code == 403
-        assert set(c.get("/api/uptime", params={"token": "token-1"}).json()) == {"status", "changes", "outages"}
-        c.post("/ui/login", data={"token": "admin-secret"}, follow_redirects=False)
+        assert c.get("/api/uptime", params={"token": "token-1"}).status_code == 403
+        c.get("/ui/login", params={"token": "admin-secret"}, follow_redirects=False)
+        got = c.get("/api/errors").json()
+        assert got["errors"][0]["category"] == "blocked" and got["admin"] and "blocked" in got["categories"]
+        assert set(c.get("/api/uptime").json()) == {"status", "changes", "outages"}
         assert c.post(f"/api/errors/{eid}/resolve").json() == {"ok": True}
         assert c.get("/api/errors", params={"only_open": 1}).json()["errors"] == []
         assert c.post(f"/api/errors/{eid}/reopen").json() == {"ok": True}

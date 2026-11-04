@@ -9,12 +9,20 @@ Workers anywhere (droplet, your Mac, a friend's PC) call:
   POST /api/jobs/{id}/release   -> worker is shutting down
   POST /api/shots/{alert_id}    -> an alert's screenshot (shotq.py), handed out in lease/page replies
 Each worker authenticates with its own token from [workers] in the config.
+
+Everything else (the web UI and every data API) is for the admins only (auth.py):
+  POST /api/login               -> {"username", "password"} gives a JWT valid 90 days,
+                                   sent back as "Authorization: Bearer <token>"
+The [server] admin_token works as an admin key too (make ui), and the server itself
+(127.0.0.1, i.e. an SSH tunnel) may read without logging in.
 """
 
+import hmac
 import logging
 import shutil
 import sqlite3
 import threading
+import time
 from pathlib import Path
 from contextlib import asynccontextmanager, closing
 from datetime import datetime, timedelta
@@ -23,9 +31,10 @@ from importlib.metadata import version as pkg_version
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
-from deals import alerts, audit, bot, db, detailq, health, matching, monitor, scheduler, shotq, uptime, webui
+from deals import alerts, audit, auth, bot, db, detailq, health, matching, monitor, scheduler, shotq, uptime, webui
 from deals.config import Config
 from deals.db import iso, utcnow
 from deals.models import Listing, Slice
@@ -101,6 +110,11 @@ class LogsIn(BaseModel):
     events: list[LogLine]
 
 
+class LoginIn(BaseModel):
+    username: str
+    password: str
+
+
 def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
     # One connection, used only from the event loop (all endpoints are async),
     # so requests are applied one at a time. Background threads open their own.
@@ -118,6 +132,7 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
         return c
     scheduler.sync_watches(conn, cfg, utcnow())
     bot.ensure_admin(conn, cfg, utcnow())
+    auth.ensure_users(conn, utcnow())
     if n := audit.backfill(conn):
         log.info("error book started from %d warnings and errors already in the logs", n)
     stop = threading.Event()
@@ -136,7 +151,9 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
         yield
         stop.set()
 
-    app = FastAPI(title="deals coordinator", version=VERSION, lifespan=lifespan)
+    # The API docs are not public: /docs and /openapi.json are behind the admin login below.
+    app = FastAPI(title="deals coordinator", version=VERSION, lifespan=lifespan,
+                  docs_url=None, redoc_url=None, openapi_url=None)
     app.add_middleware(GZipMiddleware, minimum_size=2000)  # the web UI page and big JSON lists, for phones
     app.state.conn = conn
     tokens = {token: name for name, token in cfg.workers.items()}
@@ -148,30 +165,80 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
             raise HTTPException(401, "unknown worker token")
         return name
 
-    view_tokens = set(tokens) | ({cfg.admin_token} if cfg.admin_token else set())
+    jwts = auth.Tokens(cfg.data_dir, cfg.db_path)
 
-    def can_view(request: Request) -> bool:
-        """Read-only views: open from the server itself (SSH tunnel); otherwise the admin
-        token or a worker token, as a cookie (web UI), ?token= or a Bearer header."""
-        if client_ip(request) in ("127.0.0.1", "::1"):
-            return True
-        token = (request.cookies.get(webui.COOKIE) or request.query_params.get("token")
-                 or request.headers.get("authorization", "").removeprefix("Bearer ").strip())
-        return token in view_tokens
+    def credential(request: Request) -> str:
+        """The token a request carries: the web UI's cookie, a Bearer header or ?token=."""
+        return (request.cookies.get(webui.COOKIE) or request.query_params.get("token")
+                or request.headers.get("authorization", "").removeprefix("Bearer ").strip())
+
+    def admin_user(request: Request) -> str | None:
+        """Who is asking, if it is an admin: a logged-in user's JWT, or the [server] admin_token."""
+        token = credential(request)
+        if not token:
+            return None
+        if cfg.admin_token and hmac.compare_digest(token.encode(), cfg.admin_token.encode()):
+            return "admin_token"
+        return jwts.user(token, utcnow())
 
     def is_admin(request: Request) -> bool:
-        """Only the admin token may change anything (approve people, send the report)."""
-        token = (request.cookies.get(webui.COOKIE) or request.query_params.get("token")
-                 or request.headers.get("authorization", "").removeprefix("Bearer ").strip())
-        return bool(cfg.admin_token) and token == cfg.admin_token
+        """Only the admins may change anything (approve people, send the report)."""
+        return admin_user(request) is not None
+
+    def can_view(request: Request) -> bool:
+        """Every data view: the admins, and the server itself (SSH tunnel, CLI on the droplet)."""
+        return client_ip(request) in ("127.0.0.1", "::1") or is_admin(request)
+
+    def refuse(request: Request) -> None:
+        if credential(request) in tokens:
+            raise HTTPException(403, "worker tokens only crawl and see devices; log in as an admin")
+        raise HTTPException(401, "log in: POST /api/login with username and password, or at /ui/login")
 
     def admin(request: Request) -> None:
         if not is_admin(request):
-            raise HTTPException(403, "only the admin token can do this")
+            refuse(request)
 
     def viewer(request: Request) -> None:
         if not can_view(request):
-            raise HTTPException(401, "log in at /ui/login, add ?token=<token>, or use make dashboard")
+            refuse(request)
+
+    def device_viewer(request: Request) -> None:
+        """Devices and their logs: the admins, and the workers too (make devices, make events)."""
+        if not (can_view(request) or credential(request) in tokens):
+            refuse(request)
+
+    login_failures: dict[str, list[float]] = {}
+
+    def check_login(ip: str, username: str, password: str) -> tuple[str, str] | None:
+        """(username, stored hash) for a right password. Slow on purpose (PBKDF2), so it runs
+        in a thread; more than 10 wrong tries from one address in 15 minutes are refused."""
+        recent = [t for t in login_failures.get(ip, []) if t > time.monotonic() - 900]
+        if len(recent) >= 10:
+            raise HTTPException(429, "too many wrong passwords; try again in 15 minutes")
+        with closing(sqlite3.connect(cfg.db_path, timeout=30)) as c:
+            c.row_factory = sqlite3.Row
+            found = auth.login(c, username, password, utcnow())
+        if found is None:
+            login_failures[ip] = recent + [time.monotonic()]
+            log.warning("web UI: failed login for %r from %s", username[:40], ip)
+        return found
+
+    @app.post("/api/login")
+    def login_api(body: LoginIn, request: Request):
+        found = check_login(client_ip(request), body.username, body.password)
+        if found is None:
+            raise HTTPException(401, "wrong username or password")
+        token, expires = jwts.issue(*found, utcnow())
+        return {"token": token, "token_type": "bearer", "username": found[0], "expires_at": iso(expires)}
+
+    @app.get("/openapi.json", include_in_schema=False, dependencies=[Depends(viewer)])
+    async def openapi_json():
+        return app.openapi()
+
+    @app.get("/docs", include_in_schema=False, dependencies=[Depends(viewer)])
+    async def api_docs():
+        from fastapi.openapi.docs import get_swagger_ui_html
+        return get_swagger_ui_html(openapi_url="/openapi.json", title="deals API")
 
     def client_ip(request: Request) -> str:
         return request.client.host if request.client else "unknown"
@@ -380,17 +447,17 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
         return {"generated_at": iso(now)[:19], "devices": monitor.devices(rc, now),
                 "sites": monitor.sites(rc, now), "problems": problems}
 
-    @app.get("/api/devices", dependencies=[Depends(viewer)])
+    @app.get("/api/devices", dependencies=[Depends(device_viewer)])
     def devices_api():
         with closing(read_conn()) as rc:
             return overview(rc, utcnow())
 
-    @app.get("/api/events", dependencies=[Depends(viewer)])
+    @app.get("/api/events", dependencies=[Depends(device_viewer)])
     def events_api(source: str | None = None, level: str | None = None, after_id: int = 0, limit: int = 200):
         with closing(read_conn()) as rc:
             return {"events": monitor.events(rc, source=source, level=level, after_id=after_id, limit=min(limit, 2000))}
 
-    @app.get("/dashboard", response_class=HTMLResponse, dependencies=[Depends(viewer)])
+    @app.get("/dashboard", response_class=HTMLResponse, dependencies=[Depends(device_viewer)])
     def dashboard(request: Request, source: str | None = None, level: str | None = None):
         with closing(read_conn()) as rc:
             logs = monitor.events(rc, source=source, level=level, limit=300)
@@ -411,23 +478,30 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
 
     @app.get("/ui/login", response_class=HTMLResponse, include_in_schema=False)
     async def ui_login_page(request: Request, token: str | None = None):
-        if token:  # one-click link (make ui): set the cookie, then drop the token from the address bar
-            return _login(token)
+        if token:  # one-click link with the admin_token (make ui): set the cookie, drop it from the address bar
+            if not (cfg.admin_token and hmac.compare_digest(token.encode(), cfg.admin_token.encode())):
+                log.warning("web UI: failed login with a token from %s", client_ip(request))
+                return HTMLResponse(webui.login_page("Wrong token."), status_code=401)
+            return _logged_in(token, 30 * 86400)
         return webui.login_page()
 
     @app.post("/ui/login", include_in_schema=False)
     async def ui_login(request: Request):
-        form = await request.body()
         from urllib.parse import parse_qs
-        token = (parse_qs(form.decode()).get("token") or [""])[0].strip()
-        return _login(token)
+        form = {k: v[0] for k, v in parse_qs((await request.body()).decode()).items()}
+        try:
+            found = await run_in_threadpool(check_login, client_ip(request), form.get("username", "").strip(),
+                                            form.get("password", ""))
+        except HTTPException as e:
+            return HTMLResponse(webui.login_page(e.detail), status_code=e.status_code)
+        if found is None:
+            return HTMLResponse(webui.login_page("Wrong username or password."), status_code=401)
+        token, _ = jwts.issue(*found, utcnow())
+        return _logged_in(token, auth.TOKEN_DAYS * 86400)
 
-    def _login(token: str):
-        if token not in view_tokens:
-            log.warning("web UI: failed login")
-            return HTMLResponse(webui.login_page("Wrong token."), status_code=401)
+    def _logged_in(token: str, max_age: int):
         response = RedirectResponse("/ui", status_code=303)
-        response.set_cookie(webui.COOKIE, token, max_age=30 * 86400, httponly=True, samesite="strict")
+        response.set_cookie(webui.COOKIE, token, max_age=max_age, httponly=True, samesite="strict")
         return response
 
     @app.get("/ui/logout", include_in_schema=False)

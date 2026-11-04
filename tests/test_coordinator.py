@@ -366,7 +366,7 @@ def test_pause_controls_are_admin_only(cfg):
     app = create_app(replace(cfg, admin_token="admin-secret"), background=False)
     with TestClient(app) as c:
         assert c.post("/api/pauses", json={"site": "jumia_eg"}, headers=W1).status_code == 403
-        c.post("/ui/login", data={"token": "admin-secret"}, follow_redirects=False)
+        c.get("/ui/login", params={"token": "admin-secret"}, follow_redirects=False)
         assert c.post("/api/pauses", json={"site": "nope"}).status_code == 422
         pid = c.post("/api/pauses", json={"worker": "mac", "site": "jumia_eg", "hours": 3}).json()["id"]
         assert [p["id"] for p in c.get("/api/pauses").json()["pauses"]] == [pid]

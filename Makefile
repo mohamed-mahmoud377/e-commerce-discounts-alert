@@ -13,8 +13,8 @@ deploy:               ## test, ship to the server, restart, health-check
 ui:                   ## open the web UI in your browser, already logged in
 	@open "http://$(HOST_IP):8787/ui/login?token=$$(ssh $(HOST) "sed -n 's/^admin_token = \"\(.*\)\"/\1/p' /etc/deals/config.toml")"
 
-ui-token:             ## copy the web UI token to the clipboard (to log in from a phone or another computer)
-	@ssh $(HOST) "sed -n 's/^admin_token = \"\(.*\)\"/\1/p' /etc/deals/config.toml" | tr -d '\n' | pbcopy && echo "token copied; open http://$(HOST_IP):8787/ui and paste it"
+ui-token:             ## copy a one-click admin login link to the clipboard (people log in with username + password)
+	@printf 'http://$(HOST_IP):8787/ui/login?token=%s' "$$(ssh $(HOST) "sed -n 's/^admin_token = \"\(.*\)\"/\1/p' /etc/deals/config.toml")" | pbcopy && echo "login link copied (it holds the admin_token: share it with nobody)"
 
 ssh:                  ## log in to the server
 	ssh $(HOST)

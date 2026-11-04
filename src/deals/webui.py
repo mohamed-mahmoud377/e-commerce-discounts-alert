@@ -1,8 +1,9 @@
 """The web UI at /ui: one page (plain HTML + JS) over JSON endpoints.
 
-Viewers only read. The admin token can also do what the bot's /subscribers buttons do
-(approve, reject, remove, helper admin) and send the daily report now; nothing here can
-affect crawling. Login is a secret token kept in an HttpOnly cookie.
+Only the admins (users table, auth.py) get in: they log in with username and password and
+keep a 90-day JWT in an HttpOnly cookie. They can also do what the bot's /subscribers buttons
+do (approve, reject, remove, helper admin) and send the daily report now; nothing here can
+affect crawling. Over an SSH tunnel (127.0.0.1) the page opens read-only without a login.
 
 Built for the 1 GB droplet: the server sends one static page and small JSON; lists are
 paged in SQL, and the browser does the drawing (charts, filters over a loaded page).
@@ -205,11 +206,12 @@ h1{{margin:0;font-size:20px}} label{{font-size:13px;font-weight:500}} .field{{mi
 <div class='brand' style='padding:0'><div class='logo' style='width:40px;height:40px;font-size:20px'>d</div>
 <div><div style='font-weight:600;font-size:20px'>deals</div><div class='muted' style='font-size:13px'>price tracker for 8 Egyptian shops</div></div></div>
 <form method='post' action='/ui/login'><h1>Log in</h1>
-<p class='muted' style='margin:0;line-height:1.5'>Paste the access token from <span class='mono'>make ui-token</span>. It is kept in a cookie on this device only.</p>
-{msg}<label for='token'>Access token</label>
-<input id='token' class='field' type='password' name='token' autofocus autocomplete='current-password'>
+{msg}<label for='username'>Username</label>
+<input id='username' class='field' name='username' autofocus autocomplete='username' autocapitalize='none'>
+<label for='password'>Password</label>
+<input id='password' class='field' type='password' name='password' autocomplete='current-password'>
 <button class='btn pri' type='submit'>Log in</button></form>
-<p class='muted' style='margin:0;text-align:center;font-size:12px'>Worker tokens can look; only the admin token can approve people or send the report.</p>
+<p class='muted' style='margin:0;text-align:center;font-size:12px'>For the admins only. You stay logged in on this device for 90 days.</p>
 </div></body></html>"""
 
 
@@ -758,7 +760,7 @@ const views = {
     const btn = (p, action, label, cls = '') => d.admin ? `<button class='btn small ${cls}' type='button' onclick="manage(${p.chat_id},'${action}')">${label}</button>` : '';
     const status = {active: ['ok', 'active'], stopped: ['warn', 'paused (/stop)'], rejected: ['idle', 'rejected'], blocked: ['fail', 'blocked the bot']};
     return head('Subscribers', 'People who get deal alerts from the Telegram bot. The same actions as the bot\'s /subscribers buttons.') +
-      (d.admin ? '' : `<section class='banner'>${pill('idle', 'Read-only')}<span class='msg muted'>You are logged in with a worker token. Log in with the admin token to approve or remove people.</span></section>`) +
+      (d.admin ? '' : `<section class='banner'>${pill('idle', 'Read-only')}<span class='msg muted'>You are reading over the server's own address without logging in. Log in as an admin to approve or remove people.</span></section>`) +
       (pending.length ? `<section class='card' style='overflow:hidden;border-color:var(--selline)'><div class='cardhead' style='background:var(--sel)'><h2 style='color:var(--selfg)'>Waiting for approval</h2><span class='num' style='color:var(--selfg)'>${pending.length}</span></div>
         ${pending.map(p => `<div class='row' style='padding:14px 16px;border-top:1px solid var(--line);gap:12px'><div class='grow'>${who(p)}</div><span class='sub'>pressed Start ${ago(p.created_at)} ago</span>
           ${btn(p, 'approve', 'Approve', 'pri')}${btn(p, 'reject', 'Reject')}</div>`).join('')}</section>` : '') +

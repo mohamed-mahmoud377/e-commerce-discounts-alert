@@ -28,13 +28,59 @@ def test_ui_needs_login(client):
 
 
 def test_wrong_token_is_refused(client):
-    r = client.post("/ui/login", data={"token": "nope"}, follow_redirects=False)
+    r = client.get("/ui/login", params={"token": "nope"}, follow_redirects=False)
     assert r.status_code == 401 and "Wrong token" in r.text
     assert "deals_ui" not in r.cookies
+    r = client.post("/ui/login", data={"username": "jerry", "password": "nope"}, follow_redirects=False)
+    assert r.status_code == 401 and "Wrong username or password" in r.text and "deals_ui" not in r.cookies
+
+
+def test_the_two_admins_log_in_with_a_password(client):
+    r = client.post("/ui/login", data={"username": "Jerry", "password": "admin123"}, follow_redirects=False)
+    assert r.status_code == 303 and r.cookies["deals_ui"].count(".") == 2  # a JWT in the cookie
+    assert client.get("/api/subscribers").json()["admin"] is True
+    client.get("/ui/logout")
+    got = client.post("/api/login", json={"username": "feysal", "password": "admin123"}).json()
+    assert got["username"] == "feysal" and got["token_type"] == "bearer" and got["expires_at"] > "2026"
+    bearer = {"Authorization": f"Bearer {got['token']}"}
+    assert client.get("/api/overview", headers=bearer).status_code == 200
+    assert client.get("/openapi.json", headers=bearer).status_code == 200
+    assert client.post("/api/login", json={"username": "feysal", "password": "x"}).status_code == 401
+    assert client.get("/api/overview", headers={"Authorization": "Bearer " + got["token"][:-2] + "xx"}).status_code == 401
+
+
+def test_a_new_password_logs_out_old_tokens_and_can_be_typed_into_the_db(client):
+    from deals import auth
+    token = client.post("/api/login", json={"username": "jerry", "password": "admin123"}).json()["token"]
+    conn = client.app.state.conn
+    with conn:  # what the admin does with sqlite3 on the server
+        conn.execute("UPDATE users SET password = 'my-new-pass' WHERE username = 'jerry'")
+    auth.Tokens.CACHE_SECONDS = 0
+    try:
+        assert client.get("/api/overview", headers={"Authorization": f"Bearer {token}"}).status_code == 401
+        assert client.post("/api/login", json={"username": "jerry", "password": "admin123"}).status_code == 401
+        assert client.post("/api/login", json={"username": "jerry", "password": "my-new-pass"}).status_code == 200
+    finally:
+        auth.Tokens.CACHE_SECONDS = 10
+    stored = conn.execute("SELECT password FROM users WHERE username = 'jerry'").fetchone()[0]
+    assert stored.startswith("pbkdf2_sha256$")  # the typed-in password is hashed at the first login
+
+
+def test_guessing_passwords_is_stopped(client):
+    for _ in range(10):
+        assert client.post("/api/login", json={"username": "jerry", "password": "guess"}).status_code == 401
+    assert client.post("/api/login", json={"username": "jerry", "password": "admin123"}).status_code == 429
+
+
+def test_nothing_is_open_without_a_login(client):
+    for path in ("/api/overview", "/api/products", "/api/subscribers", "/api/alerts", "/api/queries",
+                 "/api/errors", "/api/uptime", "/api/rules", "/api/devices", "/openapi.json", "/docs"):
+        assert client.get(path).status_code == 401, path
+        assert client.get(path, headers={"Authorization": "Bearer nope"}).status_code == 401, path
 
 
 def test_login_sets_cookie_and_everything_opens(client):
-    r = client.post("/ui/login", data={"token": "admin-secret"}, follow_redirects=False)
+    r = client.get("/ui/login", params={"token": "admin-secret"}, follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"] == "/ui"
     assert client.get("/ui").status_code == 200 and "deals" in client.get("/ui").text
     overview = client.get("/api/overview").json()
@@ -52,12 +98,17 @@ def test_login_sets_cookie_and_everything_opens(client):
 def test_one_click_link_and_worker_tokens(client):
     r = client.get("/ui/login", params={"token": "admin-secret"}, follow_redirects=False)
     assert r.status_code == 303 and "deals_ui" in r.cookies
-    assert client.get("/api/overview", params={"token": "token-1"}).status_code == 200  # worker tokens still read
+    client.get("/ui/logout")
+    worker = {"Authorization": "Bearer token-1"}
+    assert client.get("/api/overview", headers=worker).status_code == 403  # workers crawl; they don't read data
+    assert client.get("/api/products", headers=worker).status_code == 403
+    assert client.get("/api/devices", headers=worker).status_code == 200  # make devices, make events
+    assert client.get("/api/events", headers=worker).status_code == 200
 
 
 def test_saved_queries_run_and_need_login(client):
     assert client.get("/api/queries").status_code == 401
-    client.post("/ui/login", data={"token": "admin-secret"}, follow_redirects=False)
+    client.get("/ui/login", params={"token": "admin-secret"}, follow_redirects=False)
     names = [q["name"] for q in client.get("/api/queries").json()["queries"]]
     assert "biggest_drops" in names and "schedule" in names
     for name in names:  # every saved query must at least run on an almost-empty database
@@ -78,7 +129,7 @@ def test_saved_queries_run_and_need_login(client):
 
 
 def test_product_page_data_and_filters(client):
-    client.post("/ui/login", data={"token": "admin-secret"}, follow_redirects=False)
+    client.get("/ui/login", params={"token": "admin-secret"}, follow_redirects=False)
     pid = client.get("/api/products?q=samsung").json()["products"][0]["id"]
     d = client.get(f"/api/products/{pid}").json()
     assert set(d) == {"product", "stats", "history", "alerts", "other_sellers", "same_model", "admin"} and d["admin"]
@@ -103,7 +154,7 @@ def test_product_page_data_and_filters(client):
 
 
 def test_products_are_paged_with_a_total(client):
-    client.post("/ui/login", data={"token": "admin-secret"}, follow_redirects=False)
+    client.get("/ui/login", params={"token": "admin-secret"}, follow_redirects=False)
     conn = client.app.state.conn
     with conn:
         for i in range(250):
@@ -125,7 +176,7 @@ def test_products_are_paged_with_a_total(client):
 
 def test_every_product_sort_holds_across_pages(client):
     from deals.webui import PRODUCT_SORTS
-    client.post("/ui/login", data={"token": "admin-secret"}, follow_redirects=False)
+    client.get("/ui/login", params={"token": "admin-secret"}, follow_redirects=False)
     conn = client.app.state.conn
     with conn:
         for i in range(120):
@@ -144,7 +195,7 @@ def test_every_product_sort_holds_across_pages(client):
 
 
 def test_saved_queries_page_and_sort_on_the_server(client):
-    client.post("/ui/login", data={"token": "admin-secret"}, follow_redirects=False)
+    client.get("/ui/login", params={"token": "admin-secret"}, follow_redirects=False)
     conn = client.app.state.conn
     with conn:
         for i in range(230):
@@ -164,7 +215,7 @@ def test_saved_queries_page_and_sort_on_the_server(client):
 
 
 def test_products_changed_within_a_period(client):
-    client.post("/ui/login", data={"token": "admin-secret"}, follow_redirects=False)
+    client.get("/ui/login", params={"token": "admin-secret"}, follow_redirects=False)
     conn = client.app.state.conn
     old = utcnow() - timedelta(days=3)
     with conn:
@@ -177,7 +228,7 @@ def test_products_changed_within_a_period(client):
 
 
 def test_saved_query_text_search(client):
-    client.post("/ui/login", data={"token": "admin-secret"}, follow_redirects=False)
+    client.get("/ui/login", params={"token": "admin-secret"}, follow_redirects=False)
     d = client.get("/api/queries/new_products?hours=48&q=samsung 55").json()
     assert d["filters"]["q"] is True and len(d["rows"]) == 1
     assert client.get("/api/queries/new_products?hours=48&q=iphone").json()["rows"] == []
@@ -185,7 +236,7 @@ def test_saved_query_text_search(client):
 
 
 def test_new_screens_data(client):
-    client.post("/ui/login", data={"token": "admin-secret"}, follow_redirects=False)
+    client.get("/ui/login", params={"token": "admin-secret"}, follow_redirects=False)
     page = client.get("/ui").text
     for screen in ("Deals", "Subscribers", "Rules", "setTheme"):
         assert screen in page
@@ -204,7 +255,7 @@ def test_admin_manages_subscribers_and_workers_cannot(cfg):
         conn.execute("INSERT INTO subscribers (chat_id, name, status, created_at, updated_at) VALUES (7, 'Omar', 'pending', ?, ?)", (now, now))
     with TestClient(app) as c:
         assert c.post("/api/subscribers/7/approve", params={"token": "token-1"}).status_code == 403  # worker token: look only
-        c.post("/ui/login", data={"token": "admin-secret"}, follow_redirects=False)
+        c.get("/ui/login", params={"token": "admin-secret"}, follow_redirects=False)
         people = c.get("/api/subscribers").json()
         assert people["admin"] is True and [p["status"] for p in people["people"] if p["chat_id"] == 7] == ["pending"]
         assert c.post("/api/subscribers/7/approve").json() == {"ok": True}
@@ -222,7 +273,7 @@ def test_admin_manages_subscribers_and_workers_cannot(cfg):
 
 
 def test_products_carry_their_previous_price(client):
-    client.post("/ui/login", data={"token": "admin-secret"}, follow_redirects=False)
+    client.get("/ui/login", params={"token": "admin-secret"}, follow_redirects=False)
     conn = client.app.state.conn
     with conn:
         db.record(conn, Listing("amazon_eg", "TV1", "Samsung 55 inch TV", "https://x/TV1", 1_600_000, None, "EGP", True),
@@ -242,7 +293,7 @@ def test_match_override_is_admin_only_and_applies_at_the_next_rebuild(client):
     a, b = (r[0] for r in conn.execute("SELECT id FROM products WHERE sku IN ('K1', 'K2') ORDER BY sku"))
     assert client.post(f"/api/products/{a}/match", json={"other": b, "verdict": "same"},
                        params={"token": "token-1"}).status_code == 403  # a worker token can only look
-    client.post("/ui/login", data={"token": "admin-secret"}, follow_redirects=False)
+    client.get("/ui/login", params={"token": "admin-secret"}, follow_redirects=False)
     assert client.post(f"/api/products/{a}/match", json={"other": a, "verdict": "same"}).status_code == 422
     assert client.post(f"/api/products/{a}/match", json={"other": 999999, "verdict": "same"}).status_code == 404
     assert client.post(f"/api/products/{a}/match", json={"other": b, "verdict": "same"}).json() == {"ok": True}

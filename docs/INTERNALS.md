@@ -39,8 +39,9 @@ owns one job.
 | `monitor.py` | 166 | Device states, events (logs), the dashboard page | db, scheduler |
 | `uptime.py` | 243 | What is up and down: `observe()` the state of every shop, device and device on a shop; `track()` (each watchdog round) records changes in `status_changes`, sends 🔴 down and ✅ back (back only for what the admins were told), notices the server's own outages from a gap in the rounds; `current`, `changes`, `outages` for the views | alerts, scheduler |
 | `audit.py` | 194 | The error book: `record()` groups a problem by fingerprint (device, shop, category, message with numbers blanked), `categorize()` by ordered regex `RULES`, `CATEGORIES` holds each kind's cause and fix; fed by `scheduler.add_events` (WARNING/ERROR lines) and the failed/blocked/parser reports | db, sites |
-| `webui.py` | 1182 | The web UI page (one HTML + CSS + JS string, light and dark themes) and its queries | health, monitor, alerts |
-| `coordinator.py` | 570 | The FastAPI app (all endpoints) and the watchdog thread (which also starts the hourly matching) | everything above |
+| `webui.py` | 1390 | The web UI page (one HTML + CSS + JS string, light and dark themes) and its queries | health, monitor, alerts |
+| `coordinator.py` | 791 | The FastAPI app (all endpoints, who may call which) and the watchdog thread (which also starts the hourly matching) | everything above |
+| `auth.py` | 146 | The admins: `users` rows (PBKDF2 password hashes; the first start adds jerry and feysal), `login()`, and `Tokens`, the 90-day HS256 JWT signed with `<data_dir>/jwt.key` that carries a fingerprint of the password hash (a new password logs that user out everywhere) | db |
 | `worker.py` | 271 | The crawling loop on each device, retries, log shipping | sites, planner, HTTP to the coordinator |
 | `cli.py` | 445 | The `deals` command: every subcommand | everything |
 
@@ -152,6 +153,8 @@ many have run, and `db.connect()` runs the missing ones in a transaction on star
 | 16 | `crawl_pauses` (crawling paused by hand per device and/or shop, with an end time) |
 | 17 | `models.confidence`, `models.evidence` (how sure a match is, and why) |
 | 18 | `shots` (alert screenshots: who takes one, how it went, Telegram's `file_id`; never the image), `deliveries.photo_sent_at` |
+| 19 | `errors` (the error book), `status`, `status_changes` (uptime) |
+| 20 | `users` (the admins of the web UI and API) |
 
 **Tables and columns** (prices are integer piastres; times are UTC ISO text, which sorts correctly as text):
 
@@ -171,6 +174,7 @@ many have run, and `db.connect()` runs the missing ones in a transaction on star
 | `errors` | `id`; unique `fingerprint`; index `(last_seen_at)` | The error book (audit.py): one row per kind of problem: `category` (`audit.CATEGORIES`), `source` (device or `coordinator`), `site`, `level` (worst seen), `message` (latest, in full), `count`, `first_seen_at`, `last_seen_at`, `resolved_at` (set by hand; open again when `last_seen_at` is later). Started from the logs on first start (`audit.backfill`); pruned after 90 days |
 | `status` | `subject` (`shop:<site>`, `device:<name>`, `device_shop:<name>/<site>`) | Current state (uptime.py): `kind`, `name`, `state` (shop `up`/`down`/`paused`; device `online`/`offline`; device_shop `ok`/`blocked`/`failing`/`offline`), `since`, `reason`, `notified` (the admins were told it went bad, so they hear when it is back), `checked_at`. A device_shop is `blocked` while its `blocks` row exists (until a page works), not just during the pause |
 | `status_changes` | `id`; indexes on time and subject | Every change: `subject`, `kind` (also `server`), `name`, `old_state`, `new_state`, `at`, `lasted_s` (how long the old state lasted), `reason`, `notified`. Server outages are one `down → up` row. Pruned after 180 days |
+| `users` | `username` (case-insensitive) | The admins (auth.py): `password` (`pbkdf2_sha256$rounds$salt$hash`; a plain value typed in with sqlite3 is taken as the password and hashed at the next login), `created_at`, `last_login_at` |
 | `kv` | `key` | `telegram_offset` (last Telegram update handled), `uptime:last_round` (the watchdog's last round, to notice server outages) |
 | `product_codes` | `product_id` (cascade delete) | The codes read from one title, kept so a pass re-reads only changed titles: `title_hash`, `version`, `heads`, `shop_brand`, `own`, `mentions`, `before`, `capacity`, `used`, `accessory` ([MATCHING.md](MATCHING.md)) |
 | `product_code_index` | `(product_id, code)`; index `(code)` | One row per code of a product (`rank`), for the SQL counts |
@@ -190,8 +194,12 @@ of `data/server.db`), take a backup on the server, then `make deploy`.
 ## Coordinator API reference
 
 Base address `http://207.154.206.127:8787` (port 8787 open in the firewall). Worker endpoints need
-`Authorization: Bearer <worker token>`; the token decides the device name. Read-only views ("viewer") accept the UI cookie, `?token=` or a Bearer header with the
-`admin_token` or any worker token, and need no token when called from the server itself.
+`Authorization: Bearer <worker token>`; the token decides the device name. Everything else is for the admins
+("admin"): log in with `POST /api/login` and send `Authorization: Bearer <jwt>` (or the web UI's cookie, or
+`?token=`). The `[server] admin_token` is accepted as an admin key too. Worker tokens may also read
+`/api/devices`, `/api/events` and `/dashboard` (`make devices`, `make events`, `make dashboard`), and get 403
+anywhere else. From the server itself (127.0.0.1: an SSH tunnel, the CLI on the droplet) every read is open
+without a login; changes still need an admin.
 
 | Method and path | Who | Body | Answer |
 | --- | --- | --- | --- |
@@ -204,22 +212,24 @@ Base address `http://207.154.206.127:8787` (port 8787 open in the firewall). Wor
 | `POST /api/jobs/{id}/failed` | worker | `{lease_token, reason}` | `{ok}` |
 | `POST /api/jobs/{id}/release` | worker | `{lease_token, reason}` | `{ok}` (sent on shutdown) |
 | `POST /api/logs` | worker | `{events: [{at, level, message}]}` (max 500) | `{ok}` |
-| `GET /api/devices` | viewer | | devices, per-shop states, shop totals, failing checks |
-| `GET /api/events?source=&level=&after_id=&limit=` | viewer | | `{events: [{id, at, source, level, message}]}` |
-| `GET /dashboard?source=&level=` | viewer | | HTML page |
-| `GET /ui`, `GET/POST /ui/login`, `GET /ui/logout` | anyone / viewer | `token` (form or one-click `?token=`) | The web UI; login sets the HttpOnly cookie `deals_ui` (30 days) |
-| `GET /api/overview` | viewer | | totals, health checks, latest deals, devices, shops, server load and RAM, live revision, `admin` (is this the admin token) |
-| `GET /api/alerts?days=&kind=&limit=` | viewer | | recent alerts with delivery counts and the Telegram text |
-| `GET /api/jobs?limit=` | viewer | | jobs, failing first then running |
-| `GET /api/products?q=&site=&grp=&sort=&in_stock=&changed_since=&limit=&offset=`, `GET /api/products/{id}` | viewer | | product search (`changed_since`: last change at or after this UTC time); one product with stats and history |
-| `GET /api/queries`, `GET /api/queries/{name}?hours=&grp=&site=&q=&sort=&desc=&limit=&offset=` | viewer | | saved reports; `q` = words that must all be in the title |
-| `GET /api/subscribers` | viewer | | everyone but removed people, join requests first, messages in 7 days; `admin` |
-| `GET /api/rules` | viewer | | alert rules, schedule and watched groups from the config (read-only) |
-| `POST /api/subscribers/{chat_id}/{action}` | admin token | | `approve`, `reject`, `remove`, `promote`, `demote` (as the bot's buttons; tells the person on Telegram). 403 for other tokens, 409 if already decided |
-| `POST /api/report` | admin token | | queue the daily report to the admins now |
-| `GET /api/uptime?days=&kind=&name=&limit=` | viewer | | `{status: [...], outages: [...], changes: [...]}` (uptime.py) |
-| `GET /api/errors?days=&site=&category=&source=&only_open=&limit=` | viewer | | `{errors: [... with title, cause, fix, open], categories: {kind: [title, cause, fix]}, admin}` |
-| `POST /api/errors/{id}/{resolve,reopen}` | admin token | | `{ok}`; 404 for an unknown id or action |
+| `POST /api/login` | anyone | `{username, password}` | `{token, token_type: "bearer", username, expires_at}` (90 days); 401 wrong, 429 after 10 wrong tries from one address in 15 minutes |
+| `GET /api/devices` | admin or worker | | devices, per-shop states, shop totals, failing checks |
+| `GET /api/events?source=&level=&after_id=&limit=` | admin or worker | | `{events: [{id, at, source, level, message}]}` |
+| `GET /dashboard?source=&level=` | admin or worker | | HTML page |
+| `GET /ui`, `GET/POST /ui/login`, `GET /ui/logout` | anyone / admin | `username`, `password` (form), or one-click `?token=<admin_token>` | The web UI; login sets the HttpOnly cookie `deals_ui` (the JWT, 90 days; the admin_token, 30 days) |
+| `GET /docs`, `GET /openapi.json` | admin | | The interactive API page and its schema (not public) |
+| `GET /api/overview` | admin | | totals, health checks, latest deals, devices, shops, server load and RAM, live revision, `admin` (is this an admin, not a read over the SSH tunnel) |
+| `GET /api/alerts?days=&kind=&limit=` | admin | | recent alerts with delivery counts and the Telegram text |
+| `GET /api/jobs?limit=` | admin | | jobs, failing first then running |
+| `GET /api/products?q=&site=&grp=&sort=&in_stock=&changed_since=&limit=&offset=`, `GET /api/products/{id}` | admin | | product search (`changed_since`: last change at or after this UTC time); one product with stats and history |
+| `GET /api/queries`, `GET /api/queries/{name}?hours=&grp=&site=&q=&sort=&desc=&limit=&offset=` | admin | | saved reports; `q` = words that must all be in the title |
+| `GET /api/subscribers` | admin | | everyone but removed people, join requests first, messages in 7 days; `admin` |
+| `GET /api/rules` | admin | | alert rules, schedule and watched groups from the config (read-only) |
+| `POST /api/subscribers/{chat_id}/{action}` | admin | | `approve`, `reject`, `remove`, `promote`, `demote` (as the bot's buttons; tells the person on Telegram). 403 for other tokens, 409 if already decided |
+| `POST /api/report` | admin | | queue the daily report to the admins now |
+| `GET /api/uptime?days=&kind=&name=&limit=` | admin | | `{status: [...], outages: [...], changes: [...]}` (uptime.py) |
+| `GET /api/errors?days=&site=&category=&source=&only_open=&limit=` | admin | | `{errors: [... with title, cause, fix, open], categories: {kind: [title, cause, fix]}, admin}` |
+| `POST /api/errors/{id}/{resolve,reopen}` | admin | | `{ok}`; 404 for an unknown id or action |
 
 Responses over 2 KB are gzipped (the web UI page is about 80 KB, 23 KB compressed); the page is one static
 string, and lists are paged in SQL, so the UI costs the 1 GB droplet next to nothing at rest.
@@ -229,12 +239,12 @@ optional `list_price_kind`, `brand`, `stock_left`, `recent_sales`, `rating`, `re
 
 | Error | Meaning |
 | --- | --- |
-| 401 | Unknown token |
-| 403 | A change from the web UI made with a worker token (only the admin token may) |
+| 401 | No token, an unknown one, or an expired or outdated JWT (log in again) |
+| 403 | A worker token used for something other than crawling or the device views |
 | 409 | Lease lost: expired and given to another worker, or the job was removed by a config change. The worker drops the job |
 | 422 | Bad body, a listing for another shop, or a plan sent for a crawl job |
 
-The interactive schema is at `/docs` on the same address (FastAPI's built-in page).
+The interactive schema is at `/docs` on the same address (FastAPI's built-in page), for the admins only.
 
 ## Worker internals
 
@@ -293,7 +303,7 @@ commented template.
 | `[server] host` | `127.0.0.1` | `0.0.0.0` on the server so remote workers can connect |
 | `[server] port` | 8787 | API port |
 | `[server] data_dir` | `data` | Database, backups (relative to the config file) |
-| `[server] admin_token` | empty | Secret for the web UI login (`deals token` makes one) |
+| `[server] admin_token` | empty | An admin key for scripts and `make ui`'s one-click login (`deals token` makes one); people log in with a username and password (`users` table) |
 | `[workers] NAME = "token"` | | One line per device; the name shows in devices and logs. `deals token` makes one |
 | `[telegram] bot_token`, `chat_id` | empty | The bot and the admin chat (`make telegram TOKEN=...` fills both) |
 | `[alerts] min_drop` | 0.20 | Real price drop threshold versus typical (3+ days of history) |
