@@ -780,6 +780,11 @@ left, third-party seller and the cheapest other seller on noon, low rating or fe
 marketing badges we ignore, earlier alerts for the same product, and for low confidence a reminder to
 check the page); and a footer with group, shop, confidence and score.
 
+An admin can also **send an alert by hand** from a product's page in the web UI, whatever the rules say:
+the drop, saving and confidence are worked out from the product's own history the same way, the message
+says it was chosen by hand ("📣 عرض مختار") and carries the admin's note, and it is delivered like any
+other alert ([PRODUCT_FLOW.md](PRODUCT_FLOW.md), 8b).
+
 An alert is written to the `alerts` table first and sent afterwards, so a Telegram outage or a server
 restart never loses one. A background loop in the coordinator runs every 3 seconds:
 

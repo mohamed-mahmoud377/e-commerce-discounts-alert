@@ -130,7 +130,7 @@ class ProductView:
 class Deal:
     """Why a price is a deal, as facts; alerts.py turns them into a message."""
 
-    kind: str  # price_drop | all_time_low | price_error | early_drop | new_product
+    kind: str  # price_drop | all_time_low | price_error | early_drop | new_product | manual (sent by an admin)
     price: int
     reference: int  # what the drop is measured against
     drop: float  # 0.42 = 42% below reference
@@ -230,6 +230,42 @@ def evaluate(product: ProductView, stats: PriceStats, rules: AlertRules, *,
         score += 5
     score *= {"high": 1.0, "medium": 0.85, "low": 0.7}[confidence]
     return Deal(kind, price, reference, round(drop, 4), confidence, max(0, min(100, round(score))),
+                signals=signals, **facts)
+
+
+def manual_deal(product: ProductView, stats: PriceStats, rules: AlertRules) -> Deal | None:
+    """The facts for an alert an admin sends by hand (web UI), whatever the rules say: measured against
+    the product's own typical price when there is any history, else against the shop's crossed-out price
+    (marked as the shop's claim), else nothing (drop 0). The drop can be zero or negative: the message
+    then says the price is not below its usual one. None only when there is no price to send."""
+    price = product.price
+    if not product.in_stock or price is None or price <= 0:
+        return None
+    signals, facts = _signals(product), {}
+    if stats.typical_90d and stats.history_days > 0:
+        reference = stats.typical_90d
+        drop = 1 - price / reference
+        share = stats.share_at_or_below or 0.0
+        all_time_low = stats.low is not None and price < stats.low
+        facts.update(reference_days=min(stats.tracked_days, 90), share_at_or_below=share)
+        if all_time_low:
+            facts.update(all_time_low=True, previous_low=stats.low)
+        if stats.previous and stats.previous != reference:
+            facts["previous"] = stats.previous
+        if (product.list_price and stats.high and stats.history_days >= 14
+                and product.list_price > stats.high * 1.15):
+            facts["inflated_list_price"] = product.list_price
+        confidence = ("high" if stats.history_days >= 14 and share <= 0.05 and drop > 0
+                      else "medium" if stats.history_days >= rules.min_history_days and drop > 0 else "low")
+        score = drop * 100 + (10 if all_time_low else 0) - 50 * share
+    elif product.list_price and product.list_price > price:
+        reference, drop, confidence = product.list_price, 1 - price / product.list_price, "low"
+        facts["list_price_kind"] = product.list_price_kind or "list"
+        score = drop * 100
+    else:
+        reference, drop, confidence, score = price, 0.0, "low", 0
+    score *= {"high": 1.0, "medium": 0.85, "low": 0.7}[confidence]
+    return Deal("manual", price, reference, round(drop, 4), confidence, max(0, min(100, round(score))),
                 signals=signals, **facts)
 
 

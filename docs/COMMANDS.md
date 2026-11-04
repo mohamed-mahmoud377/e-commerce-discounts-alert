@@ -10,7 +10,8 @@ Screens (sidebar on a computer, tab bar on a phone): Overview (the health checks
 the rest fold into one line), Deals (every alert by kind, with the exact Telegram message), Products (search,
 shop, group, sort, in stock, "price changed in the last 24 h / 7 days / 30 days"; click a product for its price
 chart, typical price, rarity, other sellers, alerts, and the same product at other shops, cheapest marked and
-drawn on the chart), Shops (every shop by kind: state, products, last pass, deals, devices, access; click one
+drawn on the chart; admins can **Send alert…** from there: a preview with the drop worked out from its
+history, an optional note, then it goes to every subscriber), Shops (every shop by kind: state, products, last pass, deals, devices, access; click one
 for its devices, watch groups, slices, blocks, shop rules, open problems, uptime and latest deals), Devices
 (shops down the side, one column per device; the per-device-and-shop list shows the ones that need a look),
 Uptime (what is up and down, downtime, every change), Errors (the error book: every kind of problem, counted,

@@ -18,7 +18,7 @@ from curl_cffi import CurlMime, requests
 from deals import db, matching, shop_rules, shotq
 from deals.config import Config
 from deals.db import iso, parse_iso, utcnow
-from deals.pricing import LOW_STOCK_EVERYWHERE, Deal, Point, PriceStats, ProductView, compute_stats, evaluate
+from deals.pricing import LOW_STOCK_EVERYWHERE, Deal, Point, PriceStats, ProductView, compute_stats, evaluate, manual_deal
 from deals.shops import SHOPS
 
 log = logging.getLogger(__name__)
@@ -31,6 +31,7 @@ KIND_TITLE = {
     "all_time_low": "📉 أقل سعر على الإطلاق",
     "early_drop": "⏳ انخفاض مبكر في السعر",
     "new_product": "🆕 منتج جديد بخصم كبير",
+    "manual": "📣 عرض مختار",
 }
 SITE_NAME = {s.name: s.arabic for s in SHOPS.values()}  # the names live in deals/shops.py
 CONFIDENCE = {"high": "عالية", "medium": "متوسطة", "low": "منخفضة"}
@@ -57,12 +58,7 @@ def check_product(conn: sqlite3.Connection, cfg: Config, product_id: int, *, boo
     p = db.product(conn, product_id)
     stats = product_stats(conn, product_id, now)
     watch = cfg.watch(p["grp"]) if p["grp"] else None
-    view = ProductView(
-        price=p["price"], in_stock=bool(p["in_stock"]), list_price=p["list_price"],
-        list_price_kind=p["list_price_kind"], stock_left=p["stock_left"], recent_sales=p["recent_sales"],
-        rating=p["rating"], reviews=p["reviews"], badges=tuple(b for b in p["badges"].split(",") if b),
-        site=p["site"],
-    )
+    view = _view(p)
     deal = evaluate(view, stats, cfg.alerts, bootstrap=bootstrap,
                     min_price=watch.min_price if watch else None,
                     min_drop=watch.min_drop if watch else None)
@@ -109,6 +105,84 @@ def check_product(conn: sqlite3.Connection, cfg: Config, product_id: int, *, boo
     if confirm is None:  # a held alert gets its screenshot when it is released (AlertSender.confirm)
         shotq.add(conn, cfg, cur.lastrowid, p["site"], p["url"], now)
     return deal
+
+
+def _view(p: sqlite3.Row) -> ProductView:
+    return ProductView(
+        price=p["price"], in_stock=bool(p["in_stock"]), list_price=p["list_price"],
+        list_price_kind=p["list_price_kind"], stock_left=p["stock_left"], recent_sales=p["recent_sales"],
+        rating=p["rating"], reviews=p["reviews"], badges=tuple(b for b in p["badges"].split(",") if b),
+        site=p["site"],
+    )
+
+
+MANUAL_REPEAT = timedelta(minutes=10)  # a second manual alert for one product this soon is a double click
+MANUAL_NOTE_MAX = 300
+
+
+class ManualAlertError(ValueError):
+    """Why a manual alert can't go out (sold out, no price, just sent)."""
+
+
+def manual_alert(conn: sqlite3.Connection, cfg: Config, product_id: int, now: datetime, *,
+                 note: str = "", sender: str = "", send: bool = False) -> dict:
+    """An alert an admin sends by hand from the web UI, whatever the rules say: the numbers come from the
+    product's own history (pricing.manual_deal), the message is format_deal's, with the admin's note, the
+    other shops' prices and a screenshot, and it goes to every subscriber through the same outbox.
+    send=False is the preview: the numbers, the exact message, and whether the rules would have alerted."""
+    p = db.product(conn, product_id)
+    if p is None:
+        raise ManualAlertError("no such product")
+    stats, view = product_stats(conn, product_id, now), _view(p)
+    deal = manual_deal(view, stats, cfg.alerts)
+    if deal is None:
+        raise ManualAlertError("sold out or no price: nothing to alert" if p["in_stock"] else "sold out: nothing to alert")
+    watch = cfg.watch(p["grp"]) if p["grp"] else None
+    group = (watch.label or watch.name) if watch else (p["grp"] or "")
+    # what the automatic rules make of the same price, for the admin to see before sending
+    auto = evaluate(view, stats, cfg.alerts, min_price=watch.min_price if watch else None,
+                    min_drop=watch.min_drop if watch else None)
+    stopped = shop_rules.stops(p["site"], auto) if auto else None
+    seen_h = (now - parse_iso(p["last_seen_at"])).total_seconds() / 3600
+    past = conn.execute("SELECT COUNT(*) FROM alerts WHERE product_id = ? AND (error IS NULL OR error NOT LIKE 'cancelled%')",
+                        (product_id,)).fetchone()[0]
+    last = conn.execute("SELECT created_at, kind, price FROM alerts WHERE product_id = ? ORDER BY created_at DESC LIMIT 1",
+                        (product_id,)).fetchone()
+    other = db.best_other_offer(conn, p["site"], p["sku"], now)
+    note = " ".join(note.split())[:MANUAL_NOTE_MAX]
+    extra = [f"آخر مرة رأينا فيها هذا السعر منذ {_hours(seen_h)}: تأكد منه قبل الدفع"] if seen_h >= 2 else []
+    message = format_deal(p, stats, deal, group, other_offer=other, past_alerts=past, note=note, extra_checks=extra)
+    if cfg.alerts.show_other_shops:
+        try:
+            message = append_other_shops(message, p, deal.price, matching.other_shops(conn, product_id, now, cfg.alerts.other_shops_min_confidence), now)
+        except Exception:
+            log.exception("other shops' prices for %s", p["sku"])
+    out = {
+        "product_id": product_id, "price": deal.price, "reference": deal.reference, "drop": deal.drop,
+        "saving": deal.reference - deal.price,
+        "basis": ("history" if deal.reference_days else "shop_claim" if deal.list_price_kind else "none"),
+        "typical_30d": stats.typical_30d, "typical_90d": stats.typical_90d, "low": stats.low, "high": stats.high,
+        "all_time_low": deal.all_time_low, "share_at_or_below": deal.share_at_or_below,
+        "history_days": round(stats.history_days, 1), "confidence": deal.confidence, "score": deal.score,
+        "rules": auto.kind if auto and not stopped else None, "stopped_by": stopped.id if stopped else None,
+        "repeat": _recently_alerted(conn, cfg, product_id, deal.price, now),
+        "past_alerts": past, "last_alert": dict(last) if last else None, "seen_hours": round(seen_h, 1),
+        "other_offer": other, "message": message,
+        "recipients": conn.execute("SELECT COUNT(*) FROM subscribers WHERE status = 'active'").fetchone()[0],
+    }
+    if not send:
+        return out
+    if conn.execute("SELECT 1 FROM alerts WHERE product_id = ? AND kind = 'manual' AND created_at >= ?",
+                    (product_id, iso(now - MANUAL_REPEAT))).fetchone():
+        raise ManualAlertError("a manual alert for this product went out in the last 10 minutes")
+    cur = conn.execute(
+        """INSERT INTO alerts (product_id, kind, dedupe_key, price, reference_price, drop_pct, score, message,
+                               created_at, next_attempt_at)
+           VALUES (?, 'manual', ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (product_id, f"manual:{sender}", deal.price, deal.reference, deal.drop, deal.score, message, iso(now), iso(now)))
+    shotq.add(conn, cfg, cur.lastrowid, p["site"], p["url"], now)
+    log.info("manual alert %s for %s %s at %s by %s", cur.lastrowid, p["site"], p["sku"], deal.price, sender or "?")
+    return {**out, "alert_id": cur.lastrowid}
 
 
 def append_other_shops(message: str, p: sqlite3.Row, price: int, others: list, now: datetime) -> str:
@@ -161,13 +235,16 @@ def system_alert(conn: sqlite3.Connection, key: str, message: str, now: datetime
 
 
 def format_deal(p: sqlite3.Row, stats: PriceStats, deal: Deal, group: str = "", *,
-                other_offer: int | None = None, past_alerts: int = 0) -> str:
-    """The Telegram message: the numbers, then *why* it is a deal, then what to check before buying."""
+                other_offer: int | None = None, past_alerts: int = 0, note: str = "",
+                extra_checks: list[str] = ()) -> str:
+    """The Telegram message: the numbers, then *why* it is a deal, then what to check before buying.
+    A manual alert (kind 'manual', sent by an admin) says so, carries the admin's `note`, and states the
+    drop as it is, also when the price is not below its usual one."""
     def e(text: str) -> str:
         return html.escape(text, quote=False)  # quotes only matter inside attributes
 
     lines = [
-        f"<b>{KIND_TITLE[deal.kind]} · خصم {deal.drop:.0%}</b>",
+        f"<b>{KIND_TITLE[deal.kind]}" + (f" · خصم {deal.drop:.0%}" if deal.drop >= 0.005 else "") + "</b>",
         f"<a href=\"{html.escape(p['url'])}\">{e(p['title'][:150])}</a>",
     ]
     meta = [m for m in (p["brand"] and f"الماركة: {e(p['brand'])}",
@@ -178,7 +255,12 @@ def format_deal(p: sqlite3.Row, stats: PriceStats, deal: Deal, group: str = "", 
     lines.append("")
 
     # --- the numbers
-    if deal.kind == "new_product":
+    claim = deal.kind == "new_product" or (deal.kind == "manual" and deal.list_price_kind is not None)
+    if deal.kind == "manual" and deal.reference == deal.price and not deal.reference_days:
+        lines.append(f"💰 السعر الآن: <b>{_egp(deal.price)}</b>")
+    elif deal.kind == "manual" and deal.drop < 0.005 and not claim:
+        lines.append(f"💰 السعر الآن: <b>{_egp(deal.price)}</b> · سعره المعتاد {_egp(deal.reference)}")
+    elif claim:
         label = "سعره الأخير على الموقع" if deal.list_price_kind == "was" else "السعر المشطوب على الموقع"
         lines.append(f"💰 السعر الآن: <b>{_egp(deal.price)}</b> ({label} {_egp(deal.reference)})")
     else:
@@ -189,14 +271,37 @@ def format_deal(p: sqlite3.Row, stats: PriceStats, deal: Deal, group: str = "", 
         seen = (f"ثبت على {_egp(stats.low)}" if stats.low == stats.high
                 else f"من {stats.low / 100:,.0f} إلى {_egp(stats.high)}")
         lines.append(f"📊 الأسعار التي رصدناها: {seen} · {stats.changes_90d} تغيير خلال 90 يومًا · نتابعه منذ {_days(stats.tracked_days)}")
-    if p["list_price"] and deal.kind != "new_product":
-        note = (" (تجاهله، التفاصيل تحت)" if deal.inflated_list_price
-                else f" (خصم معلن {1 - deal.price / p['list_price']:.0%})" if p["list_price"] > deal.price else "")
-        lines.append(f"🏷 السعر المشطوب على الموقع: {_egp(p['list_price'])}{note}")
+    if p["list_price"] and not claim:
+        claimed = (" (تجاهله، التفاصيل تحت)" if deal.inflated_list_price
+                   else f" (خصم معلن {1 - deal.price / p['list_price']:.0%})" if p["list_price"] > deal.price else "")
+        lines.append(f"🏷 السعر المشطوب على الموقع: {_egp(p['list_price'])}{claimed}")
 
     # --- why we think it's real
-    lines += ["", "🧠 <b>ليه ده عرض حقيقي؟</b>"]
-    if deal.kind == "new_product":
+    if deal.kind == "manual":
+        lines += ["", "🧠 <b>ليه بنبعته؟</b>", "• اختاره فريقنا بنفسه، مش من القواعد التلقائية"]
+        if note:
+            lines.append(f"• ملاحظة: {e(note)}")
+        if claim:
+            lines.append(f"• المنتج جديد علينا (نتابعه منذ {_days(stats.tracked_days)}): الخصم معلن من الموقع ولم نتحقق منه من سجل أسعارنا")
+        elif not deal.reference_days:
+            lines.append("• لا يوجد سجل أسعار ولا سعر مشطوب نقارن به")
+        elif deal.drop >= 0.005:
+            lines.append(f"• أقل من سعره المعتاد بنسبة {deal.drop:.0%} (السعر المعتاد = السعر الذي ثبت عليه أغلب الوقت خلال آخر {_days(deal.reference_days)}، "
+                         "وليس السعر المشطوب)")
+            if deal.share_at_or_below:
+                lines.append(f"• كان بهذا السعر أو أقل {deal.share_at_or_below:.0%} من الوقت")
+            else:
+                lines.append("• لم يكن بهذا السعر أو أقل في أي وقت تابعناه فيه")
+        elif deal.drop > -0.005:
+            lines.append("• السعر الآن هو سعره المعتاد تقريبًا: ليس خصمًا على سعره")
+        else:
+            lines.append(f"• السعر الآن أعلى من سعره المعتاد بنسبة {-deal.drop:.0%}: ليس خصمًا على سعره")
+        if deal.all_time_low:
+            lines.append(f"• أقل سعر رأيناه على الإطلاق (أقل سعر سابق {_egp(deal.previous_low)})")
+        if deal.inflated_list_price:
+            lines.append(f"• السعر المشطوب ({_egp(deal.inflated_list_price)}) أعلى من أي سعر رأيناه ({_egp(stats.high)}): خصم وهمي من الموقع، حسابنا لا يعتمد عليه")
+    elif deal.kind == "new_product":
+        lines += ["", "🧠 <b>ليه ده عرض حقيقي؟</b>"]
         lines.append(f"• المنتج جديد علينا (نتابعه منذ {_days(stats.tracked_days)}): الخصم معلن من الموقع ولم نتحقق منه من سجل أسعارنا")
         proof = [SIGNAL_TEXT[c].format(n=f"{n:,}" if n is not None else "") for c, n in deal.signals
                  if c in ("mega_deal", "limited_deal", "lowest_365d") or (c == "only_left" and n is not None and n <= 3)]
@@ -205,6 +310,7 @@ def format_deal(p: sqlite3.Row, stats: PriceStats, deal: Deal, group: str = "", 
         if proof:
             lines.append("• الدليل الداعم: " + e(" · ".join(proof)))
     else:
+        lines += ["", "🧠 <b>ليه ده عرض حقيقي؟</b>"]
         lines.append(f"• أقل من سعره المعتاد بنسبة {deal.drop:.0%} (السعر المعتاد = السعر الذي ثبت عليه أغلب الوقت خلال آخر {_days(deal.reference_days)}، "
                      "وليس السعر المشطوب)")
         if deal.kind == "early_drop":
@@ -219,11 +325,12 @@ def format_deal(p: sqlite3.Row, stats: PriceStats, deal: Deal, group: str = "", 
             lines.append("• الانخفاض أكبر من 60%: غالبًا خطأ في التسعير، قد يُلغى الطلب أو يُصحّح السعر خلال ساعات")
         if deal.inflated_list_price:
             lines.append(f"• السعر المشطوب ({_egp(deal.inflated_list_price)}) أعلى من أي سعر رأيناه ({_egp(stats.high)}): خصم وهمي من الموقع، حسابنا لا يعتمد عليه")
-    lines.append(f"• الثقة {CONFIDENCE[deal.confidence]}: " + {
-        "high": "سجل أسعار طويل (14 يومًا فأكثر) وسعر نادر فعلًا",
-        "medium": "سجل أسعار كافٍ (3 أيام فأكثر) لكنه ليس طويلًا بعد، أو السعر تكرر قليلًا",
-        "low": "نعتمد على كلام الموقع أو على سجل قصير",
-    }[deal.confidence])
+    if deal.kind != "manual" or deal.drop >= 0.005:
+        lines.append(f"• الثقة {CONFIDENCE[deal.confidence]}: " + {
+            "high": "سجل أسعار طويل (14 يومًا فأكثر) وسعر نادر فعلًا",
+            "medium": "سجل أسعار كافٍ (3 أيام فأكثر) لكنه ليس طويلًا بعد، أو السعر تكرر قليلًا",
+            "low": "نعتمد على كلام الموقع أو على سجل قصير",
+        }[deal.confidence])
 
     # --- what to check before buying
     checks = []
@@ -243,6 +350,7 @@ def format_deal(p: sqlite3.Row, stats: PriceStats, deal: Deal, group: str = "", 
         checks.append("شارات الموقع (دعاية، لا نعتمد عليها): " + e(" · ".join(badges)))
     if past_alerts:
         checks.append(f"نبّهنا على هذا المنتج {past_alerts} مرة من قبل")
+    checks += extra_checks
     if deal.confidence == "low":
         checks.append("افتح صفحة المنتج وتأكد من السعر والحالة (جديد/مستعمل) قبل الدفع")
     if checks:
@@ -255,6 +363,10 @@ def format_deal(p: sqlite3.Row, stats: PriceStats, deal: Deal, group: str = "", 
 
 def _egp(minor: int | None) -> str:
     return "-" if minor is None else f"{minor / 100:,.0f} جنيه"
+
+
+def _hours(hours: float) -> str:
+    return f"{hours:.0f} ساعة" if hours < 48 else _days(hours / 24)
 
 
 def _days(days: float) -> str:

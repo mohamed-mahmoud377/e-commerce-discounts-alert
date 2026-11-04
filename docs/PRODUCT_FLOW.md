@@ -287,6 +287,28 @@ Early drops (since 27 October) and Path A alerts are never held.
 minutes... up to an hour, at most 10 times; someone who blocked the bot is marked `blocked` and skipped.
 System warnings and the daily report go only to the owner and the helper admins.
 
+### 8b. An alert sent by hand (web UI, since 4 Nov 2026)
+
+Sometimes a product is worth telling people about although the rules stay quiet: a 12% drop on something
+that rarely moves, a coupon the listing doesn't show, a price the slice will only re-crawl later. An admin
+opens the product in the web UI and presses **Send alert…**. Steps 6 and 7 are skipped; everything else is
+the same as for an automatic alert:
+
+- **The numbers come from the product's own history** (`pricing.manual_deal`): the drop is measured
+  against the 90-day typical price, with the all-time low, how often it was this cheap and a confidence
+  level, exactly as in Path A. With no history yet it falls back to the shop's crossed-out price and says
+  that is the shop's claim; with neither it shows the price alone. A price at or above the usual one is
+  never called a discount: the title has no "خصم" and the message says it is not below its usual price.
+- **The preview** shows these numbers, the exact Telegram message, whether the rules would have sent it
+  (and which shop rule stopped it, if one did), earlier alerts for the product and, when the price was last
+  seen 2 hours ago or more, a warning (also in the message: "check it before paying"). The admin can add a
+  note of up to 300 characters (a coupon code, a bank offer), shown in the message as "ملاحظة".
+- **Sending** writes an `alerts` row of kind `manual` (`dedupe_key` `manual:<admin>`), titled
+  "📣 عرض مختار", with the other shops' prices and a screenshot, and the sender hands it to every active
+  subscriber. It counts as an alert: the rules won't repeat the product within a week unless the price
+  falls another 5%. A second manual alert for the same product within 10 minutes is refused (a double
+  click). A sold-out product or one without a price can't be sent.
+
 ## 9. One product, start to finish (a worked timeline)
 
 A Samsung 55" TV in the TVs group (`min_price` 3,000, `min_drop` 20%, crawled about every 20 minutes),
@@ -363,4 +385,5 @@ days later. Those are the alerts worth acting on.
 | 6 Decision | `pricing.evaluate()` (`STRONG_SIGNALS`, `LOW_STOCK_EVERYWHERE` from the `low_stock_noise` shop rules) |
 | 7 Extra checks | `alerts.check_product()`: `shop_rules.stops()`, `db.best_other_offer()`, `_recently_alerted()` |
 | 8 Score, message, hold, delivery | `pricing.evaluate()` (score), `alerts.format_deal()`, `AlertSender.confirm / fan_out / deliver` |
+| 8b Sent by hand | `pricing.manual_deal()`, `alerts.manual_alert()`, `GET/POST /api/products/{id}/alert` |
 | Thresholds | `[alerts]` in the config, `config.AlertRules` |

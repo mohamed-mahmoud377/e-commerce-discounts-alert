@@ -4,7 +4,7 @@ from conftest import T0
 
 from deals.config import AlertRules
 from deals.models import LIMITED_DEAL, LOWEST_365D, SELLING_FAST
-from deals.pricing import Point, ProductView, compute_stats, evaluate, weighted_median
+from deals.pricing import Point, ProductView, compute_stats, evaluate, manual_deal, weighted_median
 
 RULES = AlertRules()
 EGP = 100
@@ -182,3 +182,24 @@ def test_only_n_left_is_not_evidence_on_amazon():
     amazon = ProductView(700 * EGP, True, list_price=1000 * EGP, list_price_kind="list", stock_left=2, site="amazon_eg")
     assert evaluate(noon, s, RULES).kind == "new_product"
     assert evaluate(amazon, s, RULES) is None  # 45% of amazon.eg listings say "only N left"
+
+
+def test_manual_deal_measures_against_own_history_whatever_the_rules_say():
+    # 12% below its usual 10,000: under the 20% the rules want, but an admin can still send it
+    s = compute_stats(series((0, 10000), (60, 8800)), now=days(60.01))
+    assert evaluate(view(8800), s, RULES) is None
+    deal = manual_deal(view(8800), s, RULES)
+    assert (deal.kind, deal.reference, deal.drop, deal.confidence) == ("manual", 10000 * EGP, 0.12, "high")
+    assert deal.all_time_low and deal.previous_low == 10000 * EGP and round(deal.reference_days) == 60
+    # a price above the usual one is sent as it is: a negative drop, never called a discount
+    up = manual_deal(view(10500), compute_stats(series((0, 10000), (60, 10500)), now=days(60.01)), RULES)
+    assert up.drop == -0.05 and up.confidence == "low" and up.score == 0
+
+
+def test_manual_deal_without_history_uses_the_shop_claim_or_nothing():
+    fresh = compute_stats(series((0, 900)), now=days(0.01))
+    claim = manual_deal(view(900, list_price=1200 * EGP, list_price_kind="list"), fresh, RULES)
+    assert (claim.reference, claim.drop, claim.list_price_kind, claim.confidence) == (1200 * EGP, 0.25, "list", "low")
+    bare = manual_deal(view(900), fresh, RULES)
+    assert (bare.reference, bare.drop, bare.list_price_kind, bare.reference_days) == (900 * EGP, 0.0, None, 0)
+    assert manual_deal(ProductView(price=900 * EGP, in_stock=False), fresh, RULES) is None  # sold out

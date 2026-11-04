@@ -350,3 +350,59 @@ def test_shops_page_data(client):
     assert client.get("/api/shops/nope_eg").status_code == 404
     page = client.get("/ui").text  # the page draws its shop lists from deals/shops.py
     assert all(f'"name": "{name}"' in page for name in SHOPS) and "__SHOPS__" not in page
+
+
+def test_an_admin_sends_an_alert_by_hand(client, cfg):
+    from deals import alerts
+    conn = client.app.state.conn
+    pid = conn.execute("SELECT id FROM products WHERE sku = 'TV1'").fetchone()[0]
+    assert client.get(f"/api/products/{pid}/alert").status_code == 401  # admins only
+    client.get("/ui/login", params={"token": "admin-secret"}, follow_redirects=False)
+    with conn:  # 30 days at 25,000, now 20,000: a real 20% drop
+        conn.execute("UPDATE price_history SET observed_at = ?, price = 2500000 WHERE product_id = ?",
+                     (db.iso(utcnow() - timedelta(days=30)), pid))
+        conn.execute("UPDATE products SET price = 2500000 WHERE id = ?", (pid,))
+        db.record(conn, Listing("amazon_eg", "TV1", "Samsung 55 inch TV", "https://x/TV1", 2_000_000, 2_600_000, "EGP", True),
+                  grp="TVs", now=utcnow())  # with a crossed-out price: its line must not take the note's place
+        conn.execute("INSERT INTO subscribers (chat_id, name, status, created_at, updated_at) VALUES (1, 'a', 'active', ?, ?)",
+                     (db.iso(utcnow()), db.iso(utcnow())))
+    d = client.get(f"/api/products/{pid}/alert", params={"note": "كوبون <SAVE10>"}).json()
+    assert (d["price"], d["reference"], d["drop"], d["saving"], d["basis"]) == (2_000_000, 2_500_000, 0.2, 500_000, "history")
+    assert d["recipients"] == 1 and d["past_alerts"] == 0 and d["last_alert"] is None
+    assert "📣 عرض مختار · خصم 20%" in d["message"] and "ملاحظة: كوبون &lt;SAVE10&gt;" in d["message"]
+    assert "20,000 جنيه" in d["message"] and "توفّر 5,000 جنيه" in d["message"]
+    assert "🏷 السعر المشطوب على الموقع: 26,000 جنيه (خصم معلن 23%)" in d["message"]
+    assert conn.execute("SELECT COUNT(*) FROM alerts").fetchone()[0] == 0  # a preview sends nothing
+    r = client.post(f"/api/products/{pid}/alert", json={"note": "كوبون <SAVE10>"}).json()
+    row = conn.execute("SELECT * FROM alerts WHERE id = ?", (r["alert_id"],)).fetchone()
+    assert (row["kind"], row["price"], row["reference_price"], row["drop_pct"], row["dedupe_key"]) == (
+        "manual", 2_000_000, 2_500_000, 0.2, "manual:admin_token")
+    assert row["message"] == d["message"] and row["confirm_until"] is None
+    # a second click within 10 minutes is refused; the automatic rules now count it as alerted
+    assert client.post(f"/api/products/{pid}/alert", json={}).status_code == 409
+    assert client.get(f"/api/products/{pid}/alert").json()["repeat"] is True
+    # it goes to the subscribers like any deal alert
+    sender = alerts.AlertSender(replace(cfg, telegram_token="t", telegram_chat_id="1"),
+                                None, telegram=object())
+    sender.fan_out(conn, utcnow())
+    assert conn.execute("SELECT chat_id FROM deliveries WHERE alert_id = ?", (r["alert_id"],)).fetchall()[0][0] == 1
+    # sold out: nothing to alert
+    with conn:
+        db.record(conn, Listing("amazon_eg", "TV1", "Samsung 55 inch TV", "https://x/TV1", None, None, "EGP", False),
+                  grp="TVs", now=utcnow())
+    assert client.get(f"/api/products/{pid}/alert").status_code == 409
+    assert client.get("/api/products/999999/alert").status_code == 404
+
+
+def test_a_manual_alert_above_the_usual_price_says_so(client):
+    client.get("/ui/login", params={"token": "admin-secret"}, follow_redirects=False)
+    conn = client.app.state.conn
+    pid = conn.execute("SELECT id FROM products WHERE sku = 'TV1'").fetchone()[0]
+    with conn:  # 30 days at 20,000, now 21,000
+        conn.execute("UPDATE price_history SET observed_at = ? WHERE product_id = ?", (db.iso(utcnow() - timedelta(days=30)), pid))
+        db.record(conn, Listing("amazon_eg", "TV1", "Samsung 55 inch TV", "https://x/TV1", 2_100_000, None, "EGP", True),
+                  grp="TVs", now=utcnow())
+    d = client.get(f"/api/products/{pid}/alert").json()
+    assert d["drop"] == -0.05 and d["rules"] is None
+    assert "<b>📣 عرض مختار</b>" in d["message"] and "خصم" not in d["message"].split("\n")[0]
+    assert "أعلى من سعره المعتاد بنسبة 5%" in d["message"] and "توفّر" not in d["message"]

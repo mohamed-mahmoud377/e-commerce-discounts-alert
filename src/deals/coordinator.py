@@ -679,6 +679,29 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
             app.state.watchdog.next_match = None  # the next watchdog round (within a minute) re-matches
         return {"ok": True}
 
+    class ManualAlertIn(BaseModel):
+        note: str = ""
+
+    @app.get("/api/products/{product_id}/alert", dependencies=[Depends(admin)])
+    def manual_alert_preview(product_id: int, note: str = ""):
+        """What a manual alert for this product would say (alerts.manual_alert): the numbers from its own
+        history, the exact Telegram message, and whether the automatic rules would have sent one."""
+        with closing(read_conn()) as rc:
+            try:
+                return alerts.manual_alert(rc, cfg, product_id, utcnow(), note=note)
+            except alerts.ManualAlertError as e:
+                raise HTTPException(404 if "no such" in str(e) else 409, str(e))
+
+    @app.post("/api/products/{product_id}/alert", dependencies=[Depends(admin)])
+    def manual_alert_send(product_id: int, body: ManualAlertIn, request: Request):
+        """Send a deal alert for this product now, whatever the rules say, to every subscriber."""
+        sender = admin_user(request) or "?"
+        with closing(db.connect(cfg.db_path)) as wc, wc:
+            try:
+                return alerts.manual_alert(wc, cfg, product_id, utcnow(), note=body.note, sender=sender, send=True)
+            except alerts.ManualAlertError as e:
+                raise HTTPException(404 if "no such" in str(e) else 409, str(e))
+
     @app.post("/api/report", dependencies=[Depends(admin)])
     def report_now():
         """Queue the daily report for the admins now (the alert sender delivers it)."""

@@ -461,7 +461,7 @@ const LABEL = {Rules: 'Rules & watches'};
 // Every shop from deals/shops.py (name, label, badge, kind, kind_label, url, home_only, doc), in its order.
 const SHOPS = __SHOPS__, SHOP_KINDS = [...new Set(SHOPS.map(s => s.kind))];
 const KINDS = {price_drop: ['Price drop', 'info'], all_time_low: ['All-time low', 'ok'], early_drop: ['Early drop', 'idle'],
-  new_product: ['New product', 'new'], price_error: ['Price error', 'fail'], system: ['System', 'warn']};
+  new_product: ['New product', 'new'], price_error: ['Price error', 'fail'], manual: ['Sent by hand', 'new'], system: ['System', 'warn']};
 let tab = 'Overview', timer = null, ov = null, toastTimer = null;
 const $ = s => document.querySelector(s);
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -1051,7 +1051,8 @@ async function productPage(id) {
       <div style='flex:1 1 480px;min-width:0;display:flex;flex-direction:column;gap:10px'>
         <h1 style='margin:0;font-size:24px;line-height:1.3;letter-spacing:-.01em'>${esc(p.title)}</h1>
         <div class='row' style='gap:6px'>${pill('idle', shop(p.site))}${p.grp ? pill('idle', p.grp) : ''}${pill('idle', p.sku)}${p.seller ? pill('idle', 'Sold by ' + p.seller) : ''}${p.rating ? pill('idle', `${p.rating.toFixed(1)} stars · ${(p.reviews || 0).toLocaleString()} reviews`) : ''}${stockPill(p)} ${badges}</div>
-        <div class='row'><a class='btn pri' href='${esc(p.url)}' target='_blank' rel='noopener'>Open in ${esc(shop(p.site))} ↗</a></div>
+        <div class='row'><a class='btn pri' href='${esc(p.url)}' target='_blank' rel='noopener'>Open in ${esc(shop(p.site))} ↗</a>
+          ${d.admin ? `<button class='btn' type='button' onclick='az.note="";alertPanel(${p.id})'>Send alert…</button>` : ''}</div>
       </div>
       <div class='card' style='flex:0 1 340px;padding:18px;display:flex;flex-direction:column;gap:8px'>
         <div class='sub'>Price now</div>
@@ -1060,6 +1061,7 @@ async function productPage(id) {
         ${p.list_price ? `<div style='font-size:13px;line-height:1.5'><span class='muted'>Shop shows</span> <s class='num'>${money(p.list_price)}</s>${p.price && p.list_price > p.price ? ` <span class='muted'>(claims ${Math.round(100 * (1 - p.price / p.list_price))}% off).</span>` : ''}
           ${inflated ? `<span class='muted'> We never saw it above ${money(s.high)}, so the crossed-out price is ignored.</span>` : ''}</div>` : ''}
       </div></header>
+    <section id='alertbox' class='card' hidden style='padding:18px;display:flex;flex-direction:column;gap:14px'></section>
     <section class='stats' aria-label='Price statistics'>${stat('Typical, 30 days', money(s.typical_30d))}${stat('Typical, 90 days', money(s.typical_90d))}${stat('Lowest seen', money(s.low), 'down')}
       ${stat('Highest seen', money(s.high))}${stat('Tracked for', s.tracked_days + ' days')}${stat('Changes, 90 days', s.changes_90d)}
       ${stat('Time at or below now', s.share_at_or_below == null ? '—' : Math.round(s.share_at_or_below * 100) + '%')}${stat('Last checked', ago(p.last_seen_at))}</section>
@@ -1140,6 +1142,46 @@ async function shopPage(name) {
         d.uptime.map(c => `<tr><td class='muted nw'>${hhmm(c.at)}</td><td class='nw'>${who(c.kind, c.name)}</td>
           <td class='nw'>${c.old_state ? pill(stateClass(c.old_state), c.old_state) + ' → ' : ''}${pill(stateClass(c.new_state), c.new_state, 1)}</td><td class='muted'>${esc(c.reason || '')}</td></tr>`), 'No changes in 7 days')}
     </div>`;
+}
+// Sending an alert by hand (admins): the server works out the numbers from the product's own history and
+// writes the message (alerts.manual_alert); this shows them, what the rules think, and sends on confirm.
+const az = {note: ''};
+async function alertPanel(id) {
+  const box = $('#alertbox'); box.hidden = false;
+  let d;
+  try { d = await api(`/api/products/${id}/alert?note=${encodeURIComponent(az.note)}`); }
+  catch (e) { box.innerHTML = `<div class='row' style='justify-content:space-between'><b>Can't send an alert</b><button class='btn small' type='button' onclick="$('#alertbox').hidden=true">Close</button></div><div class='muted'>${esc(e.message)}</div>`; return; }
+  const cell = (k, v, cls = '') => `<div class='${cls}'><div class='k'>${k}</div><div class='v'>${v}</div></div>`;
+  const ref = {history: 'Typical, 90 days', shop_claim: "Shop's crossed-out price", none: 'Nothing to compare'}[d.basis];
+  const down = d.drop >= 0.005, up = d.drop <= -0.005;
+  const notes = [
+    d.rules ? pill('ok', `The rules would send it too (${(KINDS[d.rules] || [d.rules])[0].toLowerCase()})`, 1)
+      : pill('warn', d.stopped_by ? `The rules would not send it: shop rule ${d.stopped_by}` : 'The rules would not send it', 1),
+    d.basis === 'history' ? pill('idle', `${d.history_days} days of history`) : pill('warn', d.basis === 'shop_claim' ? 'no history: measured against the shop\'s claim' : 'no history, no crossed-out price'),
+    d.all_time_low ? pill('ok', 'lowest price we have seen') : '',
+    d.share_at_or_below ? pill('idle', `this cheap ${Math.round(d.share_at_or_below * 100)}% of the time`) : '',
+    pill(d.confidence === 'high' ? 'ok' : d.confidence === 'medium' ? 'info' : 'warn', 'confidence ' + d.confidence),
+    d.seen_hours >= 2 ? pill('warn', `price last seen ${ago(new Date(Date.now() - d.seen_hours * 3600e3).toISOString())} ago`, 1) : '',
+    d.repeat || d.last_alert ? pill(d.repeat ? 'warn' : 'idle', `alerted before: ${hhmm(d.last_alert.created_at)} at ${money(d.last_alert.price)}`, 1) : '',
+  ].filter(Boolean).join(' ');
+  box.innerHTML = `<div class='row' style='justify-content:space-between'><h2 style='margin:0;font-size:16px'>Send an alert by hand</h2>
+      <button class='btn small' type='button' onclick="$('#alertbox').hidden=true">Close</button></div>
+    <div class='box3'>${cell('Now', money(d.price))}${cell(ref, d.basis === 'none' ? '—' : money(d.reference))}
+      ${cell(d.basis === 'none' ? 'Drop' : up ? 'Above it by' : 'Drop', d.basis === 'none' ? '—' : (up ? '▲ ' : '▼ ') + Math.abs(Math.round(d.drop * 100)) + '%' + (down ? ` · saves ${money(d.saving)}` : ''), down ? 'good' : '')}</div>
+    <div class='row' style='gap:6px'>${notes}</div>
+    <label class='sub' for='anote' style='font-weight:500'>Note for subscribers (optional, shown in the message)</label>
+    <div class='row'><input id='anote' class='field' dir='auto' style='flex:1 1 300px' maxlength='300' placeholder='e.g. كوبون خصم إضافي 10%: SAVE10' value='${esc(az.note)}' onchange='az.note=this.value;alertPanel(${id})'>
+      <button class='btn small' type='button' onclick="az.note=$('#anote').value;alertPanel(${id})">Update preview</button></div>
+    <div class='sub' style='font-weight:500'>Telegram message</div><div class='bubble' dir='rtl'>${esc(plain(d.message))}</div>
+    <div class='row'><button class='btn pri' type='button' onclick='sendAlert(${id}, ${d.recipients})'>Send to ${d.recipients} subscriber${d.recipients === 1 ? '' : 's'}</button>
+      <span class='sub'>with a screenshot of the shop's page when a worker can take one; counts as an alert, so the rules won't repeat it within a week unless the price falls 5% more</span></div>`;
+  box.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+}
+async function sendAlert(id, n) {
+  az.note = ($('#anote') || {}).value || az.note;
+  if (!confirm(`Send this alert to ${n} subscriber${n === 1 ? '' : 's'} on Telegram now?`)) return;
+  try { const r = await api(`/api/products/${id}/alert`, 'POST', {note: az.note}); toast(`Alert #${r.alert_id} is on its way`); az.note = ''; render(); }
+  catch (e) { toast(e.message); }
 }
 // Crawling paused by hand: the active pauses, and (admin) a form to pause or resume. A pause ends by itself.
 function pausesCard(d) {
