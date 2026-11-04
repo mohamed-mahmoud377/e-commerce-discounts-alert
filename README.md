@@ -90,7 +90,8 @@ Everything is driven by `make` from your Mac:
 | `make alerts` / `make movers` | recent alerts / price moves, from the server |
 | `make logs` | follow the server logs |
 | `make dbweb` / `make sql` / `make db` | look at the database (see below) |
-| `make mac-worker-env` | fetch this Mac's worker token from the server into `worker.env` |
+| `make mac-worker-env` | fetch this Mac's worker token from the server into `worker.env` (every shop in `DEALS_SITES`) |
+| `make new-shop NAME=... LABEL=... URL=...` | start a new shop: adapter and doc skeletons plus the checklist (`tests/test_shops.py` checks it) |
 | `make install-mac-worker` | run the worker in the background on this Mac (starts at login, restarts on crash) |
 | `make uninstall-mac-worker` | remove it |
 | `make mac-worker` | run the worker in the foreground instead (Ctrl+C to stop) |
@@ -156,7 +157,7 @@ Prices are stored in piastres (divide by 100 for EGP); times are UTC.
    and restart the coordinator.
 2. On the other machine: clone the repo, create the venv as in Quick start, then:
    ```bash
-   DEALS_COORDINATOR=http://207.154.206.127:8787 DEALS_TOKEN=... DEALS_SITES=noon_eg,amazon_eg,jumia_eg,cairosales_eg,2b_eg,btech_eg,dream2000_eg,carrefour_eg,dubaiphone_eg,hardwaremarket_eg \
+   DEALS_COORDINATOR=http://207.154.206.127:8787 DEALS_TOKEN=... DEALS_SITES=noon_eg,amazon_eg,jumia_eg,cairosales_eg,2b_eg,btech_eg,dream2000_eg,carrefour_eg,dubaiphone_eg,hardwaremarket_eg,amazon_now_eg \
      .venv/bin/deals worker
    ```
 That's all. The coordinator never gives two workers on the same internet connection the

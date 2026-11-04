@@ -2,7 +2,7 @@ HOST ?= root@207.154.206.127
 HOST_IP = $(lastword $(subst @, ,$(HOST)))
 SSH_DEALS = ssh $(HOST) runuser -u deals -- /opt/deals/.venv/bin/deals
 
-.PHONY: test deploy keep-awake allow-sleep save-logs ui ui-token ssh restart-server restart-mac-worker health devices dashboard events worker-log report telegram db sql dbweb status errors uptime alerts movers models pause resume pauses logs mac-worker-env mac-worker install-mac-worker uninstall-mac-worker
+.PHONY: test deploy keep-awake allow-sleep save-logs ui ui-token ssh restart-server restart-mac-worker health devices dashboard events worker-log report telegram db sql dbweb status errors uptime alerts movers models pause resume pauses logs new-shop mac-worker-env mac-worker install-mac-worker uninstall-mac-worker
 
 test:                 ## run the test suite
 	.venv/bin/pytest -q
@@ -94,6 +94,9 @@ pauses:               ## list active pauses
 
 logs:                 ## follow server logs
 	ssh $(HOST) journalctl -u deals-coordinator -u deals-worker -f -n 100
+
+new-shop:             ## start a new shop: adapter + doc skeletons and the checklist (NAME=elaraby LABEL="El Araby" URL=https://...)
+	.venv/bin/python scripts/new-shop.py NAME="$(NAME)" LABEL="$(LABEL)" URL="$(URL)"
 
 mac-worker-env:       ## write worker.env for this Mac from the server's token
 	scripts/mac-worker-env.sh $(HOST)

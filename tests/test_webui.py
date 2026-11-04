@@ -132,7 +132,7 @@ def test_product_page_data_and_filters(client):
     client.get("/ui/login", params={"token": "admin-secret"}, follow_redirects=False)
     pid = client.get("/api/products?q=samsung").json()["products"][0]["id"]
     d = client.get(f"/api/products/{pid}").json()
-    assert set(d) == {"product", "stats", "history", "alerts", "other_sellers", "same_model", "admin"} and d["admin"]
+    assert set(d) == {"product", "stats", "history", "alerts", "other_sellers", "same_model", "compare", "admin"} and d["admin"]
     assert "share_at_or_below" in d["stats"] and "drop_vs_typical" in d["stats"] and len(d["history"]) == 1
     r = client.get("/api/products?limit=0").json()
     assert r["products"] == [] and r["groups"] == ["TVs"]
@@ -148,8 +148,12 @@ def test_product_page_data_and_filters(client):
                                 None, "EGP", True), grp="TVs", now=utcnow())
     matching.rebuild(conn, utcnow())
     tv2 = client.get("/api/products?q=UA55DU7000&sort=dear").json()["products"][0]["id"]
-    same = client.get(f"/api/products/{tv2}").json()["same_model"]
+    page = client.get(f"/api/products/{tv2}").json()
+    same = page["same_model"]
     assert same["model"]["code"] == "UA55DU7000" and [o["site"] for o in same["others"]] == ["noon_eg"]
+    # the chart draws the same model at the other shop, with its history
+    assert [(c["site"], c["price"], len(c["history"])) for c in page["compare"]] == [("noon_eg", 1_900_000, 1)]
+    assert client.get(f"/api/products/{pid}").json()["compare"] == []  # no model: nothing to compare
     assert client.get(f"/api/products/{pid}").json()["same_model"]["me"]["status"] == "no_code"
 
 
@@ -307,3 +311,42 @@ def test_match_override_is_admin_only_and_applies_at_the_next_rebuild(client):
     assert client.post(f"/api/products/{a}/match", json={"other": b, "verdict": None}).json() == {"ok": True}
     matching.rebuild(conn, utcnow())
     assert client.get(f"/api/products/{a}").json()["same_model"]["model"] is None
+
+
+def test_shop_filter_takes_a_whole_kind(client):
+    """'kind:<kind>' in a shop filter means every shop of that kind (shops.expand)."""
+    client.get("/ui/login", params={"token": "admin-secret"}, follow_redirects=False)
+    conn = client.app.state.conn
+    with conn:
+        db.record(conn, Listing("noon_eg", "TV9@s", "LG 55 inch TV", "https://x/TV9", 1_500_000, None, "EGP", True),
+                  grp="TVs", now=utcnow())
+        db.record(conn, Listing("btech_eg", "TV8", "TCL 55 inch TV", "https://x/TV8", 1_400_000, None, "EGP", True),
+                  grp="TVs", now=utcnow())
+    sites = lambda q: sorted(p["site"] for p in client.get("/api/products?" + q).json()["products"])  # noqa: E731
+    assert sites("site=kind:marketplace") == ["amazon_eg", "noon_eg"]
+    assert sites("site=kind:electronics") == ["btech_eg"] and sites("site=btech_eg") == ["btech_eg"]
+    assert sites("site=kind:grocery") == [] and len(sites("")) == 3
+    rows = client.get("/api/queries/new_products?site=kind:marketplace&hours=48").json()["rows"]
+    assert len(rows) == 2
+    assert client.get("/api/errors?site=kind:electronics").status_code == 200
+
+
+def test_shops_page_data(client):
+    from deals.shops import SHOPS
+    assert client.get("/api/shops").status_code == 401
+    client.get("/ui/login", params={"token": "admin-secret"}, follow_redirects=False)
+    listed = client.get("/api/shops").json()["shops"]
+    assert [s["name"] for s in listed] == list(SHOPS)  # every shop, also one never crawled yet
+    amazon = listed[0]
+    assert (amazon["label"], amazon["kind"], amazon["home_only"]) == ("Amazon", "marketplace", False)
+    d = client.get("/api/shops/amazon_eg").json()
+    assert d["shop"]["in_stock"] == 1
+    assert set(d) == {"shop", "changes_24h", "devices", "blocks", "groups", "watches", "shop_rules", "errors",
+                      "uptime", "deals"}
+    assert d["changes_24h"] == 1 and [w["name"] for w in d["watches"]] == ["TVs"]
+    assert d["watches"][0]["targets"] == ["category:111"]
+    jumia = client.get("/api/shops/jumia_eg").json()
+    assert "jumia-placeholder-prices" in [r["id"] for r in jumia["shop_rules"]] and jumia["watches"] == []
+    assert client.get("/api/shops/nope_eg").status_code == 404
+    page = client.get("/ui").text  # the page draws its shop lists from deals/shops.py
+    assert all(f'"name": "{name}"' in page for name in SHOPS) and "__SHOPS__" not in page

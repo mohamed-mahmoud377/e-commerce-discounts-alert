@@ -10,12 +10,13 @@ paged in SQL, and the browser does the drawing (charts, filters over a loaded pa
 """
 
 import html
+import json
 import os
 import re
 import sqlite3
 from datetime import datetime, timedelta
 
-from deals import db, health, matching, monitor, scheduler
+from deals import audit, db, health, matching, monitor, scheduler, shop_rules, shops, uptime
 from deals.alerts import product_stats
 from deals.config import Config
 from deals.db import iso
@@ -115,8 +116,11 @@ def _product_filter(q: str, site: str | None, grp: str | None, in_stock_only: bo
     where = " AND ".join("title LIKE ?" for _ in words) or "1"
     if in_stock_only:
         where += " AND in_stock = 1"
-    where += " AND (? IS NULL OR site = ?) AND (? IS NULL OR grp = ?) AND (? IS NULL OR last_change_at >= ?)"
-    return where, [*[f"%{w}%" for w in words], site, site, grp, grp, changed_since, changed_since]
+    sites = shops.expand(site)
+    if sites is not None:
+        where += f" AND site IN ({','.join('?' * len(sites))})"
+    where += " AND (? IS NULL OR grp = ?) AND (? IS NULL OR last_change_at >= ?)"
+    return where, [*[f"%{w}%" for w in words], *(sites or []), grp, grp, changed_since, changed_since]
 
 
 def products(conn: sqlite3.Connection, q: str, site: str | None, limit: int, grp: str | None = None,
@@ -151,6 +155,7 @@ def product(conn: sqlite3.Connection, product_id: int, now: datetime) -> dict | 
     s = product_stats(conn, product_id, now)
     history = conn.execute("SELECT price, list_price, in_stock, observed_at FROM price_history "
                            "WHERE product_id = ? ORDER BY observed_at, id", (product_id,)).fetchall()
+    same = matching.same_model(conn, product_id)
     return {
         "product": dict(row),
         "stats": {"typical_30d": s.typical_30d, "typical_90d": s.typical_90d, "low": s.low, "high": s.high,
@@ -163,8 +168,28 @@ def product(conn: sqlite3.Connection, product_id: int, now: datetime) -> dict | 
             """SELECT id, created_at, kind, price, reference_price, drop_pct, score, error, confirm_until
                FROM alerts WHERE product_id = ? ORDER BY created_at DESC LIMIT 20""", (product_id,))],
         "other_sellers": [dict(o) for o in db.sibling_offers(conn, row["site"], row["sku"], now)],
-        "same_model": matching.same_model(conn, product_id),
+        "same_model": same,
+        "compare": _compare(conn, row, same, history[0]["observed_at"] if history else iso(now)),
     }
+
+
+COMPARE_SHOPS = 5  # other shops drawn on the product's price chart (the chart's colours: --cmp1..5)
+
+
+def _compare(conn: sqlite3.Connection, row: sqlite3.Row, same: dict | None, since: str) -> list[dict]:
+    """The same model's price history at other shops, for the chart: the cheapest usable listing of each
+    other shop (same_model lists them cheapest first), from the shop's last price before `since` on."""
+    out, seen = [], {row["site"]}
+    for o in (same or {}).get("others", []) if (same or {}).get("model") else []:
+        if o["status"] != "model" or o["site"] in seen or len(out) == COMPARE_SHOPS:
+            continue
+        seen.add(o["site"])
+        points = conn.execute(
+            """SELECT price, in_stock, observed_at FROM price_history WHERE product_id = ? AND observed_at >= COALESCE(
+                 (SELECT MAX(observed_at) FROM price_history WHERE product_id = ? AND observed_at < ?), '')
+               ORDER BY observed_at, id""", (o["id"], o["id"], since)).fetchall()
+        out.append({"id": o["id"], "site": o["site"], "price": o["price"], "history": [dict(h) for h in points]})
+    return out
 
 
 def subscribers(conn: sqlite3.Connection, now: datetime) -> list[dict]:
@@ -193,6 +218,67 @@ def rules(cfg: Config) -> dict:
     }
 
 
+def shop_list(conn: sqlite3.Connection, now: datetime) -> list[dict]:
+    """Every shop (shops.SHOPS order) with its products, crawl state, uptime and devices: the Shops page."""
+    since = iso(now - timedelta(days=1))
+    by_site = lambda sql, *a: {r[0]: r[1] for r in conn.execute(sql, a)}  # noqa: E731
+    crawl = {r["site"]: r for r in monitor.sites(conn, now)}
+    status = {r["name"]: dict(r) for r in conn.execute("SELECT name, state, since, reason FROM status WHERE kind = 'shop'")}
+    deals = by_site("""SELECT p.site, COUNT(*) FROM alerts a JOIN products p ON p.id = a.product_id
+                       WHERE a.created_at >= ? AND a.kind != 'system' GROUP BY p.site""", since)
+    blocked = by_site("SELECT site, COUNT(*) FROM blocks WHERE until > ? GROUP BY site", iso(now))
+    problems = by_site("""SELECT site, COUNT(*) FROM errors WHERE site IS NOT NULL AND last_seen_at >= ?
+                          AND (resolved_at IS NULL OR last_seen_at > resolved_at) GROUP BY site""", since)
+    devices = monitor.devices(conn, now)
+    out = []
+    for s in shops.for_ui():
+        name, c = s["name"], crawl.get(s["name"]) or {}
+        on = [(d, x) for d in devices for x in d["sites"] if x["site"] == name]
+        out.append({**s, "products": c.get("products") or 0,
+                    "slices": c.get("slices") or 0, "running": c.get("running") or 0, "failing": c.get("failing") or 0,
+                    "last_done": c.get("last_done"), "deals_24h": deals.get(name, 0), "blocked_ips": blocked.get(name, 0),
+                    "problems_24h": problems.get(name, 0), "status": status.get(name),
+                    "devices": len(on), "devices_working": sum(d["online"] and x["state"] in ("ok", "crawling", "idle")
+                                                               for d, x in on)})
+    return out
+
+
+def shop_page(conn: sqlite3.Connection, cfg: Config, name: str, now: datetime) -> dict | None:
+    """One shop end to end: what the Shops list shows plus its devices, blocks, watch groups, slices,
+    shop rules, open problems, uptime history and latest deals."""
+    summary = next((s for s in shop_list(conn, now) if s["name"] == name), None)
+    if summary is None:
+        return None
+    # one shop's rows only: across every shop this count reads the whole table (0.37 s on the droplet)
+    summary["in_stock"] = conn.execute("SELECT COUNT(*) FROM products WHERE site = ? AND in_stock", (name,)).fetchone()[0]
+    devices = [{"device": d["name"], "online": d["online"], "ip": d["ip"], **x}
+               for d in monitor.devices(conn, now) for x in d["sites"] if x["site"] == name]
+    groups = [dict(r) for r in conn.execute(
+        """SELECT grp, COUNT(*) slices, SUM(failures > 0) failing, MIN(interval_s) / 60 fastest_min,
+                  MAX(interval_s) / 60 slowest_min, MAX(last_done_at) last_done, SUM(last_count) products
+           FROM jobs WHERE site = ? AND kind = 'crawl' GROUP BY grp ORDER BY grp""", (name,))]
+    watches = [{**w, "targets": next(x.targets.get(name, []) for x in cfg.watches if x.name == w["name"])}
+               for w in rules(cfg)["watches"] if name in w["sites"]]
+    return {
+        "shop": summary,
+        "changes_24h": conn.execute("""SELECT COUNT(*) FROM price_history h JOIN products p ON p.id = h.product_id
+                                       WHERE p.site = ? AND h.observed_at >= ?""",
+                                    (name, iso(now - timedelta(days=1)))).fetchone()[0],
+        "devices": devices,
+        "blocks": [dict(r) for r in conn.execute("SELECT * FROM blocks WHERE site = ? ORDER BY updated_at DESC LIMIT 20",
+                                                 (name,))],
+        "groups": groups,
+        "watches": watches,
+        "shop_rules": [r for r in shop_rules.summary(conn, sample=5) if r["site"] == name],
+        "errors": audit.listing(conn, now, days=7, site=name, open_only=True, limit=20),
+        "uptime": uptime.changes(conn, now, days=7, name=name, limit=30),
+        "deals": [dict(r) for r in conn.execute(
+            """SELECT a.id, a.created_at, a.kind, a.price, a.drop_pct, a.product_id, p.title, p.grp
+               FROM alerts a JOIN products p ON p.id = a.product_id
+               WHERE p.site = ? AND a.kind != 'system' ORDER BY a.created_at DESC LIMIT 10""", (name,))],
+    }
+
+
 def login_page(error: str = "") -> str:
     msg = f"<p class='err' role='alert'>{html.escape(error)}</p>" if error else ""
     return f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
@@ -204,7 +290,7 @@ h1{{margin:0;font-size:20px}} label{{font-size:13px;font-weight:500}} .field{{mi
 .err{{margin:0;padding:10px 12px;border-radius:8px;background:var(--fail-bg);color:var(--fail-fg);font-size:13px}}
 .btn.pri{{min-height:44px;justify-content:center}}</style></head><body><div class='box'>
 <div class='brand' style='padding:0'><div class='logo' style='width:40px;height:40px;font-size:20px'>d</div>
-<div><div style='font-weight:600;font-size:20px'>deals</div><div class='muted' style='font-size:13px'>price tracker for 8 Egyptian shops</div></div></div>
+<div><div style='font-weight:600;font-size:20px'>deals</div><div class='muted' style='font-size:13px'>price tracker for {len(shops.SHOPS)} Egyptian shops</div></div></div>
 <form method='post' action='/ui/login'><h1>Log in</h1>
 {msg}<label for='username'>Username</label>
 <input id='username' class='field' name='username' autofocus autocomplete='username' autocapitalize='none'>
@@ -220,13 +306,13 @@ THEME_INIT = """<script>try{const t=localStorage.getItem('theme');if(t==='light'
 
 _LIGHT = """--bg:#F4F4F1;--card:#FFFFFF;--fg:#16181D;--muted:#5B616E;--line:#E3E4E8;--line2:#EEEFF2;--soft:#FAFAF8;--field:#FFFFFF;
 --fieldline:#C9CCD3;--btnline:#D5D7DD;--link:#2348C9;--linkhover:#16308F;--pri:#2348C9;--sel:#EEF2FF;--selline:#C9D4FF;--selfg:#1D3FB8;
---chipon:#16181D;--chiponfg:#FFFFFF;--down:#0B6B3A;--up:#B23A12;--chart:#2348C9;--typical:#8A8F99;--bar:#ECEDF0;--bubble:#EAF3FB;
+--chipon:#16181D;--chiponfg:#FFFFFF;--down:#0B6B3A;--up:#B23A12;--chart:#2348C9;--typical:#8A8F99;--cmp1:#eb6834;--cmp2:#1baf7a;--cmp3:#eda100;--cmp4:#e87ba4;--cmp5:#6250d6;--bar:#ECEDF0;--bubble:#EAF3FB;
 --ok-bg:#E2F3E9;--ok-fg:#0B6B3A;--warn-bg:#FFF0D4;--warn-fg:#7A4D00;--fail-bg:#FDE4E1;--fail-fg:#A3231A;--info-bg:#E3EAFF;--info-fg:#1D3FB8;
 --idle-bg:#ECEDF0;--idle-fg:#474D59;--new-bg:#F1E8FF;--new-fg:#5B2BA6;--banner-warn:#FFFBF0;--banner-warnline:#F1DDA8;
 --banner-fail:#FFF5F4;--banner-failline:#F3C7C1;--rowwarn:#FFF8E8;--rowfail:#FFF1EF;--side:#16181D;--sideline:#16181D"""
 _DARK = """--bg:#0E1014;--card:#171A21;--fg:#E8EAEE;--muted:#9AA0AC;--line:#2A2E38;--line2:#22262F;--soft:#1C2028;--field:#0E1014;
 --fieldline:#3A3F4B;--btnline:#3A3F4B;--link:#9DB1FF;--linkhover:#C3D0FF;--pri:#3B5BFF;--sel:#182040;--selline:#2E3A6E;--selfg:#C3D0FF;
---chipon:#E8EAEE;--chiponfg:#0E1014;--down:#5CCB8A;--up:#FF8A5C;--chart:#7C93FF;--typical:#7A808C;--bar:#262A33;--bubble:#1C2A3A;
+--chipon:#E8EAEE;--chiponfg:#0E1014;--down:#5CCB8A;--up:#FF8A5C;--chart:#7C93FF;--typical:#7A808C;--cmp1:#d95926;--cmp2:#199e70;--cmp3:#c98500;--cmp4:#d55181;--cmp5:#9085e9;--bar:#262A33;--bubble:#1C2A3A;
 --ok-bg:#12301F;--ok-fg:#6FD39A;--warn-bg:#3A2A0A;--warn-fg:#F0C060;--fail-bg:#3D1714;--fail-fg:#FF9187;--info-bg:#1B2550;--info-fg:#9DB1FF;
 --idle-bg:#262A33;--idle-fg:#B5BAC4;--new-bg:#2B1D47;--new-fg:#C7A8FF;--banner-warn:#221B0B;--banner-warnline:#4A3A12;
 --banner-fail:#241312;--banner-failline:#5A2520;--rowwarn:#1F1A0E;--rowfail:#221312;--side:#08090C;--sideline:#1C2028"""
@@ -324,8 +410,6 @@ td.mono{overflow-wrap:anywhere} tr.WARNING td{background:var(--rowwarn)} tr.ERRO
 .q small{display:block;font-size:12px;color:var(--muted);font-weight:400;margin-top:2px}
 .qh{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:12px 12px 4px}
 .lv{display:inline-block;min-width:62px;font-size:11px;font-weight:500;padding:2px 6px;border-radius:4px;text-align:center}
-.sh{display:inline-block;min-width:22px;height:22px;border-radius:6px;font-size:10px;font-weight:600;line-height:22px;text-align:center;margin-right:3px;padding:0 3px}
-.sh.on{background:var(--chipon);color:var(--chiponfg)} .sh.off{background:var(--bar);color:var(--muted)}
 .av{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:600;background:var(--info-bg);color:var(--info-fg);flex:none}
 .empty{padding:28px 16px;text-align:center;color:var(--muted)}
 .rule{padding:16px;display:flex;flex-direction:column;gap:10px} .rule h3{margin:0;font-size:14px}
@@ -372,17 +456,19 @@ body.loading #bar{opacity:1;width:70%}
 </nav>
 <div class='toast' id='toast' role='status'></div>
 <script>
-const TABS = ['Overview', 'Deals', 'Products', 'Devices', 'Uptime', 'Errors', 'Jobs', 'Logs', 'Queries'], ADMIN = ['Subscribers', 'Rules'];
+const TABS = ['Overview', 'Deals', 'Products', 'Shops', 'Devices', 'Uptime', 'Errors', 'Jobs', 'Logs', 'Queries'], ADMIN = ['Subscribers', 'Rules'];
 const LABEL = {Rules: 'Rules & watches'};
-const SITES = [['amazon_eg', 'Amazon', 'A'], ['noon_eg', 'noon', 'N'], ['jumia_eg', 'Jumia', 'J'], ['cairosales_eg', 'Cairo Sales', 'C'],
-  ['2b_eg', '2B', '2B'], ['btech_eg', 'B.TECH', 'BT'], ['dream2000_eg', 'Dream 2000', 'D'], ['carrefour_eg', 'Carrefour', 'CF'],
-  ['dubaiphone_eg', 'Dubai Phone', 'DP'], ['hardwaremarket_eg', 'Hardware Market', 'HM'], ['amazon_now_eg', 'Amazon Now', 'AN']];
+// Every shop from deals/shops.py (name, label, badge, kind, kind_label, url, home_only, doc), in its order.
+const SHOPS = __SHOPS__, SHOP_KINDS = [...new Set(SHOPS.map(s => s.kind))];
 const KINDS = {price_drop: ['Price drop', 'info'], all_time_low: ['All-time low', 'ok'], early_drop: ['Early drop', 'idle'],
   new_product: ['New product', 'new'], price_error: ['Price error', 'fail'], system: ['System', 'warn']};
 let tab = 'Overview', timer = null, ov = null, toastTimer = null;
 const $ = s => document.querySelector(s);
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
-const shop = s => (SITES.find(x => x[0] === s) || [s, s])[1];
+// A shop's label; a shop filter can also be a whole kind ('kind:electronics', shops.expand on the server).
+const kindLabel = k => (SHOPS.find(s => s.kind === k) || {kind_label: k}).kind_label;
+const shop = s => s && s.startsWith('kind:') ? 'All ' + kindLabel(s.slice(5)).toLowerCase() : (SHOPS.find(x => x.name === s) || {label: s}).label;
+const inShop = (site, cur) => !cur || (cur.startsWith('kind:') ? (SHOPS.find(s => s.name === site) || {}).kind === cur.slice(5) : site === cur);
 const money = p => p == null ? '—' : Math.round(p / 100).toLocaleString('en');
 const pct = x => x == null ? '' : Math.round(x * 100) + '%';
 const changePct = x => { const p = Math.abs(x * 100); return (p < 10 ? p.toFixed(1) : Math.round(p)) + '%'; };
@@ -397,7 +483,10 @@ const kind = k => pill((KINDS[k] || [k, 'idle'])[1], (KINDS[k] || [k])[0]);
 const plain = h => new DOMParser().parseFromString(h || '', 'text/html').body.textContent;
 const head = (title, sub, actions = '') => `<header class='head'><div><h1>${esc(title)}</h1>${sub ? `<p>${sub}</p>` : ''}</div>${actions ? `<div class='row'>${actions}</div>` : ''}</header>`;
 const options = (list, cur, all) => `<option value=''>${esc(all)}</option>` + list.map(([v, l]) => `<option value='${esc(v)}' ${v === cur ? 'selected' : ''}>${esc(l)}</option>`).join('');
-const shopOptions = cur => options(SITES.map(s => [s[0], s[1]]), cur, 'All shops');
+// The shop filter: every shop, a whole kind (one click for "all electronics shops"), or one shop, grouped by kind.
+const shopOptions = cur => `<option value=''>All shops (${SHOPS.length})</option>` + SHOP_KINDS.map(k => { const xs = SHOPS.filter(s => s.kind === k);
+  return `<optgroup label='${esc(kindLabel(k))}'><option value='kind:${k}' ${cur === 'kind:' + k ? 'selected' : ''}>All ${esc(kindLabel(k).toLowerCase())} (${xs.length})</option>`
+    + xs.map(s => `<option value='${s.name}' ${s.name === cur ? 'selected' : ''}>${esc(s.label)}</option>`).join('') + '</optgroup>'; }).join('');
 let inflight = 0;
 function busy(on) { inflight += on ? 1 : -1; document.body.classList.toggle('loading', inflight > 0); }
 async function api(path, method = 'GET', body = undefined) {
@@ -441,12 +530,25 @@ window.addEventListener('hashchange', route);
 function openProduct(id) { location.hash = 'Products:' + id; }
 
 // ---------------------------------------------------------------- Overview
-function shopRows(sites, checks) {
+// Only the shops that need a look (blocked somewhere, slices failing, nothing finished in an hour);
+// the healthy ones fold into one line. Every shop is on the Shops page.
+function shopsCard(sites, checks) {
   const blocked = new Set(checks.filter(c => c.name.startsWith('blocked ')).map(c => c.name.slice(8)));
-  return sites.slice().sort((a, b) => b.products - a.products).map(s => {
-    const age = s.last_done ? (Date.now() - Date.parse(s.last_done)) / 60000 : 1e9;
-    const state = blocked.has(s.site) ? pill('warn', 'blocked', 1) : pill(age > 60 ? 'warn' : 'ok', s.last_done ? ago(s.last_done) + ' ago' : 'never', 1);
-    return `<tr><td><b style='font-weight:500'>${esc(shop(s.site))}</b></td><td class='num r'>${s.products.toLocaleString()}</td><td>${state}</td><td class='num r'>${s.running}</td><td class='num r'>${s.failing}</td></tr>`; }).join('');
+  const age = s => s.last_done ? (Date.now() - Date.parse(s.last_done)) / 60000 : 1e9;
+  const bad = sites.filter(s => blocked.has(s.site) || s.failing || age(s) > 60).sort((a, b) => b.products - a.products);
+  const rows = bad.map(s => { const state = blocked.has(s.site) ? pill('warn', 'blocked', 1) : pill(age(s) > 60 ? 'warn' : 'ok', s.last_done ? ago(s.last_done) + ' ago' : 'never', 1);
+    return `<tr class='click' onclick="location.hash='Shops:${s.site}'"><td><a class='rowlink' href='#Shops:${s.site}'>${esc(shop(s.site))}</a></td><td class='num r'>${s.products.toLocaleString()}</td><td>${state}</td><td class='num r'>${s.running}</td><td class='num r'>${s.failing}</td></tr>`; }).join('');
+  const fine = sites.length - bad.length;
+  return `<section class='card' style='overflow:hidden'><div class='cardhead'><h2>Shops</h2><a href='#Shops' style='font-size:13px'>All ${sites.length} shops</a></div>
+    ${bad.length ? `<div class='scroll'><table><tr><th>Needs a look</th><th class='r'>Products</th><th>Last pass</th><th class='r'>Running</th><th class='r'>Failing</th></tr>${rows}</table></div>` : ''}
+    <div class='cardfoot'><span>${pill('ok', `${fine} of ${sites.length} working`, 1)} ${fine ? 'crawled within the hour, nothing blocked or failing' : ''}</span><a href='#Jobs'>Crawl schedule</a></div></section>`;
+}
+// Device-on-shop states, the ones that need a look first.
+const BAD_FIRST = st => ({blocked: 0, failing: 1, offline: 2, crawling: 3, ok: 4, idle: 5}[st] ?? 3);
+// "11 shops, all fine" or "11 shops · blocked on Jumia, failing on noon": a device's shops in one line.
+function shopCount(x) {
+  const bad = x.sites.filter(s => s.state === 'blocked' || s.state === 'failing');
+  return `${x.sites.length} shop${x.sites.length === 1 ? '' : 's'}` + (bad.length ? ' · ' + bad.map(s => `${s.state} on ${esc(shop(s.site))}`).join(', ') : x.sites.length && x.online ? ', all fine' : '');
 }
 function deviceState(d) {
   if (!d.online) return ['offline', 'offline'];
@@ -492,9 +594,9 @@ const views = {
       <div class='grid2'>
         <section id='checks' class='card' style='overflow:hidden'><div class='cardhead'><h2>Health checks</h2><span class='sub'>same as make health</span></div>
           <div class='scroll'><table><tr><th>State</th><th>Check</th><th>Detail</th></tr>
-          ${d.checks.slice().sort((a, b) => (a.level === 'ok') - (b.level === 'ok')).map(c => `<tr><td>${pill(c.level, c.level, 1)}</td><td class='nw'>${esc(c.name)}</td><td class='muted'>${esc(c.detail)}</td></tr>`).join('')}</table></div></section>
-        <section class='card' style='overflow:hidden'><div class='cardhead'><h2>Shops</h2><a href='#Jobs' style='font-size:13px'>Crawl schedule</a></div>
-          <div class='scroll'><table><tr><th>Shop</th><th class='r'>Products</th><th>Last pass</th><th class='r'>Running</th><th class='r'>Failing</th></tr>${shopRows(d.sites, d.checks)}</table></div></section>
+          ${d.checks.slice().sort((a, b) => (a.level === 'ok') - (b.level === 'ok')).filter(c => oz.allChecks || c.level !== 'ok').map(c => `<tr><td>${pill(c.level, c.level, 1)}</td><td class='nw'>${esc(c.name)}</td><td class='muted'>${esc(c.detail)}</td></tr>`).join('')}</table></div>
+          <div class='cardfoot'><span>${d.checks.filter(c => c.level === 'ok').length} of ${d.checks.length} pass${oz.allChecks ? '' : ', not shown'}</span><button class='btn small' type='button' onclick='oz.allChecks=!oz.allChecks;render()'>${oz.allChecks ? 'Only problems' : 'Show all'}</button></div></section>
+        ${shopsCard(d.sites, d.checks)}
       </div>
       <div class='grid2'>
         <section class='card' style='overflow:hidden'><div class='cardhead'><h2>Latest deals</h2><a href='#Deals' style='font-size:13px'>All deals</a></div>
@@ -507,7 +609,7 @@ const views = {
   async Deals() {
     if (dz.loaded !== dz.days) { dz.data = (await api('/api/alerts?limit=1000&days=' + dz.days)).alerts; dz.loaded = dz.days; }
     const q = dz.q.trim().toLowerCase();
-    const base = dz.data.filter(a => (!dz.site || a.site === dz.site) && (!dz.state || a.state === dz.state)
+    const base = dz.data.filter(a => inShop(a.site, dz.site) && (!dz.state || a.state === dz.state)
       && (!q || (a.title || plain(a.message)).toLowerCase().includes(q)));
     const rows = base.filter(a => dz.kind === 'all' || a.kind === dz.kind), sel = rows.find(a => a.id === dz.sel) || rows[0];
     const count = st => dz.data.filter(a => a.state === st).length, sent = dz.data.reduce((n, a) => n + (a.delivered || 0), 0);
@@ -547,12 +649,12 @@ const views = {
     const id = location.hash.split(':')[1];
     if (id) return productPage(id);
     const since = pz.changed ? new Date(Date.now() - pz.changed * 3600e3).toISOString() : '';
-    const query = `q=${encodeURIComponent(pz.q)}&site=${pz.site}&grp=${encodeURIComponent(pz.grp)}&sort=${pz.sort}&in_stock=${pz.stock ? 1 : 0}&changed_since=${encodeURIComponent(since)}`;
+    const query = `q=${encodeURIComponent(pz.q)}&site=${encodeURIComponent(pz.site)}&grp=${encodeURIComponent(pz.grp)}&sort=${pz.sort}&in_stock=${pz.stock ? 1 : 0}&changed_since=${encodeURIComponent(since)}`;
     const d = await api(`/api/products?limit=${PAGE}&offset=0&` + query);
     const periods = [[24, 'Last 24 h'], [168, '7 days'], [720, '30 days'], [0, 'Any time']];
     const nextFeed = {url: o => `/api/products?limit=${PAGE}&offset=${o}&` + query, row: productRow, rows: '#prows', count: '#pcount', more: '#more', next: d.products.length, total: d.total, busy: false};
     const label = {24: 'Changed in the last 24 h', 168: 'Changed in the last 7 days', 720: 'Changed in the last 30 days'}[pz.changed];
-    return {feed: nextFeed, html: head('Products', 'Every product we track across all eight shops. Sorting and filtering run in the database.') +
+    return {feed: nextFeed, html: head('Products', `Every product we track across all ${SHOPS.length} shops. Sorting and filtering run in the database.`) +
       `<form class='card' role='search' style='padding:14px;display:flex;flex-direction:column;gap:12px' onsubmit='pz.q=this.q.value;render();return false'>
         <div class='row'>
           <label class='sr' for='pq'>Search titles</label><input id='pq' name='q' class='field' style='flex:1 1 240px' type='search' placeholder='Search titles, e.g. samsung 55' value='${esc(pz.q)}' onchange='pz.q=this.value;render()'>
@@ -572,28 +674,56 @@ const views = {
         <div id='more' class='cardfoot'>${d.products.length < d.total ? "<span><span class='spinner'></span>loading more as you scroll…</span>" : d.total ? 'end of list' : (pz.changed ? 'No price changes in this period' : 'Nothing matches')}</div></section>`};
   },
 
+  // ---------------------------------------------------------------- Shops
+  async Shops() {
+    const name = location.hash.split(':')[1];
+    if (name) return shopPage(name);
+    const d = await api('/api/shops'), all = d.shops;
+    every(30000, render);
+    const card = (k, v, s, bad) => `<div class='card kpi'><div class='k'>${k}</div><div class='v' ${bad ? `style='color:var(--fail-fg)'` : ''}>${v}</div><div class='s'>${s}</div></div>`;
+    const down = all.filter(s => shopState(s)[0] !== 'ok');
+    const row = s => { const [cls, label] = shopState(s);
+      return `<tr class='click ${cls === 'fail' ? 'bad' : ''}' onclick="location.hash='Shops:${s.name}'"><td><a class='rowlink' href='#Shops:${s.name}'>${esc(s.label)}</a><div class='sub'>${esc(s.url.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, ''))}</div></td>
+        <td>${pill(cls, label, 1)}</td><td class='num r'>${s.products.toLocaleString()}</td>
+        <td class='muted nw'>${s.last_done ? ago(s.last_done) + ' ago' : 'never'}</td><td class='num r'>${s.deals_24h}</td>
+        <td class='num r'>${s.devices_working} / ${s.devices}</td><td class='num r'>${s.failing ? `<span class='up'>${s.failing}</span>` : 0} / ${s.slices}</td>
+        <td class='num r'>${s.problems_24h || '—'}</td><td class='nw'>${s.home_only ? pill('idle', 'home only') : pill('info', 'any IP')}</td></tr>`; };
+    return head('Shops', `Every shop we crawl: is it working, how much it holds, who can fetch it · refreshes every 30 s`) +
+      `<section class='cards'>${card('Shops working', `${all.length - down.length} / ${all.length}`, down.length ? 'needs a look: ' + down.map(s => s.label).join(', ') : 'all crawled within the hour', down.length)}
+        ${card('Products', all.reduce((n, s) => n + s.products, 0).toLocaleString(), 'biggest: ' + all.slice().sort((a, b) => b.products - a.products)[0].label)}
+        ${card('Deals, 24 h', all.reduce((n, s) => n + s.deals_24h, 0), 'from ' + all.filter(s => s.deals_24h).length + ' shops')}
+        ${card('Home only', all.filter(s => s.home_only).length, 'datacenter IPs refused')}</section>
+      ${SHOP_KINDS.map(k => { const xs = all.filter(s => s.kind === k); return `<section class='card' style='overflow:hidden'><div class='cardhead'><h2>${esc(kindLabel(k))}</h2><span class='sub'>${xs.length} shop${xs.length === 1 ? '' : 's'}</span></div><div class='scroll'><table>
+        <tr><th>Shop</th><th>State</th><th class='r'>Products</th><th>Last pass</th><th class='r'>Deals, 24 h</th><th class='r' title='devices fetching it fine / devices assigned'>Devices</th><th class='r' title='slices failing / slices'>Failing</th><th class='r' title='open problems seen in 24 h (Errors)'>Problems</th><th>Access</th></tr>
+        ${xs.map(row).join('')}</table></div></section>`; }).join('')}`;
+  },
+
   // ---------------------------------------------------------------- Devices
   async Devices() {
     const d = await api('/api/overview'); ov = d; side();
     const card = x => { const [cls, label] = deviceState(x);
       return `<div class='card' style='padding:16px;display:flex;flex-direction:column;gap:10px'><div class='row' style='justify-content:space-between'><span style='font-weight:600;font-size:15px'>${esc(x.name)}</span>${pill(cls, label, 1)}</div>
-        <div class='sub' style='font-size:13px;line-height:1.6'>${x.sites.map(s => shop(s.site)).join(', ') || 'no shops'}<br>Seen ${ago(x.last_seen_at)} ago · ${esc(x.ip || '')} · v${esc(x.version || '?')}</div>
+        <div class='sub' style='font-size:13px;line-height:1.6'>${shopCount(x)}<br>Seen ${ago(x.last_seen_at)} ago · ${esc(x.ip || '')} · v${esc(x.version || '?')}</div>
         <div class='row' style='gap:18px'><div><div class='num' style='font-size:18px'>${(x.pages || 0).toLocaleString()}</div><div class='sub'>pages</div></div>
         <div><div class='num' style='font-size:18px'>${(x.jobs_done || 0).toLocaleString()}</div><div class='sub'>jobs done</div></div>
         <div><div class='num' style='font-size:18px'>${x.sites.reduce((n, s) => n + s.blocks, 0)}</div><div class='sub'>blocks</div></div></div></div>`; };
+    // one row per device and shop: with many shops, only the blocked, failing and offline ones unless asked
+    const pairs = d.devices.flatMap(x => x.sites.map(s => [x, s])).sort((a, b) => BAD_FIRST(a[1].state) - BAD_FIRST(b[1].state));
+    const bad = pairs.filter(([, s]) => BAD_FIRST(s.state) < 3), shown = vz.all ? pairs : bad;
     const cell = (x, site) => { const s = x.sites.find(y => y.site === site); return `<td class='c'>${s ? pill(x.online ? s.state : 'offline', x.online ? s.state : 'offline', 1) : "<span class='na'>—</span>"}</td>`; };
     every(15000, render);
     return head('Devices', 'Every worker and what it is doing on each shop · refreshes every 15 s', `<a class='btn' href='#Logs'>Logs from all devices</a>`) +
       `<section class='cards' style='grid-template-columns:repeat(auto-fill,minmax(260px,1fr))' aria-label='Workers'>${d.devices.map(card).join('') || "<div class='empty'>No worker has connected yet</div>"}</section>
       <section class='card' style='overflow:hidden'><div class='cardhead'><h2>Who can fetch what</h2><div class='row' style='gap:6px'>${['ok', 'crawling', 'idle', 'blocked', 'failing'].map(s => pill(s, s, 1)).join('')}<span class='na'>— not assigned</span></div></div>
-        <div class='scroll'><table><tr><th>Device</th>${SITES.map(s => `<th class='c'>${s[1]}</th>`).join('')}</tr>
-        ${d.devices.map(x => `<tr><td style='font-weight:500'>${esc(x.name)}</td>${SITES.map(s => cell(x, s[0])).join('')}</tr>`).join('')}</table></div></section>
-      <section class='card' style='overflow:hidden'><div class='cardhead'><h2>Fetch state per shop</h2></div><div class='scroll'><table>
+        <div class='scroll'><table><tr><th>Shop</th>${d.devices.map(x => `<th class='c'>${esc(x.name)}</th>`).join('')}</tr>
+        ${SHOP_KINDS.map(k => `<tr><td class='qh' colspan='${d.devices.length + 1}'>${esc(kindLabel(k))}</td></tr>` + SHOPS.filter(s => s.kind === k).map(s =>
+          `<tr><td class='nw'><a class='rowlink' href='#Shops:${s.name}'>${esc(s.label)}</a>${s.home_only ? " <span class='sub' title='datacenter IPs are refused'>home only</span>" : ''}</td>${d.devices.map(x => cell(x, s.name)).join('')}</tr>`).join('')).join('')}</table></div></section>
+      <section class='card' style='overflow:hidden'><div class='cardhead'><h2>Fetch state per shop</h2><div class='row' style='gap:6px'>${[[0, `Needs a look (${bad.length})`], [1, `All (${pairs.length})`]].map(([v, l]) => `<button type='button' class='chip small ${vz.all === v ? 'on' : ''}' onclick='vz.all=${v};render()'>${l}</button>`).join('')}</div></div>
+        ${shown.length ? `<div class='scroll'><table>
         <tr><th>Device</th><th>Shop</th><th>State</th><th>Detail</th><th class='r'>Pages</th><th class='r'>Products</th><th class='r'>Blocks</th></tr>
-        ${d.devices.flatMap(x => x.sites.map(s => `<tr><td>${esc(x.name)}</td><td>${esc(shop(s.site))}</td><td>${pill(s.state, s.state, 1)}</td>
+        ${shown.map(([x, s]) => `<tr><td class='nw'>${esc(x.name)}</td><td class='nw'><a class='rowlink' href='#Shops:${s.site}'>${esc(shop(s.site))}</a></td><td>${pill(s.state, s.state, 1)}</td>
           <td class='muted'>${esc(s.detail)}${s.last_error && s.state !== 'failing' ? `<div class='sub'>last problem ${esc((s.last_error_at || '').slice(11, 16))}: ${esc(s.last_error)}</div>` : ''}</td>
-          <td class='num r'>${s.pages.toLocaleString()}</td><td class='num r'>${s.products.toLocaleString()}</td><td class='num r'>${s.blocks}</td></tr>`)).join('')}</table></div></section>
-      <section class='card' style='overflow:hidden'><div class='cardhead'><h2>Shops</h2></div><div class='scroll'><table><tr><th>Shop</th><th class='r'>Products</th><th>Last pass</th><th class='r'>Running</th><th class='r'>Failing</th></tr>${shopRows(d.sites, d.checks)}</table></div></section>
+          <td class='num r'>${s.pages.toLocaleString()}</td><td class='num r'>${s.products.toLocaleString()}</td><td class='num r'>${s.blocks}</td></tr>`).join('')}</table></div>` : `<div class='empty'>Every device is fetching every one of its shops fine</div>`}</section>
       ${pausesCard(d)}`;
   },
 
@@ -631,7 +761,7 @@ const views = {
 
   // ---------------------------------------------------------------- Errors
   async Errors() {
-    const d = await api(`/api/errors?days=${ez.days}&only_open=${ez.open}` + (ez.site ? '&site=' + ez.site : '') + (ez.cat ? '&category=' + ez.cat : '') + (ez.src ? '&source=' + encodeURIComponent(ez.src) : ''));
+    const d = await api(`/api/errors?days=${ez.days}&only_open=${ez.open}` + (ez.site ? '&site=' + encodeURIComponent(ez.site) : '') + (ez.cat ? '&category=' + ez.cat : '') + (ez.src ? '&source=' + encodeURIComponent(ez.src) : ''));
     const rows = d.errors, cats = [...new Set(rows.map(e => e.category))];
     const dayAgo = Date.now() - 86400000, srcs = [...new Set(rows.map(e => e.source).concat(ez.src ? [ez.src] : []))].sort();
     const card = (k, v, s) => `<div class='card kpi'><div class='k'>${k}</div><div class='v'>${v}</div><div class='s'>${s}</div></div>`;
@@ -665,7 +795,7 @@ const views = {
     const due = j => j.next_due_at && Date.parse(j.next_due_at) <= now && !j.running;
     const groups = [...new Set(d.jobs.map(j => j.grp).filter(Boolean))].sort();
     const keep = {all: () => true, failing: j => j.failures > 0, running: j => j.running, due, fast};
-    const rows = d.jobs.filter(j => keep[jz.only](j) && (!jz.site || j.site === jz.site) && (!jz.grp || j.grp === jz.grp));
+    const rows = d.jobs.filter(j => keep[jz.only](j) && inShop(j.site, jz.site) && (!jz.grp || j.grp === jz.grp));
     const card = (k, v, color) => `<div class='card kpi'><div class='k'>${k}</div><div class='v' ${color ? `style='color:var(--fail-fg)'` : ''}>${v}</div></div>`;
     every(15000, render);
     return head('Jobs', 'The crawl schedule: each category is split by price into slices, and each slice is a job a worker leases') +
@@ -705,7 +835,7 @@ const views = {
     if (fromHash && qz.list.some(x => x.name === fromHash)) qz.name = fromHash;
     if (!qz.name) qz.name = qz.list[0].name;
     history.replaceState(null, '', '#Queries:' + qz.name);
-    const query = `hours=${qz.hours}&grp=${encodeURIComponent(qz.grp)}&site=${qz.site}&q=${encodeURIComponent(qz.q)}` + (qz.sort ? `&sort=${encodeURIComponent(qz.sort)}&desc=${qz.desc ? 1 : 0}` : '');
+    const query = `hours=${qz.hours}&grp=${encodeURIComponent(qz.grp)}&site=${encodeURIComponent(qz.site)}&q=${encodeURIComponent(qz.q)}` + (qz.sort ? `&sort=${encodeURIComponent(qz.sort)}&desc=${qz.desc ? 1 : 0}` : '');
     const [d, groups] = await Promise.all([api(`/api/queries/${qz.name}?limit=${PAGE}&offset=0&` + query), qz.groups ? qz.groups : api('/api/groups').then(r => qz.groups = r.groups)]);
     const isMoney = c => /^(was|now|price|cheapest|dearest|lowest|highest|crossed_out|previous_low|highest_seen|alert_price|price_now|a|b)$/.test(c);
     const hide = new Set(['url', 'seller', 'product_id']);
@@ -809,10 +939,10 @@ const views = {
       <div><h2 style='margin:4px 0 0;font-size:17px'>Watches</h2><p class='muted' style='margin:4px 0 0;font-size:13px'>"Worst time to notice" is the backoff cap: a flash sale in that group is seen within it.</p></div>
       <section class='card' style='overflow:hidden'><div class='scroll'><table><tr><th>Group</th><th class='r'>Every</th><th class='r'>Worst time to notice</th><th class='r'>Min price</th><th class='r'>Min drop</th><th>Shops</th><th>Fast lanes</th></tr>
         ${d.watches.map(w => `<tr><td><b style='font-weight:500'>${esc(w.name)}</b>${w.label && w.label !== w.name ? ` <span class='muted' dir='rtl'>${esc(w.label)}</span>` : ''}</td>
-          <td class='num r'>${w.interval_minutes} min</td><td class='num r'>${w.max_interval_minutes} min</td><td class='num r'>${w.min_price ? w.min_price.toLocaleString() : '—'}</td>
-          <td class='num r'>${w.min_drop ? p(w.min_drop) : 'default'}</td><td class='nw'>${SITES.map(x => `<span class='sh ${w.sites.includes(x[0]) ? 'on' : 'off'}' title='${x[1]}'>${x[2]}</span>`).join('')}</td>
+          <td class='num r nw'>${w.interval_minutes} min</td><td class='num r nw'>${w.max_interval_minutes} min</td><td class='num r'>${w.min_price ? w.min_price.toLocaleString() : '—'}</td>
+          <td class='num r'>${w.min_drop ? p(w.min_drop) : 'default'}</td><td>${shopSet(w.sites)}</td>
           <td>${w.fast_lanes ? pill('new', w.fast_lanes + ' feed' + (w.fast_lanes > 1 ? 's' : '')) : pill('idle', 'none')}</td></tr>`).join('')}</table></div>
-        <div class='cardfoot'>${SITES.map(x => x[2] + ' ' + x[1]).join(' · ')}</div></section>
+        <div class='cardfoot'>Hover a group's shops for the full list · a shop's page lists the groups it is in</div></section>
       <h2 style='margin:4px 0 0;font-size:17px'>Schedule</h2>
       <section class='card rule' style='display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px 28px'>
         ${kv('Fastest re-crawl of a slice', s.min_interval_minutes + ' min')}${kv('Quiet slices back off to interval ×', s.max_interval_factor)}
@@ -822,11 +952,18 @@ const views = {
 };
 const SHOP_RULE_KIND = {placeholder: ['fail', 'placeholder price'], doubtful_reference: ['warn', 'doubtful reference'], no_claim_alerts: ['warn', 'no new-listing alerts'],
   low_stock_noise: ['idle', 'low stock is noise'], note: ['info', 'handled in the adapter']};
+// A set of shops in a few words: "all 11", "all but Jumia, noon", or the names when there are few.
+function shopSet(names) {
+  const miss = SHOPS.filter(s => !names.includes(s.name)), full = names.map(shop).join(', ');
+  const text = !miss.length ? `all ${SHOPS.length}` : !names.length ? 'none' : names.length > 3 && miss.length <= 3 ? 'all but ' + miss.map(s => s.label).join(', ')
+    : names.length <= 5 ? full : `${names.length} of ${SHOPS.length} shops`;
+  return `<span title='${esc(full)}'>${esc(text)}</span>`;
+}
 function toggleShopRule(i) { const row = document.getElementById('shoprule-' + i); row.hidden = !row.hidden; }
 const dz = {days: '1', loaded: null, data: [], kind: 'all', site: '', state: '', q: '', sel: null, shown: 50};
 const pz = {q: '', site: '', grp: '', sort: 'recent', stock: false, changed: 24};
 const jz = {only: 'all', site: '', grp: ''}, lz = {level: 'info', src: '', q: '', paused: false};
-const uz = {days: 7, kind: ''}, ez = {open: 1, days: 7, site: '', cat: '', src: ''};
+const oz = {allChecks: false}, vz = {all: 0}, uz = {days: 7, kind: ''}, ez = {open: 1, days: 7, site: '', cat: '', src: ''};
 const stateClass = s => ({up: 'ok', online: 'ok', ok: 'ok', paused: 'idle', blocked: 'warn'}[s] || 'fail');
 const dur = s => s == null ? '' : s < 120 ? s + ' s' : s < 7200 ? Math.round(s / 60) + ' min' : s < 172800 ? (s / 3600).toFixed(1) + ' h' : (s / 86400).toFixed(1) + ' d';
 const who = (kind, name) => kind === 'shop' ? esc(shop(name)) : kind === 'device_shop' ? `${esc(name.split('/')[0])} <span class='muted'>on</span> ${esc(shop(name.split('/')[1]))}` : kind === 'server' ? 'Server' : esc(name);
@@ -842,7 +979,7 @@ const PRICE_REF = {now: ['was', 'previous_low'], price_now: ['alert_price', 'now
 const topicOf = n => Object.keys(TOPICS).find(t => TOPICS[t].includes(n)) || 'Prices';
 function pickQuery(name) { qz.name = name; qz.sort = null; history.replaceState(null, '', '#Queries:' + name); render(); }
 async function downloadCsv() {
-  const query = `hours=${qz.hours}&grp=${encodeURIComponent(qz.grp)}&site=${qz.site}&q=${encodeURIComponent(qz.q)}` + (qz.sort ? `&sort=${encodeURIComponent(qz.sort)}&desc=${qz.desc ? 1 : 0}` : '');
+  const query = `hours=${qz.hours}&grp=${encodeURIComponent(qz.grp)}&site=${encodeURIComponent(qz.site)}&q=${encodeURIComponent(qz.q)}` + (qz.sort ? `&sort=${encodeURIComponent(qz.sort)}&desc=${qz.desc ? 1 : 0}` : '');
   const d = await api(`/api/queries/${qz.name}?limit=500&offset=0&` + query);
   const cell = v => v == null ? '' : /[",\n]/.test(String(v)) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v);
   const csv = [d.columns, ...d.rows].map(r => r.map(cell).join(',')).join('\n');
@@ -926,7 +1063,7 @@ async function productPage(id) {
     <section class='stats' aria-label='Price statistics'>${stat('Typical, 30 days', money(s.typical_30d))}${stat('Typical, 90 days', money(s.typical_90d))}${stat('Lowest seen', money(s.low), 'down')}
       ${stat('Highest seen', money(s.high))}${stat('Tracked for', s.tracked_days + ' days')}${stat('Changes, 90 days', s.changes_90d)}
       ${stat('Time at or below now', s.share_at_or_below == null ? '—' : Math.round(s.share_at_or_below * 100) + '%')}${stat('Last checked', ago(p.last_seen_at))}</section>
-    <section class='card' style='padding:16px 18px;display:flex;flex-direction:column;gap:12px'><div class='row' style='justify-content:space-between'><h2 style='margin:0;font-size:15px'>Price history</h2></div>${chart(d.history, s.typical_90d, d.alerts)}</section>
+    <section class='card' style='padding:16px 18px;display:flex;flex-direction:column;gap:12px'><div class='row' style='justify-content:space-between'><h2 style='margin:0;font-size:15px'>Price history</h2></div>${chart(d.history, s.typical_90d, d.alerts, d.compare, shop(p.site))}</section>
     <div class='grid2'>
       ${d.alerts.length ? `<section class='card' style='overflow:hidden'><div class='cardhead'><h2>Alerts for this product</h2></div><div class='scroll'><table><tr><th>When</th><th>Kind</th><th class='r'>Price</th><th class='r'>Drop</th><th>State</th></tr>
         ${d.alerts.map(a => `<tr><td class='num nw'>${hhmm(a.created_at)}</td><td>${kind(a.kind)}</td><td class='num r'>${money(a.price)}</td><td class='num r down'>${a.drop_pct ? '▼ ' + pct(a.drop_pct) : ''}</td>
@@ -935,12 +1072,74 @@ async function productPage(id) {
         ${d.other_sellers.map(o => `<tr class='click' onclick='openProduct(${o.id})'><td>${esc(o.seller || '?')}</td><td class='num r'>${money(o.price)}</td><td>${o.in_stock ? pill('ok', 'in stock') : pill('idle', 'sold out')}</td>
           <td class='num r ${o.price > p.price ? 'up' : 'down'}'>${o.price && p.price ? (o.price > p.price ? '+' : '') + money(o.price - p.price) : ''}</td></tr>`).join('')}</table></div></section>` : ''}
     </div>
-    ${sameModel(d.same_model, p, d.admin)}
+    ${sameModel(d.same_model, p, d.admin, d.compare)}
     <section class='card' style='overflow:hidden'><div class='cardhead'><h2>Recorded changes</h2><span class='sub'>only changes are stored, not every visit</span></div><div class='scroll'><table>
       <tr><th>When</th><th class='r'>Price</th><th class='r'>Crossed-out</th><th>Stock</th><th class='r'>Change</th></tr>
       ${d.history.slice().reverse().map((h, i, arr) => { const prev = arr[i + 1], ch = prev && prev.price && h.price ? h.price - prev.price : null;
         return `<tr><td class='num nw'>${hhmm(h.observed_at)}</td><td class='num r'>${money(h.price)}</td><td class='num r muted'>${money(h.list_price)}</td><td>${h.in_stock ? 'in stock' : 'sold out'}</td>
         <td class='num r nw ${ch < 0 ? 'down' : 'up'}'>${ch ? (ch < 0 ? '▼ ' : '▲ ') + money(Math.abs(ch)) + ' · ' + changePct(ch / prev.price) : ''}</td></tr>`; }).join('')}</table></div></section>`;
+}
+// A shop's state in one pill: down or paused (uptime), blocked on some IP, slices failing, late, or working.
+function shopState(s) {
+  const st = s.status && s.status.state, age = s.last_done ? (Date.now() - Date.parse(s.last_done)) / 60000 : 1e9;
+  if (st === 'paused') return ['idle', 'paused'];
+  if (st === 'down' || age > 180) return ['fail', 'down'];
+  if (!s.devices_working) return ['fail', s.devices ? 'no device fetching it' : 'no device has it'];
+  if (s.blocked_ips) return ['warn', `blocked on ${s.blocked_ips} IP${s.blocked_ips > 1 ? 's' : ''}`];
+  if (s.failing) return ['warn', `${s.failing} slice${s.failing > 1 ? 's' : ''} failing`];
+  if (age > 60) return ['warn', 'late'];
+  return ['ok', 'working'];
+}
+// One shop end to end (GET /api/shops/<name>): what used to be spread over Devices, Jobs, Rules, Errors and Uptime.
+async function shopPage(name) {
+  const d = await api('/api/shops/' + encodeURIComponent(name)), s = d.shop, [cls, label] = shopState(s);
+  every(30000, render);
+  const kpi = (k, v, sub) => `<div class='card kpi'><div class='k'>${k}</div><div class='v'>${v}</div><div class='s'>${sub}</div></div>`;
+  const table = (title, sub, cols, rows, empty) => `<section class='card' style='overflow:hidden'><div class='cardhead'><h2>${title}</h2>${sub ? `<span class='sub'>${sub}</span>` : ''}</div>
+    ${rows.length ? `<div class='scroll'><table><tr>${cols}</tr>${rows.join('')}</table></div>` : `<div class='empty'>${empty}</div>`}</section>`;
+  const live = b => Date.parse(b.until) > Date.now();
+  return `<nav aria-label='Breadcrumb' style='font-size:13px'><a href='#Shops'>Shops</a> <span class='muted'>/ ${esc(kindLabel(s.kind))}</span></nav>` +
+    head(s.label, `${pill(cls, label, 1)} &nbsp;${s.home_only ? 'Home connections only: datacenter IPs are refused' : 'Works from any IP, the droplet too'} · notes in <span class='mono'>docs/${esc(s.doc)}</span> · refreshes every 30 s`,
+      `<a class='btn' href='#Products' onclick="pz.site='${s.name}';pz.changed=0">Its products</a><a class='btn' href='#Deals' onclick="dz.site='${s.name}'">Its deals</a>
+       <a class='btn' href='#Errors' onclick="ez.site='${s.name}'">Its errors</a><a class='btn pri' href='${esc(s.url)}' target='_blank' rel='noopener'>Open the shop ↗</a>`) +
+    `<section class='cards'>${kpi('Products', s.products.toLocaleString(), s.in_stock.toLocaleString() + ' in stock')}
+      ${kpi('Price changes, 24 h', d.changes_24h.toLocaleString(), Math.round(d.changes_24h / 24).toLocaleString() + ' per hour')}
+      ${kpi('Deals, 24 h', s.deals_24h, d.deals.length ? 'latest ' + ago(d.deals[0].created_at) + ' ago' : 'none yet')}
+      ${kpi('Last pass', s.last_done ? ago(s.last_done) : 'never', s.running + ' slice' + (s.running === 1 ? '' : 's') + ' running now')}
+      ${kpi('Slices', s.slices, s.failing ? s.failing + ' failing' : 'none failing')}
+      ${kpi('Devices', `${s.devices_working} / ${s.devices}`, 'fetching it fine')}</section>
+    ${table('Devices', 'every worker that has this shop in DEALS_SITES', '<th>Device</th><th>State</th><th>Detail</th><th class="r">Pages</th><th class="r">Products</th><th class="r">Blocks</th>',
+      d.devices.sort((a, b) => BAD_FIRST(a.state) - BAD_FIRST(b.state)).map(x => `<tr><td class='nw'>${esc(x.device)}<div class='sub'>${esc(x.ip || '')}</div></td><td>${pill(x.state, x.state, 1)}</td>
+        <td class='muted'>${esc(x.detail)}${x.last_error && x.state !== 'failing' ? `<div class='sub'>last problem ${esc((x.last_error_at || '').slice(5, 16).replace('T', ' '))}: ${esc(x.last_error)}</div>` : ''}</td>
+        <td class='num r'>${x.pages.toLocaleString()}</td><td class='num r'>${x.products.toLocaleString()}</td><td class='num r'>${x.blocks}</td></tr>`), 'No device crawls this shop: add it to a worker\'s DEALS_SITES')}
+    <div class='grid2'>
+      ${table('Watch groups', '"worst" is the longest a flash sale can go unseen', '<th>Group</th><th class="r">Every</th><th class="r">Worst</th><th>Roots here</th>',
+        d.watches.map(w => `<tr><td class='nw'><b style='font-weight:500'>${esc(w.name)}</b></td><td class='num r nw'>${w.interval_minutes} m</td><td class='num r nw'>${w.max_interval_minutes} m</td>
+          <td>${w.targets.length === 1 ? `<span class='mono' style='font-size:12px;overflow-wrap:anywhere'>${esc(w.targets[0])}</span>`
+            : `<details><summary class='sub' style='cursor:pointer'>${w.targets.length} roots</summary><div class='mono' style='font-size:12px;overflow-wrap:anywhere'>${w.targets.map(esc).join('<br>')}</div></details>`}</td></tr>`), 'In no watch group: nothing of it is crawled')}
+      ${table('Slices by group', 'categories split by price', '<th>Group</th><th class="r">Slices</th><th class="r">Failing</th><th class="r">Every</th><th>Last done</th>',
+        d.groups.map(g => `<tr class='${g.failing ? 'bad' : ''}'><td>${esc(g.grp)}</td><td class='num r'>${g.slices}</td><td class='num r'>${g.failing || 0}</td>
+          <td class='num r nw'>${g.fastest_min === g.slowest_min ? g.fastest_min : g.fastest_min + '–' + g.slowest_min} m</td><td class='muted nw'>${ago(g.last_done)}</td></tr>`), 'Not planned yet')}
+    </div>
+    <div class='grid2'>
+      ${table('Blocks', 'a block pauses one IP on this shop until it passes', '<th>IP</th><th>State</th><th class="r">Strike</th><th>Why</th>',
+        d.blocks.map(b => `<tr><td class='mono nw'>${esc(b.ip)}</td><td class='nw'>${live(b) ? pill('warn', 'until ' + b.until.slice(11, 16) + ' UTC', 1) : pill('ok', 'over ' + ago(b.until) + ' ago')}</td>
+          <td class='num r'>${b.strikes}</td><td class='muted'>${esc(b.reason || '')}</td></tr>`), 'Not blocked now (Devices counts past blocks)')}
+      ${table('Shop rules', 'what this shop gets wrong in its data', '<th>Rule</th><th>Kind</th><th class="r">Caught</th>',
+        d.shop_rules.map(r => `<tr class='click' onclick="location.hash='Rules'"><td><b style='font-weight:500'>${esc(r.title)}</b><div class='sub'>→ ${esc(r.action)}</div></td>
+          <td class='nw'>${pill(...(SHOP_RULE_KIND[r.kind] || ['idle', r.kind]))}</td><td class='num r'>${r.products ? r.products.toLocaleString() + ' products' : '—'}</td></tr>`), 'No shop rules')}
+    </div>
+    ${table('Open problems, 7 days', `<a href='#Errors' onclick="ez.site='${s.name}'">all in Errors</a>`, '<th>Last seen</th><th>Kind</th><th>From</th><th>Message</th><th class="r">Times</th>',
+      d.errors.map(e => `<tr class='${e.level === 'ERROR' ? 'bad' : ''}'><td class='muted nw'>${ago(e.last_seen_at)} ago</td><td class='nw' title='${esc(e.cause)}'>${pill('idle', e.title)}</td><td class='nw'>${esc(e.source)}</td>
+        <td class='mono' style='min-width:300px'>${esc(e.message)}</td><td class='num r'>${e.count.toLocaleString()}</td></tr>`), 'No open problems 🎉')}
+    <div class='grid2'>
+      ${table('Latest deals', '', '<th>Product</th><th class="r">Now</th><th class="r">Drop</th><th>When</th>',
+        d.deals.map(a => `<tr class='click' onclick='openProduct(${a.product_id})'><td><a class='rowlink' href='#Products:${a.product_id}'>${esc(a.title)}</a><div class='sub'>${esc(a.grp || '')} · ${esc((KINDS[a.kind] || [a.kind])[0].toLowerCase())}</div></td>
+          <td class='num r'>${money(a.price)}</td><td class='num r down'>${a.drop_pct ? '▼ ' + pct(a.drop_pct) : ''}</td><td class='muted nw'>${ago(a.created_at)}</td></tr>`), 'No deal alerts yet')}
+      ${table('Uptime, 7 days', `<a href='#Uptime'>Uptime</a>`, '<th>When</th><th>What</th><th>Change</th><th>Why</th>',
+        d.uptime.map(c => `<tr><td class='muted nw'>${hhmm(c.at)}</td><td class='nw'>${who(c.kind, c.name)}</td>
+          <td class='nw'>${c.old_state ? pill(stateClass(c.old_state), c.old_state) + ' → ' : ''}${pill(stateClass(c.new_state), c.new_state, 1)}</td><td class='muted'>${esc(c.reason || '')}</td></tr>`), 'No changes in 7 days')}
+    </div>`;
 }
 // Crawling paused by hand: the active pauses, and (admin) a form to pause or resume. A pause ends by itself.
 function pausesCard(d) {
@@ -950,7 +1149,7 @@ function pausesCard(d) {
     <td class='r'>${d.admin ? `<button class='btn small' type='button' onclick="resumePause(${p.id})">Resume now</button>` : ''}</td></tr>`).join('');
   const form = d.admin ? `<div class='row' style='gap:8px;padding:12px 18px;border-top:1px solid var(--line2);flex-wrap:wrap'>
     <select id='pw' class='field'><option value='*'>all devices</option>${(d.devices || []).map(x => `<option>${esc(x.name)}</option>`).join('')}</select>
-    <select id='ps' class='field'><option value='*'>all shops</option>${SITES.map(s => `<option value='${s[0]}'>${s[1]}</option>`).join('')}</select>
+    <select id='ps' class='field'><option value='*'>all shops</option>${SHOPS.map(s => `<option value='${s.name}'>${esc(s.label)}</option>`).join('')}</select>
     <select id='ph' class='field'>${[1, 2, 4, 8, 24].map(h => `<option value='${h}' ${h === 2 ? 'selected' : ''}>${h} h</option>`).join('')}</select>
     <label class='row' style='gap:6px'><input type='checkbox' id='pp'> product pages too</label>
     <button class='btn' type='button' onclick='addPause()'>Pause crawling</button><span class='sub'>ends by itself</span></div>` : '';
@@ -966,7 +1165,7 @@ async function resumePause(id) {
   try { await api(`/api/pauses/${id}/resume`, 'POST'); toast('Resumed'); render(); } catch (e) { toast(e.message); }
 }
 // Listings of the same model at every shop (matching.py), or why this one has no model.
-function sameModel(sm, p, admin) {
+function sameModel(sm, p, admin, compare = []) {
   if (!sm) return '';
   const m = sm.model, why = {no_code: 'no model code found in the title', used: 'a renewed / used listing', accessory: 'an accessory',
     ambiguous_brand: 'several brands use its code and the title names none', ambiguous_variant: 'several variants of this line fit it (storage, RAM...)',
@@ -978,14 +1177,23 @@ function sameModel(sm, p, admin) {
   const head = `${m.brand ? esc(m.brand) + ' ' : ''}<b>${esc(m.code)}</b>${m.capacity ? ' ' + esc(m.capacity) : ''} · ${m.sites} shop${m.sites === 1 ? '' : 's'}`
     + (sm.me.status !== 'model' ? ` · this listing is left out: ${esc(why[sm.me.status] || sm.me.status)}` : '')
     + (m.status !== 'ok' ? ` · <span class='up'>${esc(m.status)}: ${esc(m.note || '')}</span>` : '');
+  // this listing among the others, cheapest first (usable, in stock and priced before the rest); the
+  // listings drawn on the chart carry their line's colour next to the shop's name
+  const rank = o => [o.status !== 'model', !o.in_stock, o.price == null, o.price || 0];
+  const rows = [{...p, status: 'model', me: true}, ...sm.others].sort((a, b) => { const x = rank(a), y = rank(b);
+    for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i] < y[i] ? -1 : 1; return 0; });
+  const cheapest = rows.find(o => o.status === 'model' && o.in_stock && o.price != null);
+  const colors = Object.fromEntries(compare.map((c, i) => [c.id, `var(--cmp${i + 1})`]));
+  const swatch = o => { const c = o.me && compare.length ? 'var(--chart)' : colors[o.id];
+    return c ? `<i aria-hidden='true' style='display:inline-block;width:14px;border-top:2px solid ${c};vertical-align:middle;margin-right:6px'></i>` : ''; };
   return `<section class='card' style='overflow:hidden'><div class='cardhead'><h2>Same product at other shops</h2><span class='sub'>${head}; matched by ${how[m.kind] || m.kind}</span>${m.confidence != null ? ' ' + pill(m.confidence >= 85 ? 'ok' : m.confidence >= 70 ? 'info' : 'warn', 'confidence ' + m.confidence, 0) : ''}${m.status === 'probable' ? ' ' + pill('warn', 'probable') : ''}</div>
     ${m.evidence ? `<div class='sub' style='padding:0 18px 8px'>Why: ${esc(m.evidence)}</div>` : ''}<div class='scroll'><table>
     <tr><th>Shop</th><th>Listing</th><th class='r'>Price</th><th>Stock</th><th class='r'>vs this</th><th class='r'>Seen</th>${admin ? '<th></th>' : ''}</tr>
-    ${sm.others.map(o => `<tr class='click' onclick='openProduct(${o.id})'><td class='nw'>${esc(shop(o.site))}</td>
-      <td>${esc(o.title)}${o.seller ? `<div class='sub'>${esc(o.seller)}</div>` : ''}${o.status !== 'model' ? ' ' + pill('idle', 'left out: ' + (o.note || o.status)) : ''}</td>
+    ${rows.map(o => `<tr ${o.me ? "style='background:var(--sel)'" : `class='click' onclick='openProduct(${o.id})'`}><td class='nw'>${swatch(o)}${esc(shop(o.site))}</td>
+      <td>${o.me ? pill('info', 'this listing') + ' ' : ''}${o === cheapest ? pill('ok', 'cheapest') + ' ' : ''}${esc(o.title)}${o.seller ? `<div class='sub'>${esc(o.seller)}</div>` : ''}${o.status !== 'model' ? ' ' + pill('idle', 'left out: ' + (o.note || o.status)) : ''}</td>
       <td class='num r nw'>${money(o.price)}</td><td>${o.in_stock ? pill('ok', 'in stock') : pill('idle', 'sold out')}</td>
-      <td class='num r nw ${o.price > p.price ? 'up' : 'down'}'>${o.price && p.price ? (o.price > p.price ? '+' : '') + money(o.price - p.price) : ''}</td>
-      <td class='num r muted nw'>${ago(o.last_seen_at)}</td>${admin ? `<td class='r nw'><button class='btn small' type='button' title='These two are not the same product' onclick="event.stopPropagation();matchOverride(${p.id},${o.id},'different')">Not the same</button></td>` : ''}</tr>`).join('')}</table></div>
+      <td class='num r nw ${o.price > p.price ? 'up' : 'down'}'>${!o.me && o.price && p.price ? (o.price > p.price ? '+' : '') + money(o.price - p.price) : ''}</td>
+      <td class='num r muted nw'>${ago(o.last_seen_at)}</td>${admin ? `<td class='r nw'>${o.me ? '' : `<button class='btn small' type='button' title='These two are not the same product' onclick="event.stopPropagation();matchOverride(${p.id},${o.id},'different')">Not the same</button>`}</td>` : ''}</tr>`).join('')}</table></div>
     ${linkForm(p, admin)}</section>`;
 }
 // Admin: link this listing to another by its id (from its page URL), or undo hand-made matches.
@@ -999,44 +1207,53 @@ async function matchOverride(id, other, verdict) {
   catch (e) { toast(e.message); }
 }
 // Step chart of the recorded prices (a price holds until the next row), with the 90-day typical
-// price dashed, out-of-stock stretches left blank, and a dot where an alert went out. Hover for the value.
-function chart(hist, typical, alerts) {
+// price dashed, out-of-stock stretches left blank, and a dot where an alert went out. The same model at
+// up to five other shops (`compare`, cheapest listing of each) is drawn under it in the --cmp colours,
+// named in the legend and in the table below. Hover for every value at that moment.
+let chartData = null;
+function chart(hist, typical, alerts, compare = [], self = 'this listing') {
   const pts = hist.map(h => ({t: Date.parse(h.observed_at), p: h.in_stock ? h.price : null}));
   if (!pts.length) return "<p class='muted'>no history yet</p>";
   const now = Date.now(), t0 = pts[0].t, t1 = Math.max(now, pts[pts.length - 1].t + 1), W = 1000, H = 280, L = 64, R = 14, T = 14, B = 30;
-  const vals = pts.map(x => x.p).filter(v => v != null).concat(typical ? [typical] : []);
+  const cmp = compare.map((c, i) => ({label: shop(c.site), color: `var(--cmp${i + 1})`,
+    pts: c.history.map(h => ({t: Math.max(Date.parse(h.observed_at), t0), p: h.in_stock ? h.price : null}))})).filter(c => c.pts.length);
+  const vals = pts.map(x => x.p).filter(v => v != null).concat(typical ? [typical] : [], cmp.flatMap(c => c.pts.map(x => x.p).filter(v => v != null)));
   if (!vals.length) return "<p class='muted'>never in stock while tracked</p>";
   let lo = Math.min(...vals), hi = Math.max(...vals); if (hi === lo) { lo *= 0.95; hi *= 1.05; } const pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
   const X = t => L + (t - t0) / (t1 - t0) * (W - L - R), Y = v => T + (hi - v) / (hi - lo) * (H - T - B);
-  let path = '', prev = null;
-  pts.forEach((x, i) => { const tEnd = i + 1 < pts.length ? pts[i + 1].t : t1;
-    if (x.p == null) { prev = null; return; }
-    path += (prev == null ? `M${X(x.t).toFixed(1)},${Y(x.p).toFixed(1)}` : `L${X(x.t).toFixed(1)},${Y(x.p).toFixed(1)}`) + `L${X(tEnd).toFixed(1)},${Y(x.p).toFixed(1)}`; prev = x.p; });
+  const steps = list => { let d = '', prev = null;
+    list.forEach((x, i) => { const tEnd = i + 1 < list.length ? list[i + 1].t : t1;
+      if (x.p == null) { prev = null; return; }
+      d += (prev == null ? 'M' : 'L') + `${X(x.t).toFixed(1)},${Y(x.p).toFixed(1)}L${X(tEnd).toFixed(1)},${Y(x.p).toFixed(1)}`; prev = x.p; });
+    return d; };
+  const path = steps(pts);
   const yTicks = Array.from({length: 5}, (_, i) => lo + (hi - lo) * i / 4);
   const days = (t1 - t0) / 864e5, step = days > 60 ? 14 : days > 14 ? 7 : days > 3 ? 1 : 0.25, xt = [];
   for (let t = t0; t <= t1; t += step * 864e5) xt.push(t);
   const fmt = t => { const d = new Date(t); return step < 1 ? d.toISOString().slice(5, 16).replace('T', ' ') : d.toLocaleDateString('en-GB', {day: 'numeric', month: 'short'}); };
   const marks = (alerts || []).filter(a => a.price && Date.parse(a.created_at) >= t0).map(a => `<circle cx='${X(Date.parse(a.created_at)).toFixed(1)}' cy='${Y(a.price).toFixed(1)}' r='5' fill='var(--down)' stroke='var(--card)' stroke-width='2'><title>${esc(a.kind)} alert, ${money(a.price)}</title></circle>`).join('');
-  const data = JSON.stringify(pts.map(x => [x.t, x.p]));
-  return `<div class='legend'><span><i style='border-color:var(--chart)'></i>price</span>${typical ? `<span><i style='border-color:var(--typical);border-top-style:dashed'></i>typical, 90 d</span>` : ''}<span><i style='border:0;width:9px;height:9px;border-radius:50%;background:var(--down)'></i>alert sent</span><span>gaps = sold out</span></div>
-    <div class='chart' onmousemove='chartHover(event,${data},${t0},${t1},${L},${R},${W})' onmouseleave="this.querySelector('.tip').style.display='none'">
+  chartData = {self, main: pts.map(x => [x.t, x.p]), cmp: cmp.map(c => ({label: c.label, pts: c.pts.map(x => [x.t, x.p])}))};
+  return `<div class='legend'><span><i style='border-color:var(--chart)'></i>${cmp.length ? esc(self) + ' (this listing)' : 'price'}</span>${cmp.map(c => `<span><i style='border-color:${c.color}'></i>${esc(c.label)}</span>`).join('')}${typical ? `<span><i style='border-color:var(--typical);border-top-style:dashed'></i>typical, 90 d</span>` : ''}<span><i style='border:0;width:9px;height:9px;border-radius:50%;background:var(--down)'></i>alert sent</span><span>gaps = sold out</span></div>
+    <div class='chart' onmousemove='chartHover(event,${t0},${t1},${L},${R},${W})' onmouseleave="this.querySelector('.tip').style.display='none'">
     <svg viewBox='0 0 ${W} ${H}' preserveAspectRatio='none' role='img' aria-label='Price history chart'>
       ${yTicks.map(v => `<line x1='${L}' x2='${W - R}' y1='${Y(v).toFixed(1)}' y2='${Y(v).toFixed(1)}' stroke='var(--line2)' stroke-width='1'/><text x='${L - 8}' y='${(Y(v) + 4).toFixed(1)}' text-anchor='end' font-size='11' fill='var(--muted)'>${Math.round(v / 100).toLocaleString()}</text>`).join('')}
       ${xt.map(t => `<text x='${X(t).toFixed(1)}' y='${H - 8}' text-anchor='middle' font-size='11' fill='var(--muted)'>${fmt(t)}</text>`).join('')}
       ${typical ? `<line x1='${L}' x2='${W - R}' y1='${Y(typical).toFixed(1)}' y2='${Y(typical).toFixed(1)}' stroke='var(--typical)' stroke-width='1.5' stroke-dasharray='6 5'/>` : ''}
+      ${cmp.map(c => `<path d='${steps(c.pts)}' fill='none' stroke='${c.color}' stroke-width='1.5' vector-effect='non-scaling-stroke'/>`).join('')}
       <path d='${path}' fill='none' stroke='var(--chart)' stroke-width='2' vector-effect='non-scaling-stroke'/>${marks}
       <line id='xhair' x1='0' x2='0' y1='${T}' y2='${H - B}' stroke='var(--muted)' stroke-width='1' style='display:none'/>
     </svg><div class='tip'></div></div>`;
 }
-function chartHover(ev, pts, t0, t1, L, R, W) {
+function chartHover(ev, t0, t1, L, R, W) {
   const box = ev.currentTarget, svg = box.querySelector('svg'), rect = svg.getBoundingClientRect();
-  const fx = (ev.clientX - rect.left) / rect.width * W; if (fx < L || fx > W - R) return;
+  const fx = (ev.clientX - rect.left) / rect.width * W; if (fx < L || fx > W - R || !chartData) return;
   const t = t0 + (fx - L) / (W - L - R) * (t1 - t0);
-  let cur = null; for (const [pt, pp] of pts) { if (pt <= t) cur = pp; else break; }
+  const at = pts => { let cur; for (const [pt, pp] of pts) { if (pt <= t) cur = pp; else break; } return cur; };
+  const cur = at(chartData.main), price = v => v === undefined ? '—' : v == null ? 'sold out' : money(v) + ' EGP';
   const tip = box.querySelector('.tip'), xh = svg.querySelector('#xhair');
   xh.setAttribute('x1', fx); xh.setAttribute('x2', fx); xh.style.display = '';
-  tip.style.display = 'block'; tip.style.left = Math.min(ev.clientX - rect.left + 12, rect.width - 170) + 'px'; tip.style.top = (ev.clientY - rect.top - 40) + 'px';
-  tip.innerHTML = `<div class='muted'>${new Date(t).toLocaleString('en-GB', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'})}</div><b class='num'>${cur == null ? 'sold out' : money(cur) + ' EGP'}</b>`;
+  tip.style.display = 'block'; tip.style.left = Math.min(ev.clientX - rect.left + 12, rect.width - (chartData.cmp.length ? 240 : 170)) + 'px'; tip.style.top = (ev.clientY - rect.top - 40) + 'px';
+  tip.innerHTML = `<div class='muted'>${new Date(t).toLocaleString('en-GB', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'})}</div>${chartData.cmp.length ? [[chartData.self, cur], ...chartData.cmp.map(c => [c.label, at(c.pts)])].map(([l, v], i) => `<div class='kv'><span>${esc(l)}</span>${i ? `<span class='num'>${price(v)}</span>` : `<b class='num'>${price(v)}</b>`}</div>`).join('') : `<b class='num'>${price(cur)}</b>`}`;
 }
 // Column titles sort: products and saved queries on the server (so it holds across every page),
 // any other table in the page.
@@ -1083,7 +1300,7 @@ ICONS = {
     "__I_SCREEN__": _icon("<rect x='3' y='4' width='18' height='12' rx='2'/><path d='M8 20h8M12 16v4'/>"),
     "__I_MENU__": _icon("<path d='M4 6h16M4 12h16M4 18h16'/>"),
 }
-APP = APP.replace("__CSS__", CSS).replace("__THEME__", THEME_INIT)
+APP = APP.replace("__CSS__", CSS).replace("__THEME__", THEME_INIT).replace("__SHOPS__", json.dumps(shops.for_ui()))
 for _mark, _svg in ICONS.items():
     APP = APP.replace(_mark, _svg)
 
@@ -1383,7 +1600,8 @@ def run_query(conn: sqlite3.Connection, name: str, now: datetime, hours: float,
     if grp and "grp" in columns:
         where.append("grp = ?"); params.append(grp)
     if site and "site" in columns:
-        where.append("site = ?"); params.append(site)
+        sites = shops.expand(site)
+        where.append(f"site IN ({','.join('?' * len(sites))})"); params.extend(sites)
     if "title" in columns:
         for word in search.split()[:6]:
             where.append("title LIKE ?"); params.append(f"%{word}%")

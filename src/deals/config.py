@@ -132,7 +132,7 @@ class Config:
 
 
 def load(path: Path) -> Config:
-    from deals.sites import SITES
+    from deals.shops import SHOPS
 
     raw = tomllib.loads(path.read_text())
     server = raw.get("server", {})
@@ -141,11 +141,11 @@ def load(path: Path) -> Config:
     watches = []
     for w in raw.get("watch", []):
         targets = {}
-        for site in SITES:
+        for site in SHOPS:
             value = w.get(site)
             if value:
                 targets[site] = [value] if isinstance(value, str) else list(value)
-        unknown = set(w) - set(SITES) - {"name", "label", "interval_minutes", "max_interval_minutes",
+        unknown = set(w) - set(SHOPS) - {"name", "label", "interval_minutes", "max_interval_minutes",
                                           "min_price", "min_drop", "require_words", "exclude_words"}
         if unknown:
             raise ValueError(f"watch {w.get('name')!r}: unknown keys {sorted(unknown)}")

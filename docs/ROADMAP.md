@@ -61,13 +61,24 @@ Ordered by value for effort. "Why" says what problem each one solves.
 12. **Web dashboard**: product page with a price chart, search, freshness per group, alert history.
     The data is all in SQLite already; FastAPI can serve it next to the API.
 13. **More shops**: Raya (B.TECH, 2B, Dream 2000 done 27 October 2026, Carrefour 28 October, Dubai Phone and Hardware Market 30 October, Amazon Now 3 November). Each needs one `sites/<shop>.py` (`fetch_page` +
-    parser) and a saved-page test; everything else (planner, scheduling, alerts) is shared. Jumia Egypt was
+    parser) and a saved-page test; everything else (planner, scheduling, alerts) is shared. *Ready for 20+
+    shops since 4 Nov 2026*: one table of shops (`deals/shops.py`), `make new-shop` for the skeletons and
+    `tests/test_shops.py`, which fails until a new shop has everything (adapter, screenshot spec, a saved page
+    that parses, doc, config, worker script and setup docs); the web UI's Shops page, shop filters by kind,
+    and a Devices table with shops down the side. Jumia Egypt was
     added on 26 October 2026 ([JUMIA.md](JUMIA.md)); its open ideas: crawl `/flash-sales/` to mark flash
     deals, use the Official Store badge and the other-sellers price (`mpg`) in alerts.
 14. **CI**: when the repo is on GitHub, run `pytest` on every push and deploy `main` automatically (the
     same `scripts/deploy.sh`).
-15. **Parser health checks**: daily fill-rate report (share of listings with price, rating, stock),
-    so a *partial* layout change is caught, not just "0 products".
+15. **Parser health checks**: *prices done 4 Nov 2026*: a page whose in-stock listings mostly come without a
+    price files a parser error and fails `parser <shop>` in health (0 of 120,356 tracked products were in
+    stock without a price that day, so this only fires on a broken parser). Still open: ratings, stock and
+    titles the same way, and not recording the broken page's "no price" into history.
+18. **When the catalogue passes ~250,000 products** (measured 4 Nov 2026 at 120,000): title search
+    (`title LIKE '%word%'`) takes 0.17 to 0.19 s on the droplet, a full scan; an FTS5 trigram index
+    (about 40 MB more) would make it instant. The matching pass takes 15 to 18 s and about 70 MB in its own
+    process; the coordinator holds 52 MB of its own memory (the rest of its 160 MB is page cache the kernel
+    takes back; 0 out-of-memory kills under the 300 MB limit). Neither needs work before then.
 16. **Amazon from the droplet**: datacenter IPs are mostly refused. If you ever need it without a home
     machine, the options are fetching through the headless browser (slow, memory-heavy) or a paid
     residential proxy. Not needed while a home worker runs.

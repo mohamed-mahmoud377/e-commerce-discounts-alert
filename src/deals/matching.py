@@ -47,6 +47,7 @@ from pathlib import Path
 from deals import db
 from deals.db import iso
 from deals.models import valid_gtin
+from deals.shops import SHOPS
 
 VERSION = 13  # bump when the title rules change: every title is then read again at the next pass
 
@@ -591,9 +592,10 @@ def extract(conn: sqlite3.Connection) -> int:
     return n
 
 
-# Shops whose product links end in the model code, written by the shop itself ("...-receiver-l43hynda630").
-# Not Dream 2000 (one link covers every size of a product), nor Jumia (sellers write theirs).
-SLUG_SITES = ("btech_eg", "cairosales_eg", "carrefour_eg")
+# Shops whose product links end in the model code, written by the shop itself ("...-receiver-l43hynda630"):
+# Shop.slug_codes in deals/shops.py. Not Dream 2000 (one link covers every size of a product), nor Jumia
+# (sellers write theirs).
+SLUG_SITES = tuple(s.name for s in SHOPS.values() if s.slug_codes)
 
 
 def slug_codes(url: str) -> list[str]:

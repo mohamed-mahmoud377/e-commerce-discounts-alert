@@ -11,7 +11,8 @@ owns one job.
 | Module | Lines | Owns | Calls |
 | --- | --- | --- | --- |
 | `models.py` | 103 | The shared data shapes: `Listing` (one product on one page), `Slice` (a category plus optional price range, with its text key), `PageResult`, `Category`, badge names, the `Blocked` and `UnknownTarget` errors | nothing |
-| `config.py` | 126 | Reading `config.toml` into `Config`, `AlertRules`, `Schedule`, `SiteSettings`, `Watch` | models |
+| `shops.py` | 103 | Every shop's identity in one table, `SHOPS` (since 4 Nov 2026): key, English label, Arabic name (`alerts.SITE_NAME` is built from it), badge, kind (`KINDS`: marketplace, electronics, grocery), home page, `home_only`, its doc, the category roots `deals categories` prints, `slug_codes` (matching); `expand()` turns a shop filter (`''`, a shop, `kind:<kind>`) into shop names; `for_ui()` is the list the web UI draws every shop select, table and badge from. No HTTP imports, so the coordinator reads it without the adapters | nothing |
+| `config.py` | 184 | Reading `config.toml` into `Config`, `AlertRules`, `Schedule`, `SiteSettings`, `Watch` | models |
 | `sites/amazon_eg.py` | 198 | Fetching and parsing amazon.eg listing pages; cookies from headless Chromium | models, base |
 | `sites/noon_eg.py` | 139 | Fetching and parsing noon's catalog JSON; per-seller keys | models |
 | `sites/jumia_eg.py` | 191 | Fetching Jumia category pages with Safari's TLS fingerprint (Cloudflare), reading the embedded `__STORE__` JSON, detecting redirects to the parent category | models, base |
@@ -31,7 +32,7 @@ owns one job.
 | `pricing.py` | 252 | Price statistics and the deal rules; pure functions, no database (the low-stock shops come from `shop_rules`) | config, models, shop_rules |
 | `alerts.py` | 279 | Judging a changed product, writing alerts, formatting the Arabic message, the Telegram client and the delivery loop | db, pricing |
 | `bot.py` | 292 | The Telegram conversation: /start, /stop, approvals, subscribers; `decide()` is shared with the web UI | alerts, db |
-| `health.py` | 207 | Health checks and the daily report | db, alerts |
+| `health.py` | 231 | Health checks (including `parser <shop>`: a page of in-stock listings without prices in the last hour) and the daily report | db, alerts |
 | `matching.py` | 590 | The same product on different shops: model codes read from titles once (`product_codes`), the hourly grouping streamed through SQL into `models` / `product_models` (in a `nice 19` subprocess), `same_model()` for the views. See [MATCHING.md](MATCHING.md) | db |
 | `details.py` | 150 | Product page parsers per shop (barcode, model number, specs) and `fetch_details`, which never retries a challenge | models |
 | `shots.py` | 290 | The alert screenshot, worker side: per-shop `SPECS` for all eleven shops (`arabic` URL swap, `boxes` to frame in red, `context` for the crop, `ready` element, `hide` and `block`), `crop()` (pure geometry), `annotate()` (hide overlays, draw the frames, cut out a JPEG) and the `Shooter` thread with its one headless Chromium (full build, new headless mode, a normal Chrome user agent) | playwright |
@@ -39,9 +40,9 @@ owns one job.
 | `detailq.py` | 170 | The coordinator's side of product pages: offer one to an idle worker (paced, capped, paused after a refusal), record what it gave, refill the queue | db, config |
 | `monitor.py` | 166 | Device states, events (logs), the dashboard page | db, scheduler |
 | `uptime.py` | 243 | What is up and down: `observe()` the state of every shop, device and device on a shop; `track()` (each watchdog round) records changes in `status_changes`, sends 🔴 down and ✅ back (back only for what the admins were told), notices the server's own outages from a gap in the rounds; `current`, `changes`, `outages` for the views | alerts, scheduler |
-| `audit.py` | 194 | The error book: `record()` groups a problem by fingerprint (device, shop, category, message with numbers blanked), `categorize()` by ordered regex `RULES`, `CATEGORIES` holds each kind's cause and fix; fed by `scheduler.add_events` (WARNING/ERROR lines) and the failed/blocked/parser reports | db, sites |
-| `webui.py` | 1390 | The web UI page (one HTML + CSS + JS string, light and dark themes) and its queries | health, monitor, alerts |
-| `coordinator.py` | 791 | The FastAPI app (all endpoints, who may call which) and the watchdog thread (which also starts the hourly matching) | everything above |
+| `audit.py` | 194 | The error book: `record()` groups a problem by fingerprint (device, shop, category, message with numbers blanked), `categorize()` by ordered regex `RULES`, `CATEGORIES` holds each kind's cause and fix; fed by `scheduler.add_events` (WARNING/ERROR lines) and the failed/blocked/parser reports; `listing()` takes a shop or a `kind:` | db, shops |
+| `webui.py` | 1623 | The web UI page (one HTML + CSS + JS string, light and dark themes; the shop list is put in from `shops.for_ui()`) and its queries: `shop_list()` and `shop_page()` for the Shops page, `_compare()` for the other shops on a product's chart | health, monitor, alerts, audit, uptime, shop_rules, shops |
+| `coordinator.py` | 834 | The FastAPI app (all endpoints, who may call which) and the watchdog thread (which also starts the hourly matching); `unpriced_page()` files a parser error when most in-stock listings of a page come without a price | everything above |
 | `auth.py` | 146 | The admins: `users` rows (PBKDF2 password hashes; the first start adds jerry and feysal), `login()`, and `Tokens`, the 90-day HS256 JWT signed with `<data_dir>/jwt.key` that carries a fingerprint of the password hash (a new password logs that user out everywhere) | db |
 | `worker.py` | 271 | The crawling loop on each device, retries, log shipping | sites, planner, HTTP to the coordinator |
 | `cli.py` | 445 | The `deals` command: every subcommand | everything |
@@ -225,15 +226,18 @@ without a login; changes still need an admin.
 | `GET /api/overview` | admin | | totals, health checks, latest deals, devices, shops, server load and RAM, live revision, `admin` (is this an admin, not a read over the SSH tunnel) |
 | `GET /api/alerts?days=&kind=&limit=` | admin | | recent alerts with delivery counts and the Telegram text |
 | `GET /api/jobs?limit=` | admin | | jobs, failing first then running |
-| `GET /api/products?q=&site=&grp=&sort=&in_stock=&changed_since=&limit=&offset=`, `GET /api/products/{id}` | admin | | product search (`changed_since`: last change at or after this UTC time); one product with stats and history |
+| `GET /api/products?q=&site=&grp=&sort=&in_stock=&changed_since=&limit=&offset=`, `GET /api/products/{id}` | admin | | product search (`changed_since`: last change at or after this UTC time); one product with stats, history, `same_model` and `compare` (the same model's history at up to 5 other shops, cheapest listing of each, for the chart) |
 | `GET /api/queries`, `GET /api/queries/{name}?hours=&grp=&site=&q=&sort=&desc=&limit=&offset=` | admin | | saved reports; `q` = words that must all be in the title |
 | `GET /api/subscribers` | admin | | everyone but removed people, join requests first, messages in 7 days; `admin` |
+| `GET /api/shops`, `GET /api/shops/{name}` | admin | | every shop (`shops.SHOPS` order) with products, in stock, slices, failing, last pass, deals in 24 h, blocked IPs, open problems, uptime state, devices assigned and working; one shop with `changes_24h`, `devices`, `blocks`, `groups` (slices per watch group), `watches` (with its roots), `shop_rules`, `errors` (open, 7 days), `uptime` (changes, 7 days), `deals` (latest 10); 404 for an unknown shop |
 | `GET /api/rules` | admin | | alert rules, schedule and watched groups from the config, and `shop_rules`: every shop rule with the products it caught (read-only) |
 | `POST /api/subscribers/{chat_id}/{action}` | admin | | `approve`, `reject`, `remove`, `promote`, `demote` (as the bot's buttons; tells the person on Telegram). 403 for other tokens, 409 if already decided |
 | `POST /api/report` | admin | | queue the daily report to the admins now |
 | `GET /api/uptime?days=&kind=&name=&limit=` | admin | | `{status: [...], outages: [...], changes: [...]}` (uptime.py) |
 | `GET /api/errors?days=&site=&category=&source=&only_open=&limit=` | admin | | `{errors: [... with title, cause, fix, open], categories: {kind: [title, cause, fix]}, admin}` |
 | `POST /api/errors/{id}/{resolve,reopen}` | admin | | `{ok}`; 404 for an unknown id or action |
+
+Every `site=` filter (products, saved queries, errors) also takes `kind:<kind>`, every shop of that kind (`shops.expand`).
 
 Responses over 2 KB are gzipped (the web UI page is about 80 KB, 23 KB compressed); the page is one static
 string, and lists are paged in SQL, so the UI costs the 1 GB droplet next to nothing at rest.
@@ -358,19 +362,28 @@ data with `make sql` or `make devices`.
 [JUMIA.md](JUMIA.md), [CAIROSALES.md](CAIROSALES.md), [2B.md](2B.md), [BTECH.md](BTECH.md), [DREAM2000.md](DREAM2000.md), [CARREFOUR.md](CARREFOUR.md), [DUBAIPHONE.md](DUBAIPHONE.md), [HARDWAREMARKET.md](HARDWAREMARKET.md) and [AMAZON_NOW.md](AMAZON_NOW.md) show the analysis to do first: access,
 URL scheme or API, page caps, empty-result behaviour, category tree, signals):
 
-1. Create `src/deals/sites/<shop>.py` with a class having `name`, `max_slice_total` (the most products the
+0. `make new-shop NAME=elaraby LABEL="El Araby" URL=https://...` writes the adapter and doc skeletons
+   (`scripts/new-shop.py`, never over an existing file) and prints the `shops.py` entry and this list.
+   From then on `make test` fails in `tests/test_shops.py` until the shop has everything below.
+1. Fill in `src/deals/sites/<shop>.py`: a class having `name`, `max_slice_total` (the most products the
    shop lets you page through) and `fetch_page(slice, page) -> PageResult`. Return `total` when the shop
    shows an exact count, `subcategories` for category slices (for `deals categories`), and raise `Blocked` on
    a captcha. The planner splits by price, so the price filter must be exact (check that its ends are
    inclusive). Make sure an empty slice comes back as an empty page and not as some other listing the shop
    redirects to.
-2. Register it in `sites/__init__.py` (`SITES`); add its Arabic name to `alerts.SITE_NAME`, its roots to
-   `cli.cmd_categories`, and an option to the two shop selects in `webui.py`.
-3. Save one real listing page as `tests/fixtures/<shop>_category.html.gz` and add a parser test next to the
-   others in `tests/test_parsers.py`.
-4. Add its roots to the `[[watch]]` groups and `[sites.<shop>]` delays in the config (deploy the code
-   first: the old code rejects unknown keys); add it to a worker's `DEALS_SITES`.
-5. `deals categories <shop> <id>` and `deals plan ...` help find and check category ids.
+2. Add its `Shop` to `shops.SHOPS` (labels, Arabic name, badge, kind, `home_only`, doc, category roots,
+   `slug_codes`) and the adapter to `sites/__init__.py` (`SITES`) in the same place. Alerts, the bot, health,
+   `deals categories`, matching and every shop list in the web UI read `SHOPS`; nothing else lists shops.
+3. Save one real listing page as `tests/fixtures/<shop>_category.html.gz`, add a parser test next to the
+   others in `tests/test_parsers.py` and the page to `LISTING_PAGES` in `tests/test_shops.py` (every shop's
+   page must parse: unique SKUs, whole-piastre prices, a crossed-out price above the price, https links).
+4. A `shots.SPECS` entry (price and seller boxes on its product page), its doc linked from `CLAUDE.md`, a
+   `[sites.<shop>]` block in `config.example.toml`; `test_shops.py` checks all three.
+5. Add it to every "all shops" `DEALS_SITES` line: `scripts/mac-worker-env.sh`, README.md, RUN_A_WORKER.md,
+   GETTING_STARTED.md, GUIDE.md (checked too), and by hand to each home worker's `worker.env`.
+6. Add its roots to the `[[watch]]` groups and `[sites.<shop>]` delays in the server's config (deploy the
+   code first: the old code rejects unknown keys).
+7. `deals categories <shop> <id>` and `deals plan ...` help find and check category ids.
 
 **Change or add a deal rule:** all rules live in `pricing.evaluate()`; statistics in `compute_stats()`. Add
 a field to `Deal` for any new fact, render it in `alerts.format_deal()`, and add a test in
@@ -385,7 +398,7 @@ stored history at the next start, and the web UI's Rules page lists the rule wit
 rule up in [SHOP_RULES.md](SHOP_RULES.md) and the shop's own doc.
 
 **Change a message:** deal alerts are built in `alerts.format_deal()`, with the word lists `KIND_TITLE`,
-`SIGNAL_TEXT`, `SITE_NAME`, `CONFIDENCE` at the top of `alerts.py`. Bot replies are the constants at the top
+`SIGNAL_TEXT`, `CONFIDENCE` at the top of `alerts.py` (a shop's Arabic name is `Shop.arabic` in `shops.py`). Bot replies are the constants at the top
 of `bot.py`; the daily report is `health.daily_report()`.
 
 **Read a new signal from listing cards:** add a field to `Listing` (`models.py`), parse it in the shop
@@ -402,5 +415,6 @@ then appears in `make health`, the dashboard and the daily report automatically.
 splitting; the planner covering every product of a fake shop; time-weighted statistics and every deal rule
 including the fake-discount case; the coordinator API (leases, one job per IP, blocks, lost leases,
 empty-page detection, alert creation and no-repeat); the bot (approval, stop and return, blocked users,
-fan-out); health checks and the daily report; device states and logs; and an end-to-end run of a real HTTP
-coordinator with a real worker crawling a fake shop.
+fan-out); health checks and the daily report; device states and logs; every shop having what it needs
+(`test_shops.py`: adapter, screenshot spec, a saved page that parses, doc, config, worker script); and an
+end-to-end run of a real HTTP coordinator with a real worker crawling a fake shop.

@@ -14,6 +14,7 @@ from deals import audit, db, matching, planner, uptime
 from deals.alerts import Telegram, product_stats
 from deals.db import iso, parse_iso, utcnow
 from deals.models import Slice
+from deals.shops import SHOPS
 from deals.sites import SITES
 
 SPARK = "▁▂▃▄▅▆▇█"
@@ -373,45 +374,7 @@ def cmd_categories(args) -> None:
             print(f"  {c.name:<45} category:{c.id}")
     else:
         print("give a category id to list its children; known roots:")
-        for name, cid in {"amazon_eg": [("Electronics", "18018102031"), ("Home", "18021933031"),
-                                        ("Appliances", "21863792031"), ("Video Games", "18022560031")],
-                          "amazon_now_eg": [("Everything (the Amazon Now root)", "211761638031"), ("Grocery", "18020637031"),
-                                            ("Health & Household", "18021875031"), ("Beauty", "18017988031"),
-                                            ("Baby", "18017931031"), ("Electronics", "18018102031")],
-                          "noon_eg": [("Electronics & Mobiles", "electronics-and-mobiles"),
-                                      ("Home & Kitchen", "home-and-kitchen")],
-                          "jumia_eg": [("Electronics", "electronics"), ("Phones & Tablets", "phones-tablets"),
-                                       ("Computing", "computing"), ("Home & Office", "home-office"),
-                                       ("Gaming", "video-games")],
-                          "cairosales_eg": [("TVs & Screens", "tvs-screens"), ("Air Conditioners", "air-conditioners"),
-                                            ("Refrigerators", "refrigerators"), ("Mobiles", "mobiles-tablets"),
-                                            ("Small Appliances", "small-appliances"),
-                                            ("Computers", "computer-accessories"), ("Gaming", "gaming-accessories"),
-                                            ("Audio", "home-theaters-speakers")],
-                          "2b_eg": [("Computer", "118"), ("Mobile & Tablet", "266"), ("Home Appliances", "2370"),
-                                    ("Televisions", "1932"), ("Audio", "2382"), ("Gaming", "120"),
-                                    ("Electronics", "610")],
-                          "btech_eg": [("TVs & Projectors", "tvs-projectors"), ("Large Home Appliances", "large-home-appliances"),
-                                       ("Small Home Appliances", "small-home-appliances"), ("Mobiles & Tablets", "mobiles-tablets"),
-                                       ("Laptops & PCs", "laptop-pc"), ("Audio & Recording", "audio-recording"),
-                                       ("Gaming Area", "gaming-area"), ("Electronics", "electronics"),
-                                       ("Wearables", "wearables"), ("Personal Care", "personal-care")],
-                          "dream2000_eg": [("TVs", "tvs"), ("Mobiles", "mobiles"), ("Tablets", "tablets"), ("Laptops", "laptop"),
-                                           ("Air Conditioners", "air-conditioners"), ("Refrigerators", "refrigerator-and-deep-freezer"),
-                                           ("Kitchen Appliances", "kitchen-appliances"), ("Gaming", "gaming"),
-                                           ("Audio", "audio"), ("Electronics", "electronics"),
-                                           ("every collection (386)", "https://dream2000.com/en/collections.json?limit=250&page=1")],
-                          "carrefour_eg": [("Electronics & Appliances", "NFEGY4000000"), ("Mobiles, Tablets & Wearables", "NFEGY1200000"),
-                                           ("Small Appliances", "NFEGY4040000"), ("Large Appliances", "NFEGY4100000"),
-                                           ("Computers & Office", "NFEGY4070000"), ("TVs & Projectors", "NFEGY4080000")],
-                          "dubaiphone_eg": [("Everything (one listing)", "all"), ("Smart Phone", "mobiles-all-2"),
-                                            ("Laptops", "all-laptops"), ("Tablets", "tablets"), ("TVs", "tvs"),
-                                            ("Kitchen Appliances", "kitchen-appliances"), ("Home Appliances", "home-appliances"),
-                                            ("every category (145)", "https://www.dubaiphone.net/sitemap-categories.xml")],
-                          "hardwaremarket_eg": [("Everything", "all"), ("Mouse", "41"), ("Keyboards", "15"), ("Headsets", "39"),
-                                                ("Streaming", "1109"), ("Gamepad", "148"), ("Hardware", "433"),
-                                                ("Fans & Cooling", "120"), ("Computer Accessories", "62"),
-                                                ("Mobile Accessories", "4395")]}[args.site]:
+        for name, cid in SHOPS[args.site].roots:
             print(f"  {name:<25} {cid}")
 
 

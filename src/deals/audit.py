@@ -11,12 +11,14 @@ numbers, addresses and links blanked, so "page 3 attempt 2 failed after 30002 ms
 """
 
 import hashlib
+import json
 import re
 import sqlite3
 from datetime import datetime, timedelta
 
+from deals import shops
 from deals.db import iso
-from deals.sites import SITES
+from deals.shops import SHOPS
 
 # category: (title, likely cause, what to do). English: the web UI and the CLI show them.
 CATEGORIES: dict[str, tuple[str, str, str]] = {
@@ -116,7 +118,7 @@ def shape(message: str) -> str:
 
 
 def find_site(message: str) -> str | None:
-    return next((s for s in SITES if s in message), None)
+    return next((s for s in SHOPS if s in message), None)
 
 
 def record(conn: sqlite3.Connection, source: str, level: str, message: str, at: str, *,
@@ -124,7 +126,7 @@ def record(conn: sqlite3.Connection, source: str, level: str, message: str, at: 
     """Count one problem (the caller commits)."""
     message = _CURL_HINT.sub("", message).strip()
     if m := _PREFIX.match(message):  # a worker's per-shop thread: '[jumia_eg] ...'
-        site, message = site or (m.group(1) if m.group(1) in SITES else None), message[m.end():]
+        site, message = site or (m.group(1) if m.group(1) in SHOPS else None), message[m.end():]
     category = category or categorize(message)
     # the server is the same for every shop thread of a device: one row per device
     site = None if category == "server_unreachable" else site or find_site(message)
@@ -176,10 +178,14 @@ def resolve(conn: sqlite3.Connection, error_id: int, now: datetime, *, reopen: b
 def listing(conn: sqlite3.Connection, now: datetime, *, days: float = 7, site: str | None = None,
             category: str | None = None, source: str | None = None, open_only: bool = False,
             limit: int = 500) -> list[dict]:
-    """Problems seen in the last `days`, the most recent first, each with its cause and fix."""
+    """Problems seen in the last `days`, the most recent first, each with its cause and fix. `site` is a
+    shop or 'kind:<kind>' (shops.expand)."""
+    sites = shops.expand(site)
+    site = json.dumps(sites) if sites is not None else None
     rows = conn.execute(
         """SELECT *, (resolved_at IS NULL OR last_seen_at > resolved_at) AS open FROM errors
-           WHERE last_seen_at >= ? AND (? IS NULL OR site = ?) AND (? IS NULL OR category = ?)
+           WHERE last_seen_at >= ? AND (? IS NULL OR site IN (SELECT value FROM json_each(?)))
+             AND (? IS NULL OR category = ?)
              AND (? IS NULL OR source = ?) AND (NOT ? OR resolved_at IS NULL OR last_seen_at > resolved_at)
            ORDER BY last_seen_at DESC LIMIT ?""",
         (iso(now - timedelta(days=days)), site, site, category, category, source, source, int(open_only),

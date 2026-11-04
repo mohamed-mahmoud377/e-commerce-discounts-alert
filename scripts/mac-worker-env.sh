@@ -8,9 +8,10 @@ token=$(ssh "$HOST" "sed -n 's/^mac = \"\\(.*\\)\"/\\1/p' /etc/deals/config.toml
 cat > worker.env <<ENV
 DEALS_COORDINATOR=http://${HOST#*@}:8787
 DEALS_TOKEN=$token
-DEALS_SITES=noon_eg,amazon_eg,jumia_eg,cairosales_eg,2b_eg
+# Every shop (deals/shops.py; tests/test_shops.py checks this line lists them all).
+DEALS_SITES=noon_eg,amazon_eg,jumia_eg,cairosales_eg,2b_eg,btech_eg,dream2000_eg,carrefour_eg,dubaiphone_eg,hardwaremarket_eg,amazon_now_eg
 DEALS_DATA_DIR=$PWD/data
 DEALS_SCREENSHOTS=1
 ENV
 chmod 600 worker.env
-echo "wrote worker.env (sites: noon_eg, amazon_eg, jumia_eg, cairosales_eg, 2b_eg)"
+echo "wrote worker.env (sites: $(sed -n 's/^DEALS_SITES=//p' worker.env))"

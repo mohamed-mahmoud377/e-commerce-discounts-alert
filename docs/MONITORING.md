@@ -60,6 +60,7 @@ your Mac, which checks the outside of the system, then `deals health` on the ser
 | crawl SITE | A slice finished within 60 min and the backlog is under 2 h | Last finish 1 to 3 h ago, or backlog over 2 h | Nothing finished for 3 h | `make devices` to see which device should be on it |
 | jobs SITE | | Slices failing and retrying | A slice failed 3+ times in a row | `make status` shows the error; often a layout change |
 | coverage SITE | | A slice is too big to crawl fully | | Split the category in the config or raise its minimum price |
+| parser SITE | | | A page came in the last hour with over half of its in-stock listings (10 or more) without a price | The shop changed its layout: `deals crawl SITE "<slice>" --pages 1` on the Mac, save the page into `tests/fixtures/`, fix the parser. The page is still recorded (those products read "no price"); mark the error resolved in web UI → Errors once fixed |
 | blocked SITE | | A shop is pausing an IP | | Usually clears itself; see runbook if it repeats |
 | data | No bad prices, few A to B to A flip-flops | Over 50 flip-flops in 24 h (offers mixing) | A zero or negative price (parser bug) | Investigate the parser for that shop |
 | disk | 20% or more free | 10 to 20% | Under 10% | Delete old files on the server or resize the droplet |
@@ -69,7 +70,7 @@ The database line also shows its size, product count and price points: the quick
 
 ## Devices: who is fetching and how it's going
 
-The quickest view is the web UI (`make ui`, Overview or Devices tab); the commands below show the same.
+The quickest view is the web UI (`make ui`: Overview, Shops for one shop end to end, or Devices); the commands below show the same.
 
 Every device reports its result for each shop with every page it sends, so the coordinator always knows, per
 device and per shop, whether fetching works. Three ways to see it, all showing the same data:

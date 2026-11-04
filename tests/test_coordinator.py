@@ -386,3 +386,24 @@ def test_an_offline_device_does_not_keep_a_paused_shop_alarming(client):
     with client.conn:
         scheduler.worker_seen(client.conn, "friend", "2.2.2.2", now, sites=["jumia_eg"])
     assert scheduler.site_paused(client.conn, "jumia_eg", now) is None  # it is back online and not paused
+
+
+def test_a_page_of_in_stock_listings_without_prices_is_a_parser_error(client, cfg):
+    from deals import health
+    plan_amazon(client)
+    job = lease(client)
+    # sold-out products have no price: a page of them is normal
+    sold_out = [listing(f"S{i}", price=None, in_stock=False) for i in range(20)]
+    client.post(f"/api/jobs/{job['id']}/page", headers=W1,
+                json={"lease_token": job["lease_token"], "page": 1, "listings": sold_out, "done": False})
+    assert client.conn.execute("SELECT COUNT(*) FROM errors").fetchone()[0] == 0
+    # 15 of 20 in stock without a price: the parser lost the price (the page is still recorded)
+    page = [listing(f"P{i}", price=None) for i in range(15)] + [listing(f"Q{i}") for i in range(5)]
+    r = client.post(f"/api/jobs/{job['id']}/page", headers=W1,
+                    json={"lease_token": job["lease_token"], "page": 2, "listings": page, "done": False})
+    assert r.json()["ok"]
+    err = client.conn.execute("SELECT * FROM errors").fetchone()
+    assert (err["category"], err["site"], err["source"], err["level"]) == ("parser", "amazon_eg", "w1", "ERROR")
+    assert "15 of 20 in-stock listings came without a price" in err["message"]
+    checks = {c.name: c for c in health.run_checks(client.conn, cfg, utcnow())}
+    assert checks["parser amazon_eg"].level == health.FAIL

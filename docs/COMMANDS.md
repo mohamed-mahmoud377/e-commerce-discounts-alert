@@ -6,12 +6,16 @@ What the output means: [MONITORING.md](MONITORING.md). How it all works: [GUIDE.
 
 ## Web UI (the easiest way)
 
-Screens (sidebar on a computer, tab bar on a phone): Overview, Deals (every alert by kind, with the exact
-Telegram message), Products (search, shop, group, sort, in stock, "price changed in the last 24 h / 7 days /
-30 days"; click a product for its price chart, typical price, rarity, other sellers and alerts), Devices,
+Screens (sidebar on a computer, tab bar on a phone): Overview (the health checks and shops that need a look;
+the rest fold into one line), Deals (every alert by kind, with the exact Telegram message), Products (search,
+shop, group, sort, in stock, "price changed in the last 24 h / 7 days / 30 days"; click a product for its price
+chart, typical price, rarity, other sellers, alerts, and the same product at other shops, cheapest marked and
+drawn on the chart), Shops (every shop by kind: state, products, last pass, deals, devices, access; click one
+for its devices, watch groups, slices, blocks, shop rules, open problems, uptime and latest deals), Devices
+(shops down the side, one column per device; the per-device-and-shop list shows the ones that need a look),
 Uptime (what is up and down, downtime, every change), Errors (the error book: every kind of problem, counted,
-with cause and fix; the admin marks rows resolved), Jobs, Logs (live), Queries (17 saved reports with search and filters), Subscribers, Rules & watches. Click a table
-header to sort by it. Light, dark or Auto (follows the device) from the switch at the bottom of the sidebar.
+with cause and fix; the admin marks rows resolved), Jobs, Logs (live), Queries (17 saved reports with search and filters), Subscribers, Rules & watches. Every shop filter
+groups the shops by kind and can take a whole kind ("All electronics shops"). Click a table header to sort by it. Light, dark or Auto (follows the device) from the switch at the bottom of the sidebar.
 
 A small website served by the coordinator itself: nothing to install or run. Only the admins get in (the
 `users` table: jerry and feysal); they can also approve, reject, remove or promote subscribers (the same as the bot's
@@ -100,6 +104,7 @@ Prices are in piastres (divide by 100 for EGP); times are UTC.
 | Change watched categories or alert rules | `make ssh`, edit `/etc/deals/config.toml`, then `make restart-server` |
 | Check a group more or less often | `interval_minutes` (starting pace) and `max_interval_minutes` (the longest a quiet slice may wait, what matters for flash sales) in its `[[watch]]`, then `make restart-server` ([GUIDE](GUIDE.md#how-fast-you-hear-about-a-price-change)) |
 | Log in to the server | `make ssh` |
+| Start a new shop | `make new-shop NAME=elaraby LABEL="El Araby" URL=https://...`: adapter and doc skeletons and the checklist; `make test` then lists what the shop still lacks ([INTERNALS](INTERNALS.md), "Add a shop") |
 
 After a GitHub deploy the Mac worker still runs the code in your local checkout: `git pull`, then
 `make restart-mac-worker`.

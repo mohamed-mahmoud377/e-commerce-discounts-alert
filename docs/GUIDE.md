@@ -191,7 +191,7 @@ Adding a friend's computer as a worker (more crawling capacity from another conn
 1. On the server, create a token with `deals token`, add it under `[workers]` as `ahmed = "..."`, restart
    the coordinator.
 2. On their computer: clone the repo, do setup steps 1 and 2, then run
-   `DEALS_COORDINATOR=http://207.154.206.127:8787 DEALS_TOKEN=... DEALS_SITES=noon_eg,amazon_eg,jumia_eg,cairosales_eg,2b_eg,btech_eg,dream2000_eg .venv/bin/deals worker`.
+   `DEALS_COORDINATOR=http://207.154.206.127:8787 DEALS_TOKEN=... DEALS_SITES=noon_eg,amazon_eg,jumia_eg,cairosales_eg,2b_eg,btech_eg,dream2000_eg,carrefour_eg,dubaiphone_eg,hardwaremarket_eg,amazon_now_eg .venv/bin/deals worker`.
 
 Running everything on one machine without the server (for experiments): `cp config.example.toml config.toml`,
 then `.venv/bin/deals local` starts a coordinator and a worker in one process with a local database.

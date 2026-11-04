@@ -39,7 +39,7 @@ from deals.config import Config
 from deals.db import iso, utcnow
 from deals.models import Listing, Slice
 from deals.planner import PlannedSlice
-from deals.sites import SITES
+from deals.shops import SHOPS
 
 log = logging.getLogger(__name__)
 VERSION = pkg_version("deals")
@@ -353,6 +353,12 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
                 if rec.price_moved and dropped and listing.in_stock:
                     deal = alerts.check_product(conn, cfg, rec.product_id, bootstrap=bootstrap, now=now)
                     deals += deal is not None
+            if unpriced_page(body.listings):
+                # Recorded, not refused: the error book, the Shops page and `deals health` show it.
+                stocked = [x for x in body.listings if x.in_stock]
+                audit.record(conn, worker, "ERROR", f"{job['target']}: {sum(x.price is None for x in stocked)} of "
+                             f"{len(stocked)} in-stock listings came without a price (site layout changed?)",
+                             iso(now), site=job["site"], category="parser")
             scheduler.extend(conn, cfg, job_id, len(body.listings), drops, now)
             if body.no_results and not body.listings:
                 # The slice genuinely emptied (amazon: "No results for your search query"),
@@ -632,7 +638,7 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
     @app.post("/api/pauses", dependencies=[Depends(admin)])
     def pause_api(body: PauseIn):
         """Pause crawling by hand (ends by itself after `hours`)."""
-        if body.site != "*" and body.site not in SITES:
+        if body.site != "*" and body.site not in SHOPS:
             raise HTTPException(422, f"unknown shop {body.site!r}")
         with closing(db.connect(cfg.db_path)) as wc:
             try:
@@ -711,6 +717,21 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
                 raise HTTPException(404, "no such problem")
         return {"ok": True}
 
+    @app.get("/api/shops", dependencies=[Depends(viewer)])
+    def shops_api():
+        """Every shop with its products, crawl state, uptime and devices (the web UI's Shops page)."""
+        with closing(read_conn()) as rc:
+            return {"shops": webui.shop_list(rc, utcnow())}
+
+    @app.get("/api/shops/{name}", dependencies=[Depends(viewer)])
+    def shop_api(name: str):
+        """One shop end to end: devices, blocks, watch groups, slices, shop rules, problems, uptime, deals."""
+        with closing(read_conn()) as rc:
+            found = webui.shop_page(rc, cfg, name, utcnow())
+        if found is None:
+            raise HTTPException(404, "no such shop")
+        return found
+
     @app.get("/api/rules", dependencies=[Depends(viewer)])
     def rules_api():
         """The alert rules, schedule and watches from config, and every shop rule with what it caught."""
@@ -718,6 +739,18 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
             return {**webui.rules(cfg), "shop_rules": shop_rules.summary(rc)}
 
     return app
+
+
+# A page whose in-stock listings mostly have no price means the parser lost the price (a changed layout):
+# shops leave the price out only on sold-out products (4 Nov 2026: 0 of 120,356 tracked products were in
+# stock without a price). Checked on what the worker sent, before shop rules blank placeholder prices.
+UNPRICED_MIN_LISTINGS = 10
+UNPRICED_SHARE = 0.5
+
+
+def unpriced_page(listings) -> bool:
+    stocked = [x for x in listings if x.in_stock]
+    return len(stocked) >= UNPRICED_MIN_LISTINGS and sum(x.price is None for x in stocked) > len(stocked) * UNPRICED_SHARE
 
 
 def _site(name: str) -> str:

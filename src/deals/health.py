@@ -119,6 +119,14 @@ def run_checks(conn: sqlite3.Connection, cfg: Config, now: datetime) -> list[Che
                                                 f"(strike {b['strikes']}): {b['reason']}",
                   f"{SITE_NAME.get(b['site'], b['site'])} يحظر {b['ip']} مؤقتًا"))
 
+    # parsers: pages that came with in-stock listings but no prices in the last hour (coordinator.unpriced_page)
+    for r in conn.execute("""SELECT site, SUM(count) n, MAX(message) message FROM errors
+                             WHERE category = 'parser' AND message LIKE '%listings came without a price%' AND last_seen_at >= ?
+                               AND (resolved_at IS NULL OR last_seen_at > resolved_at) GROUP BY site""",
+                          (iso(now - timedelta(hours=1)),)).fetchall():
+        add(Check(f"parser {r['site']}", FAIL, f"in-stock listings without prices in the last hour ({r['n']:,} pages so far): {r['message']}",
+                  f"{SITE_NAME.get(r['site'], r['site'])}: منتجات متوفرة بدون أسعار، ربما تغيّر تصميم الموقع"))
+
     # data quality
     bad = one("SELECT COUNT(*) FROM products WHERE price <= 0 OR (list_price IS NOT NULL AND list_price <= 0)")[0]
     flips = one("""WITH h AS (SELECT product_id, price, LAG(price) OVER w prev, LAG(price, 2) OVER w prev2
