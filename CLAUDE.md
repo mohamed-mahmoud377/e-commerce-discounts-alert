@@ -8,7 +8,8 @@ Read [README.md](README.md), [docs/GUIDE.md](docs/GUIDE.md) (design and algorith
 [docs/MATCHING.md](docs/MATCHING.md) is how the same product is found on different shops (model codes from titles);
 [docs/PRICING_RESEARCH.md](docs/PRICING_RESEARCH.md) is the research on how Amazon and noon price and on detection science
 (raw notes in `docs/research/`); [docs/MONITORING.md](docs/MONITORING.md) is the runbook and [docs/COMMANDS.md](docs/COMMANDS.md) lists every command.
-[docs/CATEGORIES.md](docs/CATEGORIES.md) holds category ids and shop quirks; [docs/JUMIA.md](docs/JUMIA.md), [docs/CAIROSALES.md](docs/CAIROSALES.md), [docs/2B.md](docs/2B.md), [docs/BTECH.md](docs/BTECH.md), [docs/DREAM2000.md](docs/DREAM2000.md), [docs/CARREFOUR.md](docs/CARREFOUR.md), [docs/DUBAIPHONE.md](docs/DUBAIPHONE.md), [docs/HARDWAREMARKET.md](docs/HARDWAREMARKET.md) and [docs/AMAZON_NOW.md](docs/AMAZON_NOW.md) are the per-shop analyses. Keep these in step with the code, and
+[docs/SHOP_RULES.md](docs/SHOP_RULES.md) lists what each shop gets wrong in its data (placeholder prices, noisy signals) and what we
+do about it (`src/deals/shop_rules.py`, shown on the web UI's Rules page); [docs/CATEGORIES.md](docs/CATEGORIES.md) holds category ids and shop quirks; [docs/JUMIA.md](docs/JUMIA.md), [docs/CAIROSALES.md](docs/CAIROSALES.md), [docs/2B.md](docs/2B.md), [docs/BTECH.md](docs/BTECH.md), [docs/DREAM2000.md](docs/DREAM2000.md), [docs/CARREFOUR.md](docs/CARREFOUR.md), [docs/DUBAIPHONE.md](docs/DUBAIPHONE.md), [docs/HARDWAREMARKET.md](docs/HARDWAREMARKET.md) and [docs/AMAZON_NOW.md](docs/AMAZON_NOW.md) are the per-shop analyses. Keep these in step with the code, and
 write down anything new you learn about the shops or the operations there (the user wants findings kept).
 
 ## Where things run

@@ -479,6 +479,22 @@ MIGRATIONS = [
         last_login_at TEXT
     );
     """,
+    """
+    -- What each shop rule (shop_rules.py) caught: one row per rule and product, for the web UI.
+    -- Keyed by site and SKU, not product id: a new product listed at a placeholder is never stored.
+    CREATE TABLE shop_rule_hits (
+        rule     TEXT NOT NULL,     -- shop_rules.RULES id, e.g. jumia-placeholder-prices
+        site     TEXT NOT NULL,
+        sku      TEXT NOT NULL,
+        price    INTEGER,           -- the value it caught (piastres), the latest one
+        hits     INTEGER NOT NULL,  -- how many times
+        first_at TEXT NOT NULL,
+        last_at  TEXT NOT NULL,
+        detail   TEXT,              -- e.g. the alert it stopped
+        PRIMARY KEY (rule, site, sku)
+    );
+    CREATE INDEX shop_rule_hits_last ON shop_rule_hits (rule, last_at);
+    """,
 ]
 
 # Price moves smaller than this are noise (amazon.eg prices creep by a piastre per

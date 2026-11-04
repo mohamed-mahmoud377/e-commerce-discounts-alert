@@ -783,7 +783,7 @@ const views = {
     const kv = (label, value) => `<div class='kv'><span>${label}</span><b>${value}</b></div>`;
     const p = x => Math.round(x * 100) + '%', yes = x => x ? 'yes' : 'no';
     const rule = (title, lines) => `<div class='card rule'><h3>${title}</h3>${lines.join('')}</div>`;
-    return head('Rules & watches', 'What counts as a real discount, and how often each group is checked. Change them in <span class="mono">/etc/deals/config.toml</span> and restart the coordinator.') +
+    return head('Rules & watches', 'What counts as a real discount, what each shop gets wrong, and how often each group is checked. Alert rules and watches are changed in <span class="mono">/etc/deals/config.toml</span> (then restart the coordinator); shop rules are code.') +
       `<h2 style='margin:4px 0 0;font-size:17px'>Alert rules</h2>
       <section class='stats' style='grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px'>
         ${rule('Real price drop', [kv('Below the typical 90-day price by at least', p(a.min_drop)), kv('History needed', a.min_history_days + ' days'), kv('Skip if this cheap more than', p(a.max_share_at_or_below) + ' of the time')])}
@@ -793,6 +793,19 @@ const views = {
         ${rule('Possible price error', [kv('Below typical by at least', p(a.price_error_drop))])}
         ${rule('Repeats', [kv("Don't alert the same product again for", a.realert_after_days + ' days'), kv('Unless it drops another', p(a.realert_extra_drop))])}
       </section>
+      <div><h2 style='margin:4px 0 0;font-size:17px'>Shop rules</h2><p class='muted' style='margin:4px 0 0;font-size:13px'>What each shop does wrong with its data and what the tracker does about it. Written in <span class="mono">src/deals/shop_rules.py</span>, explained in <span class="mono">docs/SHOP_RULES.md</span>.</p></div>
+      <section class='card' style='overflow:hidden'><div class='scroll'><table><tr><th>Shop</th><th>Rule</th><th>Kind</th><th class='r'>Caught</th><th>Last</th></tr>
+        ${d.shop_rules.map((r, i) => `<tr class='click' onclick='toggleShopRule(${i})'><td class='nw'>${esc(shop(r.site))}</td>
+          <td><b style='font-weight:500'>${esc(r.title)}</b><div class='sub'>→ ${esc(r.action)}</div></td>
+          <td class='nw'>${pill(...(SHOP_RULE_KIND[r.kind] || ['idle', r.kind]))}${r.prices.length ? `<div class='sub num'>${r.prices.map(money).join(', ')} EGP</div>` : r.below != null ? `<div class='sub num'>under ${money(r.below)} EGP</div>` : ''}</td>
+          <td class='num r'>${r.products ? r.products.toLocaleString() + ' products<div class="sub">' + r.hits.toLocaleString() + ' times</div>' : '—'}</td><td class='nw'>${r.last_at ? ago(r.last_at) : '—'}</td></tr>
+          <tr id='shoprule-${i}' hidden><td></td><td colspan='4'><div style='font-size:13px;display:flex;flex-direction:column;gap:6px'>
+            <div><span class='muted'>Evidence:</span> ${esc(r.why)}</div>
+            <div class='muted'>Found ${esc(r.found)} · enforced in <span class='mono'>${esc(r.where)}</span> · id <span class='mono'>${esc(r.id)}</span></div>
+            ${r.latest.length ? `<table><tr><th>Latest products caught</th><th class='r'>Value</th><th class='r'>Times</th><th>Last</th></tr>${r.latest.map(h => `<tr><td>${h.product_id ? `<a class='rowlink' href='#Products:${h.product_id}'>${esc(h.title)}</a>` : `<span class='mono'>${esc(h.sku)}</span> <span class='muted'>(never stored)</span>`}${h.detail ? `<div class='sub'>${esc(h.detail)}</div>` : ''}</td>
+              <td class='num r'>${money(h.price)}</td><td class='num r'>${h.hits}</td><td class='nw'>${ago(h.last_at)}</td></tr>`).join('')}</table>` : ''}
+          </div></td></tr>`).join('')}</table></div>
+        <div class='cardfoot'>Click a rule for its evidence and the products it caught.</div></section>
       <div><h2 style='margin:4px 0 0;font-size:17px'>Watches</h2><p class='muted' style='margin:4px 0 0;font-size:13px'>"Worst time to notice" is the backoff cap: a flash sale in that group is seen within it.</p></div>
       <section class='card' style='overflow:hidden'><div class='scroll'><table><tr><th>Group</th><th class='r'>Every</th><th class='r'>Worst time to notice</th><th class='r'>Min price</th><th class='r'>Min drop</th><th>Shops</th><th>Fast lanes</th></tr>
         ${d.watches.map(w => `<tr><td><b style='font-weight:500'>${esc(w.name)}</b>${w.label && w.label !== w.name ? ` <span class='muted' dir='rtl'>${esc(w.label)}</span>` : ''}</td>
@@ -807,6 +820,9 @@ const views = {
         ${s.feed_max_interval_minutes ? kv('Deal feeds never slower than', s.feed_max_interval_minutes + ' min') : ''}</section>`;
   },
 };
+const SHOP_RULE_KIND = {placeholder: ['fail', 'placeholder price'], doubtful_reference: ['warn', 'doubtful reference'], no_claim_alerts: ['warn', 'no new-listing alerts'],
+  low_stock_noise: ['idle', 'low stock is noise'], note: ['info', 'handled in the adapter']};
+function toggleShopRule(i) { const row = document.getElementById('shoprule-' + i); row.hidden = !row.hidden; }
 const dz = {days: '1', loaded: null, data: [], kind: 'all', site: '', state: '', q: '', sel: null, shown: 50};
 const pz = {q: '', site: '', grp: '', sort: 'recent', stock: false, changed: 24};
 const jz = {only: 'all', site: '', grp: ''}, lz = {level: 'info', src: '', q: '', paused: false};

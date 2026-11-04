@@ -111,6 +111,8 @@ is a block.
 - **1 EGP placeholders.** Samsung Galaxy Z Fold 8 and Z Fold 8 Ultra (ids 2848, 2854) are listed at
   **1 EGP**, out of stock, while their pre-order twins sell at 128,999 and 143,000. A price of 1 must never be
   recorded, or the day they come in stock (or the day a price drops back to 1) looks like a 99.99% drop.
+  Shop rule `dubaiphone-placeholder-1egp` ([SHOP_RULES.md](SHOP_RULES.md)): the adapter drops it, and the
+  coordinator does too for any worker.
 - **Pre-order deposits.** "Pre Order - Xiaomi Redmi Note 17" and "Pre Order - Vivo V80" cost **500 EGP**: that
   is the deposit, not the phone. Skip `availability_type` `preorder` and titles starting "Pre Order".
 - **Coming soon at a price.** "iPhone Duo" is `coming_soon`, `in_stock` true, 176,000 EGP; it can't be bought.

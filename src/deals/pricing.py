@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
+from deals import shop_rules
 from deals.config import AlertRules
 from deals.models import LIMITED_DEAL, LOWEST_30D, LOWEST_365D, MEGA_DEAL, SELLING_FAST
 
@@ -22,11 +23,9 @@ DAY = 86400.0
 # on about half its listings). noon's "lowest price in 30 days" sits on 19% of its
 # catalogue (measured 2026-10-26), so it is a label, not evidence.
 STRONG_SIGNALS = {"mega_deal", "limited_deal", "lowest_365d"}
-# Shops where "only N left" is shown so widely it proves nothing (amazon.eg: 45% of
-# listings show 3 or fewer left, measured 2026-10-25; jumia: 45% too, 2026-10-26;
-# 2B: "only N left" on 57% of its TVs, 2026-10-27; Carrefour: low stock of 1 to 3 on
-# 42% of its TVs, 2026-10-28).
-LOW_STOCK_EVERYWHERE = {"amazon_eg", "amazon_now_eg", "jumia_eg", "2b_eg", "carrefour_eg"}
+# Shops where "only N left" is shown so widely it proves nothing: the `low_stock_noise`
+# rules in shop_rules.py, with the measurements.
+LOW_STOCK_EVERYWHERE = {r.site for r in shop_rules.RULES if r.kind == "low_stock_noise"}
 
 
 @dataclass(frozen=True)

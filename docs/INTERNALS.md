@@ -27,7 +27,8 @@ owns one job.
 | `planner.py` | 93 | Splitting a root into slices under the shop's limit, by price ranges only | models |
 | `db.py` | 349 | Schema and migrations; `record()` (upsert a product, append history on change); backups | models |
 | `scheduler.py` | 241 | The job queue: leases, intervals, blocks, failures, worker bookkeeping, events | db, planner |
-| `pricing.py` | 222 | Price statistics and the deal rules; pure functions, no database | config, models |
+| `shop_rules.py` | 234 | Every shop's known misbehaviour in one list (`RULES`, see [SHOP_RULES.md](SHOP_RULES.md)): `clean()` turns placeholder prices (Jumia's 100,000 and 50,000 EGP) into "no price" for every listing, `stops()` names the deals that must not be sent (a reference that is a placeholder or doubtful, like Jumia's 10,000; any new-listing claim on a `no_claim_alerts` shop, noon), `clean_history()` applies the placeholders to what is stored (at every start), `hit()` and `summary()` count what each rule caught for the web UI | models |
+| `pricing.py` | 252 | Price statistics and the deal rules; pure functions, no database (the low-stock shops come from `shop_rules`) | config, models, shop_rules |
 | `alerts.py` | 279 | Judging a changed product, writing alerts, formatting the Arabic message, the Telegram client and the delivery loop | db, pricing |
 | `bot.py` | 292 | The Telegram conversation: /start, /stop, approvals, subscribers; `decide()` is shared with the web UI | alerts, db |
 | `health.py` | 207 | Health checks and the daily report | db, alerts |
@@ -89,11 +90,13 @@ every function on the way. Reading the code in this order is the fastest way to 
 
 10. `page()` endpoint: `owned_job()` checks the lease token (409 if lost). `bootstrap` is true for plan jobs
     and slices never finished before.
-11. For each listing, `db.record()` upserts the product row and appends a `price_history` row when price,
+11. For each listing, `shop_rules.clean()` first turns the shop's placeholder prices into "no price, not for
+    sale" (and counts the hit); then `db.record()` upserts the product row and appends a `price_history` row when price,
     crossed-out price or stock changed. It returns `Recorded(status, old_price, old_in_stock)`.
 12. If the product is new, got cheaper, or came back in stock, and is in stock, `alerts.check_product()`
     runs: `product_stats()` loads the history and calls `pricing.compute_stats()`; `pricing.evaluate()`
-    returns a `Deal` or nothing; `_recently_alerted()` applies the 7-day rule; `format_deal()` writes the
+    returns a `Deal` or nothing; `shop_rules.stops()` drops a deal measured against a placeholder-like
+    reference (Jumia's 10,000 EGP) or a new-listing claim on noon; `_recently_alerted()` applies the 7-day rule; `format_deal()` writes the
     Arabic text into a new `alerts` row.
 13. Still in the same transaction: `scheduler.extend()` pushes the lease 5 min further and adds to
     `run_count`/`run_changes`; `unblock()` clears this IP's block record for the shop; `worker_site_ok()`
@@ -155,6 +158,7 @@ many have run, and `db.connect()` runs the missing ones in a transaction on star
 | 18 | `shots` (alert screenshots: who takes one, how it went, Telegram's `file_id`; never the image), `deliveries.photo_sent_at` |
 | 19 | `errors` (the error book), `status`, `status_changes` (uptime) |
 | 20 | `users` (the admins of the web UI and API) |
+| 21 | `shop_rule_hits` (what each shop rule caught, by rule, site and SKU) |
 
 **Tables and columns** (prices are integer piastres; times are UTC ISO text, which sorts correctly as text):
 
@@ -224,7 +228,7 @@ without a login; changes still need an admin.
 | `GET /api/products?q=&site=&grp=&sort=&in_stock=&changed_since=&limit=&offset=`, `GET /api/products/{id}` | admin | | product search (`changed_since`: last change at or after this UTC time); one product with stats and history |
 | `GET /api/queries`, `GET /api/queries/{name}?hours=&grp=&site=&q=&sort=&desc=&limit=&offset=` | admin | | saved reports; `q` = words that must all be in the title |
 | `GET /api/subscribers` | admin | | everyone but removed people, join requests first, messages in 7 days; `admin` |
-| `GET /api/rules` | admin | | alert rules, schedule and watched groups from the config (read-only) |
+| `GET /api/rules` | admin | | alert rules, schedule and watched groups from the config, and `shop_rules`: every shop rule with the products it caught (read-only) |
 | `POST /api/subscribers/{chat_id}/{action}` | admin | | `approve`, `reject`, `remove`, `promote`, `demote` (as the bot's buttons; tells the person on Telegram). 403 for other tokens, 409 if already decided |
 | `POST /api/report` | admin | | queue the daily report to the admins now |
 | `GET /api/uptime?days=&kind=&name=&limit=` | admin | | `{status: [...], outages: [...], changes: [...]}` (uptime.py) |
@@ -372,6 +376,13 @@ URL scheme or API, page caps, empty-result behaviour, category tree, signals):
 a field to `Deal` for any new fact, render it in `alerts.format_deal()`, and add a test in
 `tests/test_pricing.py` with a hand-made history (the `series()` helper builds one in one line). Thresholds
 that might need tuning belong in `AlertRules` (`config.py`) so they can be changed without code.
+
+**Add a shop rule** (the shop shows a placeholder price, a fake signal, or anything else the data gets
+wrong): add a `ShopRule` to `shop_rules.RULES` with the evidence (real products and numbers) and the date,
+and a test in `tests/test_shop_rules.py` built from the real case. Kinds `placeholder`,
+`doubtful_reference` and `no_claim_alerts` need no other code: the coordinator applies them to every worker's listings, cleans the
+stored history at the next start, and the web UI's Rules page lists the rule with what it caught. Write the
+rule up in [SHOP_RULES.md](SHOP_RULES.md) and the shop's own doc.
 
 **Change a message:** deal alerts are built in `alerts.format_deal()`, with the word lists `KIND_TITLE`,
 `SIGNAL_TEXT`, `SITE_NAME`, `CONFIDENCE` at the top of `alerts.py`. Bot replies are the constants at the top

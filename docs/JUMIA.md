@@ -142,6 +142,37 @@ for a leaf it lists its siblings at the same indent. Links carry the slug in the
 | `rotateBanner` | "Low Stock", "More Variants Available" | not used |
 | `tracking.isSecondChance` | false | probably used/refurbished ("second chance"); never true in our sample |
 
+### Placeholder prices: 100,000 and 50,000 EGP (found 4 Nov 2026)
+
+Jumia lists products that have no real price yet (or are taken off sale) at **exactly 100,000 or 50,000
+EGP**. Nothing in `__STORE__` marks them: the card is `isBuyable: true`, with no stock text and usually no
+`oldPrice`, exactly like a real product. The crossed-out price can be the placeholder too (Beko stand mixer
+7,449 "was 50,000", Beko mini bar 11,695 "was 100,000"). Measured on the live database on 4 November 2026:
+
+| Pattern | Example | How many |
+| --- | --- | --- |
+| A new listing goes up at the placeholder and gets its real price hours later | Honor X7e 100,000, then 12,620 a day later; Fresh freezers 50,000, then 24,134 | about half of the 168 placeholder rows were a product's first sighting |
+| Products are parked at it together | 39 air conditioners moved from their real prices to 100,000 at 12:00 UTC on 29 Oct (Sharp 1.5 HP 30,397 then 100,000) and stayed there: winter, off sale | 44 products at 100,000 on 4 Nov, 43 of them "in stock" |
+| A real price blinks to it for 5 to 20 minutes and back | air conditioners and phones on 3 and 4 Nov | dozens |
+
+130 products had been at one of the two values and 121 had a crossed-out price at one of them. Before the
+rule, **22 alerts were measured against them and sent** (27 Oct to 4 Nov): 17 early drops such as "Fresh
+95L mini bar -92%" (8,280 against 100,000) and 5 "possible price errors" such as Samsung Galaxy A56 27,400
+against 100,000. The search `?price=99999-100000` on smartphones shows the difference from a real price:
+iPhone 17 Pro Max at **99,999** with a real crossed-out 125,000. 99,999 is a real price and is left alone.
+
+**10,000 EGP is doubtful, not a placeholder.** 60 products had been at exactly 10,000. Some are placeholders
+(Braun kettle 10,000 then 2,499, an Ariete toaster, an ironing table, two Fresh microwaves), but many phones
+and TVs really cost that (Infinix Smart 20: 9,100, 10,000, 8,830). Two false alerts came from it (Fresh
+microwave 5,941 "41% off" 10,000; a Stanley steamer 6,156) plus a new-listing alert against a 10,000
+crossed-out price.
+
+**What the tracker does** (`shop_rules.py`, rules `jumia-placeholder-prices` and `jumia-doubtful-10000`, see
+[SHOP_RULES.md](SHOP_RULES.md)): the coordinator records a listing at 100,000 or 50,000 as no price and not
+for sale, and drops a crossed-out price at those values; the 426 stored rows that had them were cleaned when
+the rule shipped. No alert is measured against a typical or crossed-out price of 10,000. The web UI's Rules
+page shows every product the rules catch.
+
 ## Signals and how they feed the deal rules
 
 Measured on 280 cards from category pages (phones, fryers, fridges, headphones, blenders, laptops) on
@@ -255,6 +286,7 @@ SELECT kind, count(*), sum(failures > 0) failing, min(next_due_at) FROM jobs WHE
 | `blocked: jumia_eg: Cloudflare challenge` | Cloudflare refuses this connection or fingerprint | From a home IP: check `deals crawl jumia_eg ...`; if every page is challenged, try another `IMPERSONATE` target in `jumia_eg.py`. From a cloud IP: expected, remove `jumia_eg` from that worker |
 | `UnknownTarget: ... (HTTP 404)` | Wrong slug | Fix the slug (copy it from the sidebar link) |
 | `UnknownTarget: /x/ redirected to /y/` | The slug is an alias or was renamed | Use `/y/` or the new slug |
+| An alert compares against a suspiciously round price (100,000, 50,000, 10,000, or a new one) | A Jumia placeholder | Check the Rules page in the web UI; for a new value, add it to the rule in `shop_rules.py` (the stored history is cleaned at the next start) |
 | A slice suddenly parses 0 products | Layout change (no `__STORE__`, renamed fields) | Save a fresh page into `tests/fixtures/jumia_category.html.gz` and fix the parser against it |
 
 ## Product pages (30 Oct 2026)

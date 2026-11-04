@@ -245,6 +245,10 @@ def test_new_screens_data(client):
     rules = client.get("/api/rules").json()
     assert rules["alerts"]["min_drop"] > 0 and rules["schedule"]["min_interval_minutes"] > 0
     assert {w["name"] for w in rules["watches"]} and all("max_interval_minutes" in w for w in rules["watches"])
+    shop = {r["id"]: r for r in rules["shop_rules"]}
+    jumia = shop["jumia-placeholder-prices"]
+    assert jumia["site"] == "jumia_eg" and jumia["prices"] == [5_000_000, 10_000_000] and jumia["hits"] == 0
+    assert "Shop rules" in page
 
 
 def test_admin_manages_subscribers_and_workers_cannot(cfg):

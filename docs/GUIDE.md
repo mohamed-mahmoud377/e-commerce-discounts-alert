@@ -307,7 +307,7 @@ delivery location: the Mac's is served, the droplet's lists nothing. Details: [A
 
 | Signal | amazon.eg | noon | Jumia | Cairo Sales | 2B | B.TECH | Dream 2000 | Carrefour | Dubai Phone | Hardware Market |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Price | The featured offer's price | The offer's sale price, else its price | The product's price | The price (hidden when out of stock) | `final_price` | `final_price` (coupons included) | The cheapest available variant of the group | `sellingPrice` (the buy-box offer, before coupons) | `selling_price` (1 EGP placeholders count as no price; pre-orders skipped) | `prices.price` |
+| Price | The featured offer's price | The offer's sale price, else its price | The product's price (exactly 100,000 or 50,000 EGP is a placeholder: no price) | The price (hidden when out of stock) | `final_price` | `final_price` (coupons included) | The cheapest available variant of the group | `sellingPrice` (the buy-box offer, before coupons) | `selling_price` (1 EGP placeholders count as no price; pre-orders skipped) | `prices.price` |
 | Crossed-out price | "Was:" (Amazon's own recent price, trusted) or "List:" (brand RRP, often inflated) | Seller-set, treated like an RRP | Seller-set (on 88% of cards), treated like an RRP | The shop's "regular" price (every card), treated like an RRP | `regular_price` (every product), treated like an RRP | `base_price`: B.TECH's own offers (a promotion on a fifth of them) count as "was", third-party sellers' as an RRP | `compare_at_price` (83% of the catalogue), treated like an RRP | `markedPrice`: Carrefour's own (a timed promotion on a fifth of TVs) counts as "was", a marketplace seller's as an RRP | `price` when above the selling price (4 products), treated like an RRP | `regular_price` (98% of products), treated like an RRP |
 | Stock left | "Only 3 left in stock" | "Only 3 left" | "1 item left" (45% of cards say 3 or fewer, so not evidence) | none | `only_x_left_in_stock` (57% of products, so not evidence) | none | none (a "Last Piece" collection exists, not used) | `lowStock` with a count on 42% of TVs (so not evidence); "Only N left" is the order limit | none | `low_stock_remaining` ("Only 1 left", 7% of in-stock products) |
 | Deal badge | "Limited time deal" | "Deal", "Mega Deal" | none on category pages (flash sales are only marked on `/flash-sales/`) | none | none | none | none | "Ends in N hrs" (timed discount), read as a limited-time deal | none (`is_flash_sale` is never set) | none |
@@ -315,6 +315,18 @@ delivery location: the Mac's is served, the droplet's lists nothing. Details: [A
 | Demand | "300+ bought in past month" | "200+ sold recently", "Selling out fast", bestseller | none | none | none | `is_best_seller` (half the TVs) | none | none | none | none |
 | Rating | Stars and review count | Stars and review count | Stars and review count | none | `rating_summary`, `review_count` | none | none | Stars and review count (on a tenth of products) | none | not read (no reviews) |
 | Seller | not shown | Store name | not shown (one seller per SKU) | the shop | the shop | `seller_name` (half the offers are third-party, each its own sku) | the shop | `shopName` (a third are marketplace sellers) | the shop | the shop |
+
+**Shop rules: what the shops get wrong.** Every shop has habits that would corrupt the history or fake a
+discount if the data were taken at face value. Each one we found is an entry in `shop_rules.RULES`, listed
+with its evidence and how often it fired on the web UI's Rules page and explained in
+[SHOP_RULES.md](SHOP_RULES.md). The coordinator applies them to every listing from every worker, so a fix
+does not wait for each device to update. Two kinds act on prices: a **placeholder** (Jumia lists products
+without a real price at exactly 100,000 or 50,000 EGP; Dubai Phone at 1 EGP) is recorded as "no price, not
+for sale", in new listings and in the history already stored; a **doubtful reference** (Jumia's 10,000 EGP, a
+placeholder for kettles but a real price for phones) stays in the history, but no alert may be measured
+against it. A **no_claim_alerts** shop (noon) sends no new-listing alerts: its sellers' crossed-out prices were
+mostly made up. Before the Jumia rule, 25 of the 1,302 alerts sent by 4 November were measured against one of
+these values.
 
 **noon sellers.** One noon product can be sold by several sellers at very different prices. The same
 earbuds were seen at 7,550, 1,000 and 495 EGP, and which offer a listing shows depends on the price filter.
@@ -714,12 +726,20 @@ claim is used but must be backed by evidence:
 
 These alerts are marked confidence "low" and say "not yet verified by our history".
 
+**Not on noon.** Since 4 November 2026 noon sends no new-listing alerts (shop rule
+`noon-no-new-listing-alerts`): 428 noon new-listing alerts were sent up to 4 November 2026, a third of all 1,302 alerts (314 of noon's 563 in the last week), with a median claim of 44% off. Checked afterwards: for 250 (58%) nothing showed the claim was real (no noon seller was ever seen at the "was" price, the price never went back up, other shops were not dearer); for 36 of them other shops sold the same model at the same price or less (Unionaire 440L fridge 18,999 "was 30,000", other shops 21,249). Only 31 (7%) were 15% or more cheaper than other shops. noon products alert only from our own history.
+
 **Score (0 to 100), for ranking:** the drop in percent, plus 10 for an all-time low, minus half the
 rarity share in percent (a price seen 10% of the time loses 5), plus 5 each for 5 or fewer left, a deal
 badge, or the shop's own "lowest price" badge, then multiplied by 1.0 (high confidence), 0.85 (medium) or
 0.7 (low).
 
 **No repeats.** The same product is not alerted again within 7 days unless its price falls another 5%.
+
+**Shop placeholders and claims.** No new-listing alert is sent on a shop with a `no_claim_alerts` rule
+(noon), and no alert is measured against a reference that is one of the shop's placeholder
+values (`shop_rules.doubtful()`, the `placeholder` and `doubtful_reference` rules): Jumia's 10,000 EGP stays
+in the history because phones really cost that, but "a kettle at 2,499, 75% below 10,000" is not sent.
 
 **Worked examples:**
 
@@ -734,6 +754,8 @@ badge, or the shop's own "lowest price" badge, then multiplied by 1.0 (high conf
 | noon seller A drops a TV from 5,000 to 3,200 while seller B sells it at 3,000 | Not the cheapest offer: no alert |
 | Air fryer tracked for 2 days at 5,220, now 3,500 | 33% below and a new low: early drop (⏳), low confidence, sent at once |
 | Same air fryer at 3,977 | Only 24% below: under the 30% early-drop bar, no alert (yet) |
+| Jumia phone first listed at 100,000, real price 12,620 a day later | 100,000 is a Jumia placeholder, stored as no price: nothing to measure against, no alert (it was alerted as an 87% early drop on 30 Oct, before the rule) |
+| Jumia microwave listed at 10,000 for 5 days, now 5,941 | 10,000 is a doubtful reference on Jumia: no alert (the same history on noon would alert) |
 
 ## Algorithm 6: the same product on different shops
 

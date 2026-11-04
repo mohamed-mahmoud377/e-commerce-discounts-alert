@@ -73,7 +73,7 @@ def test_low_confidence_alert_waits_for_a_second_sighting(cfg, conn):
     t = utcnow()
     sender = AlertSender(cfg, threading.Event())
     with conn:
-        p = db.record(conn, listing(sku="N2@shop-a", price_egp=1500, list_price=250000, badges=(LIMITED_DEAL,),
+        p = db.record(conn, listing("amazon_eg", "AN2", price_egp=1500, list_price=250000, badges=(LIMITED_DEAL,),
                                     list_price_kind="list"), grp="TVs", now=t)
         deal = check_product(conn, cfg, p.product_id, bootstrap=False, now=t)
     assert deal.kind == "new_product" and deal.confidence == "low"
@@ -83,7 +83,7 @@ def test_low_confidence_alert_waits_for_a_second_sighting(cfg, conn):
     assert held(conn)[0]["sent_at"] is None  # not seen again yet: still held
     # seen again at the same price: released and handed out
     with conn:
-        db.record(conn, listing(sku="N2@shop-a", price_egp=1500, list_price=250000, badges=(LIMITED_DEAL,),
+        db.record(conn, listing("amazon_eg", "AN2", price_egp=1500, list_price=250000, badges=(LIMITED_DEAL,),
                                 list_price_kind="list"), grp="TVs", now=t + timedelta(minutes=20))
     sender.confirm(conn, t + timedelta(minutes=21))
     assert held(conn)[0]["confirm_until"] is None
@@ -95,17 +95,17 @@ def test_low_confidence_alert_cancelled_when_price_reverts(cfg, conn):
     t = utcnow()
     sender = AlertSender(cfg, threading.Event())
     with conn:
-        p = db.record(conn, listing(sku="N3@shop-a", price_egp=1500, list_price=250000, badges=(LIMITED_DEAL,),
+        p = db.record(conn, listing("amazon_eg", "AN3", price_egp=1500, list_price=250000, badges=(LIMITED_DEAL,),
                                     list_price_kind="list"), grp="TVs", now=t)
         check_product(conn, cfg, p.product_id, bootstrap=False, now=t)
-        db.record(conn, listing(sku="N3@shop-a", price_egp=2500, list_price=250000), grp="TVs",
+        db.record(conn, listing("amazon_eg", "AN3", price_egp=2500, list_price=250000), grp="TVs",
                   now=t + timedelta(minutes=15))
     sender.confirm(conn, t + timedelta(minutes=16))
     row = held(conn)[0]
     assert row["sent_at"] is not None and row["error"] == "cancelled: price not confirmed"
     # a cancelled alert doesn't block the next real one for this product
     with conn:
-        db.record(conn, listing(sku="N3@shop-a", price_egp=1500, list_price=250000, badges=(LIMITED_DEAL,),
+        db.record(conn, listing("amazon_eg", "AN3", price_egp=1500, list_price=250000, badges=(LIMITED_DEAL,),
                                 list_price_kind="list"), grp="TVs", now=t + timedelta(minutes=30))
         assert check_product(conn, cfg, p.product_id, bootstrap=False, now=t + timedelta(minutes=30)) is not None
 
@@ -114,7 +114,7 @@ def test_held_alert_goes_out_when_nobody_rechecks_in_time(cfg, conn):
     t = utcnow()
     sender = AlertSender(cfg, threading.Event())
     with conn:
-        p = db.record(conn, listing(sku="N4@shop-a", price_egp=1500, list_price=250000, badges=(LIMITED_DEAL,),
+        p = db.record(conn, listing("amazon_eg", "AN4", price_egp=1500, list_price=250000, badges=(LIMITED_DEAL,),
                                     list_price_kind="list"), grp="TVs", now=t)
         check_product(conn, cfg, p.product_id, bootstrap=False, now=t)
     hold = max(cfg.alerts.confirm_minutes, cfg.watches[0].interval_minutes * 3 + 10)  # covers the slowest revisit

@@ -46,6 +46,13 @@ Ordered by value for effort. "Why" says what problem each one solves.
     products that are near an alert threshold, or on a personal watchlist, every few minutes via their
     product page.
 
+11. **Shop rules for the other shops.** *Started 4 Nov 2026* with Jumia's placeholder prices (100,000 and
+    50,000 EGP as no price, 10,000 as a doubtful reference; [SHOP_RULES.md](SHOP_RULES.md)). Still open: the
+    candidates seen on amazon.eg (100,000 and 50,000 from third-party sellers, probably needing a per-seller
+    rule), noon (10,000 on 25 products) and B.TECH, listed in SHOP_RULES.md. *4 Nov 2026:* noon's new-listing alerts are off
+    (58% unproven); a new listing could alert again from the same model's price on other shops instead of the
+    seller's claim (31 of the 428 would have qualified).
+
 ## Later: scale and polish
 
 11. **HTTPS / private network for workers.** Today workers talk to the coordinator over plain HTTP with a

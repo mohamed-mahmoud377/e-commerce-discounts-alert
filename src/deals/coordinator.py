@@ -34,7 +34,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
-from deals import alerts, audit, auth, bot, db, detailq, health, matching, monitor, scheduler, shotq, uptime, webui
+from deals import alerts, audit, auth, bot, db, detailq, health, matching, monitor, scheduler, shop_rules, shotq, uptime, webui
 from deals.config import Config
 from deals.db import iso, utcnow
 from deals.models import Listing, Slice
@@ -135,6 +135,8 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
     auth.ensure_users(conn, utcnow())
     if n := audit.backfill(conn):
         log.info("error book started from %d warnings and errors already in the logs", n)
+    if n := shop_rules.clean_history(conn):  # a new placeholder rule also cleans what is stored
+        log.info("shop rules: %d stored prices were placeholders, now recorded as no price", n)
     stop = threading.Event()
 
     @asynccontextmanager
@@ -317,6 +319,12 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
                 listing = item.to_listing()
                 if listing.site != job["site"]:
                     raise HTTPException(422, f"listing for {listing.site} in a {job['site']} job")
+                # The shop's placeholder prices (Jumia's 100,000 EGP) become "no price" here, for
+                # every worker, old ones too (shop_rules.py).
+                listing, rule, caught = shop_rules.clean(listing)
+                if rule:
+                    shop_rules.hit(conn, rule, listing.site, listing.sku, caught, now,
+                                   detail="crossed-out price" if listing.price is not None else "price")
                 # Sponsored cards ignore the price filter and searches match accessories, so a
                 # product we don't know yet must be priced, at or above the group's minimum, and
                 # pass the group's title words. Known products are always updated (stock, price).
@@ -705,7 +713,9 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
 
     @app.get("/api/rules", dependencies=[Depends(viewer)])
     def rules_api():
-        return webui.rules(cfg)
+        """The alert rules, schedule and watches from config, and every shop rule with what it caught."""
+        with closing(read_conn()) as rc:
+            return {**webui.rules(cfg), "shop_rules": shop_rules.summary(rc)}
 
     return app
 

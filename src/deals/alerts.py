@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 
 from curl_cffi import CurlMime, requests
 
-from deals import db, matching, shotq
+from deals import db, matching, shop_rules, shotq
 from deals.config import Config
 from deals.db import iso, parse_iso, utcnow
 from deals.pricing import LOW_STOCK_EVERYWHERE, Deal, Point, PriceStats, ProductView, compute_stats, evaluate
@@ -68,7 +68,16 @@ def check_product(conn: sqlite3.Connection, cfg: Config, product_id: int, *, boo
     deal = evaluate(view, stats, cfg.alerts, bootstrap=bootstrap,
                     min_price=watch.min_price if watch else None,
                     min_drop=watch.min_drop if watch else None)
-    if deal is None or _recently_alerted(conn, cfg, product_id, deal.price, now):
+    if deal is None:
+        return None
+    if rule := shop_rules.stops(p["site"], deal):
+        # Measured against a value the shop also uses as a placeholder (Jumia's 10,000 EGP), or a
+        # new-listing claim from a shop whose crossed-out prices are mostly made up (noon).
+        log.info("no alert for %s: %s against %s stopped by %s", p["sku"], deal.kind, deal.reference, rule.id)
+        shop_rules.hit(conn, rule, p["site"], p["sku"], deal.reference, now,
+                       detail=f"stopped {deal.kind}: {deal.price // 100:,} EGP, {deal.drop:.0%} below {deal.reference // 100:,}")
+        return None
+    if _recently_alerted(conn, cfg, product_id, deal.price, now):
         return None
     other = db.best_other_offer(conn, p["site"], p["sku"], now)
     if other is not None and other < deal.price:

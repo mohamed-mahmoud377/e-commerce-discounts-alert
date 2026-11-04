@@ -39,6 +39,7 @@ explain the reasons behind decisions that the code alone does not show.
 | Overall design, the principles, the 6 algorithms | `docs/GUIDE.md` (top + the algorithm) | | |
 | Code map, one page end to end, schema, API, config | `docs/INTERNALS.md` | | |
 | Why an alert did or didn't go out | `docs/PRODUCT_FLOW.md` | `pricing.py`, `alerts.py` | `test_pricing.py`, `test_deal_rules.py` |
+| A shop's data is wrong (placeholder prices, a signal that means nothing) | `docs/SHOP_RULES.md` | `shop_rules.py` | `test_shop_rules.py` |
 | Fetching/parsing a shop | `docs/<SHOP>.md`, `docs/CATEGORIES.md` | `sites/<shop>.py` | `test_parsers.py` + `tests/fixtures/*.gz` |
 | Splitting categories into slices | GUIDE Algorithm 2 | `planner.py` | `test_planner.py` |
 | Leases, intervals, blocks, speed | GUIDE Algorithm 3 + "How fast you hear" | `scheduler.py`, `coordinator.py` | `test_coordinator.py`, `test_worker_e2e.py` |
@@ -63,7 +64,7 @@ Don't guess from the code. Find out what actually happened, then explain it.
 | A shop stopped / stalled | `make devices` (state + reason per device) | `make save-logs`, read `logs/`; `make worker-log` for the Mac |
 | Blocked | `make devices`; `SELECT * FROM blocks` in `make sql` | runbook in MONITORING.md; slow the shop down, don't retry harder |
 | Parser broke / "no products parsed" | `.venv/bin/deals crawl <site> "<slice>" --pages 1` on the Mac | save the new page into `tests/fixtures/`, fix against it |
-| Wrong/missing/false alert | `.venv/bin/deals product <site> <sku>` on the server (history + stats) | walk it through PRODUCT_FLOW.md step by step; rebuild the history in a `test_pricing.py` test |
+| Wrong/missing/false alert | `.venv/bin/deals product <site> <sku>` on the server (history + stats) | walk it through PRODUCT_FLOW.md step by step; rebuild the history in a `test_pricing.py` test. A round reference (100,000, 50,000, 1 EGP) is likely a shop placeholder: SHOP_RULES.md |
 | Wrong match across shops | `make models FIND=<code>`; web UI product page (evidence) | MATCHING.md; add the titles to the gold set |
 | Screenshot missing | `SELECT ... FROM shots ORDER BY alert_id DESC` (see runbook) | `.venv/bin/deals shot <site> <url>` on the Mac |
 | Slow to notice a drop | `jobs` table: `interval_minutes`, `next_due_at`, late slices | GUIDE "How fast you hear"; check how busy each shop's loop is before speeding it up |
@@ -137,7 +138,7 @@ Before shipping, all of these must hold:
 | Any behaviour | the matching section of `docs/GUIDE.md` (algorithm text, tables, numbers) |
 | A module, function, schema, API endpoint, config key | `docs/INTERNALS.md` (code map line counts, migration table, API, config reference) |
 | Deal rule or alert flow | `docs/PRODUCT_FLOW.md` (+ GUIDE Algorithm 5) |
-| Something about a shop (access, quirk, cap, layout change) | `docs/<SHOP>.md`, `docs/CATEGORIES.md` |
+| Something about a shop (access, quirk, cap, layout change) | `docs/<SHOP>.md`, `docs/CATEGORIES.md`; a data quirk the tracker handles also goes in `shop_rules.RULES` and `docs/SHOP_RULES.md` |
 | A command or make target | `docs/COMMANDS.md`, `README.md` table, the `CLAUDE.md` everyday table if it's everyday |
 | A health check, warning, runbook step | `docs/MONITORING.md` |
 | Matching | `docs/MATCHING.md` |

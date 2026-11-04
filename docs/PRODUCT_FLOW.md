@@ -42,6 +42,16 @@ group and how busy the slice is. From each card the shop adapter builds a `Listi
 | Stock left | "Only 3 left in stock" | "Only 3 left" | "1 item left" |
 | Badges | limited time deal | Deal, Mega Deal, lowest price in 30 days / a year, selling out fast, bestseller | none |
 
+### 1b. Shop rules clean the listing first
+
+Before anything else, the coordinator applies the shop's placeholder rules (`shop_rules.clean()`, listed in
+[SHOP_RULES.md](SHOP_RULES.md) and on the web UI's Rules page). A price the shop uses when a product has no
+real price becomes "no price, not for sale", and a crossed-out price at that value is dropped. On Jumia that
+is exactly 100,000 or 50,000 EGP: the Honor X7e went up at 100,000 on 30 October and got its real 12,620 a day
+later; before the rule the second sighting was alerted as "87% below everything seen". It now arrives as no
+price, so a product first seen at a placeholder is not recorded (step 2), and a known one shows as not for
+sale until its real price is back. The rule runs at the coordinator, so old worker code is covered too.
+
 ## 2. The group filters decide whether it is recorded at all
 
 Each slice belongs to a watch group (TVs, Phones...). A product the database has never seen is only
@@ -178,6 +188,11 @@ message says the history is short. Since 27 October early drops are **sent at on
 We have no reference of our own, so the shop's crossed-out price is used, but it must be backed by
 evidence, because shops inflate it.
 
+**Not on noon (since 4 November 2026).** The shop rule `noon-no-new-listing-alerts` (`no_claim_alerts` in
+[SHOP_RULES.md](SHOP_RULES.md)) stops every noon new-listing alert in `alerts.check_product()`. 428 noon new-listing alerts were sent up to 4 November 2026, a third of all 1,302 alerts (314 of noon's 563 in the last week), with a median claim of 44% off. Checked afterwards: for 250 (58%) nothing showed the claim was real (no noon seller was ever seen at the "was" price, the price never went back up, other shops were not dearer); for 36 of them other shops sold the same model at the same price or less (Unionaire 440L fridge 18,999 "was 30,000", other shops 21,249). Only 31 (7%) were 15% or more cheaper than other shops.
+noon products now alert only from our own history: an early drop after a day, a real drop after three.
+The Rules page counts every alert the rule stops.
+
 1. A crossed-out price at least **30%** above today's price.
 2. Not **60% or more** off a `list` price (an RRP the seller typed in); a real Amazon "Was:" price may go further.
 3. At least **one real signal**: a deal badge (Amazon limited time deal, noon Deal / Mega Deal), noon's
@@ -213,6 +228,8 @@ passes them.
 | Cheapest seller (noon) | no alert while another seller has the same item **cheaper and in stock**, counting only offers seen in the last 24 hours | Real item `N70407561V` (Play 20A phone) has 5 sellers: iQ 7,842, Dubai Phone 7,900, Best Electronic 8,149, Dr.Mobile 8,362, noon 8,999. If Dr.Mobile dropped to 7,950 it would be no deal: iQ is cheaper. If iQ vanished from the pages for a day, its 7,842 would stop counting |
 | No repeats | the same product is not alerted again within **7 days** unless the price is **5% below** the last alert | alerted at 13,500 → 12,900 on day 2 is not enough (needs 12,825 or less) → 12,800 alerts again |
 | Cancelled alerts don't count | a held alert that was cancelled does not block the next one | |
+| No new-listing alerts (shop rules) | a shop with a `no_claim_alerts` rule (noon) sends no Path B alert at all | Unionaire 440L fridge on noon, 18,999 "was 30,000" with a Deal badge: stopped (other shops 21,249) |
+| Doubtful reference (shop rules) | no alert when the reference (typical price, or the crossed-out price for a new listing) is a value the shop also uses as a placeholder: Jumia's 10,000 EGP (`doubtful_reference` rules in `shop_rules.py`). Each stopped alert is counted on the web UI's Rules page | Fresh microwave on Jumia: listed at 10,000, then 5,941. Alerted on 27 Oct as "41% off"; now stopped. The same 10,000 on noon is a normal reference |
 
 ## 8. Writing, holding and delivering the alert
 
@@ -291,6 +308,9 @@ with a crossed-out price of 25,000 throughout.
 
 ## 10. Why only noon sends new-listing alerts (so far)
 
+*Update 4 November 2026: noon's new-listing alerts are turned off (see Path B above): its badges made the
+claims look believable, but most of the claims were still made up.*
+
 Two reasons, measured on 27 October over every product first seen in the previous 24 hours.
 
 **First, the system is young, so the new-listing path is the only one open.** Path A needs 3 days of a
@@ -335,11 +355,12 @@ days later. Those are the alerts worth acting on.
 | Step | Code |
 | --- | --- |
 | 1 Reading a card | `sites/amazon_eg.py` `_parse_card`, `sites/noon_eg.py` `_parse_hit`, `sites/jumia_eg.py` `_parse_product`, `sites/btech_eg.py` `_parse_item`, `sites/dream2000_eg.py` `product_listings`, `sites/cairosales_eg.py` `_parse_card`, `sites/twob_eg.py` `_parse_item`, `sites/carrefour_eg.py` `_parse_card`, `sites/dubaiphone_eg.py` `_parse_item`, `sites/hardwaremarket_eg.py` `_parse_item` |
+| 1b Shop rules | `shop_rules.clean()` in the `coordinator.py` page handler |
 | 2 Group filters | `coordinator.py` page handler (`unwanted`), `config.Watch.accepts` |
 | 3 Recording | `db.record()`, `db.PRICE_NOISE` |
 | 4 When judged | `coordinator.py` page handler (`dropped`) |
 | 5 Statistics | `pricing.compute_stats()`, `weighted_median()` |
-| 6 Decision | `pricing.evaluate()` (`STRONG_SIGNALS`, `LOW_STOCK_EVERYWHERE`) |
-| 7 Extra checks | `alerts.check_product()`: `db.best_other_offer()`, `_recently_alerted()` |
+| 6 Decision | `pricing.evaluate()` (`STRONG_SIGNALS`, `LOW_STOCK_EVERYWHERE` from the `low_stock_noise` shop rules) |
+| 7 Extra checks | `alerts.check_product()`: `shop_rules.stops()`, `db.best_other_offer()`, `_recently_alerted()` |
 | 8 Score, message, hold, delivery | `pricing.evaluate()` (score), `alerts.format_deal()`, `AlertSender.confirm / fan_out / deliver` |
 | Thresholds | `[alerts]` in the config, `config.AlertRules` |
