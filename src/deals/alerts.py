@@ -6,6 +6,7 @@ restart never loses an alert.
 """
 
 import html
+import json
 import logging
 import sqlite3
 import threading
@@ -15,7 +16,7 @@ from zoneinfo import ZoneInfo
 
 from curl_cffi import CurlMime, requests
 
-from deals import db, matching, shop_rules, shotq
+from deals import db, matching, publish, shop_rules, shotq
 from deals.config import Config
 from deals.db import iso, parse_iso, utcnow
 from deals.pricing import LOW_STOCK_EVERYWHERE, Deal, Point, PriceStats, ProductView, compute_stats, evaluate, manual_deal
@@ -91,11 +92,8 @@ def check_product(conn: sqlite3.Connection, cfg: Config, product_id: int, *, boo
     message = format_deal(p, stats, deal, group, other_offer=other, past_alerts=past)
     # Only text: the other shops' prices for the same product are appended after everything above
     # has decided the alert. The lookup is read-only and any failure in it is logged and ignored.
-    if cfg.alerts.show_other_shops:
-        try:
-            message = append_other_shops(message, p, deal.price, matching.other_shops(conn, product_id, now, cfg.alerts.other_shops_min_confidence), now)
-        except Exception:
-            log.exception("other shops' prices for %s", p["sku"])
+    others = _other_shops(conn, cfg, product_id, p["sku"], now)
+    message = append_other_shops(message, p, deal.price, others, now)
     cur = conn.execute(
         """INSERT INTO alerts (product_id, kind, price, reference_price, drop_pct, score, message,
                                created_at, next_attempt_at, confirm_until)
@@ -104,7 +102,28 @@ def check_product(conn: sqlite3.Connection, cfg: Config, product_id: int, *, boo
     )
     if confirm is None:  # a held alert gets its screenshot when it is released (AlertSender.confirm)
         shotq.add(conn, cfg, cur.lastrowid, p["site"], p["url"], now)
+    if cfg.review_enabled:
+        _to_review(conn, cfg, cur.lastrowid, p, stats, deal, group, other, others, past, "", now)
     return deal
+
+
+def _other_shops(conn, cfg: Config, product_id: int, sku: str, now: datetime) -> list:
+    if not cfg.alerts.show_other_shops:
+        return []
+    try:
+        return matching.other_shops(conn, product_id, now, cfg.alerts.other_shops_min_confidence)
+    except Exception:
+        log.exception("other shops' prices for %s", sku)
+        return []
+
+
+def _to_review(conn, cfg: Config, alert_id: int, p, stats, deal, group, other, others, past, note, now) -> None:
+    """A slip in writing the card must not cost the crawl page that found the deal."""
+    try:
+        publish.prepare(conn, cfg, alert_id, p, stats, deal, group, other_offer=other, others=others, past=past,
+                        note=note, now=now)
+    except Exception:
+        log.exception("could not write the review card of alert %s", alert_id)
 
 
 def _view(p: sqlite3.Row) -> ProductView:
@@ -152,11 +171,8 @@ def manual_alert(conn: sqlite3.Connection, cfg: Config, product_id: int, now: da
     note = " ".join(note.split())[:MANUAL_NOTE_MAX]
     extra = [f"آخر مرة رأينا فيها هذا السعر منذ {_hours(seen_h)}: تأكد منه قبل الدفع"] if seen_h >= 2 else []
     message = format_deal(p, stats, deal, group, other_offer=other, past_alerts=past, note=note, extra_checks=extra)
-    if cfg.alerts.show_other_shops:
-        try:
-            message = append_other_shops(message, p, deal.price, matching.other_shops(conn, product_id, now, cfg.alerts.other_shops_min_confidence), now)
-        except Exception:
-            log.exception("other shops' prices for %s", p["sku"])
+    others = _other_shops(conn, cfg, product_id, p["sku"], now)
+    message = append_other_shops(message, p, deal.price, others, now)
     out = {
         "product_id": product_id, "price": deal.price, "reference": deal.reference, "drop": deal.drop,
         "saving": deal.reference - deal.price,
@@ -169,6 +185,7 @@ def manual_alert(conn: sqlite3.Connection, cfg: Config, product_id: int, now: da
         "past_alerts": past, "last_alert": dict(last) if last else None, "seen_hours": round(seen_h, 1),
         "other_offer": other, "message": message,
         "recipients": conn.execute("SELECT COUNT(*) FROM subscribers WHERE status = 'active'").fetchone()[0],
+        "review": cfg.review_enabled,  # it goes to the admins' review group, not to the subscribers
     }
     if not send:
         return out
@@ -181,6 +198,8 @@ def manual_alert(conn: sqlite3.Connection, cfg: Config, product_id: int, now: da
            VALUES (?, 'manual', ?, ?, ?, ?, ?, ?, ?, ?)""",
         (product_id, f"manual:{sender}", deal.price, deal.reference, deal.drop, deal.score, message, iso(now), iso(now)))
     shotq.add(conn, cfg, cur.lastrowid, p["site"], p["url"], now)
+    if cfg.review_enabled:
+        _to_review(conn, cfg, cur.lastrowid, p, stats, deal, group, other, others, past, note, now)
     log.info("manual alert %s for %s %s at %s by %s", cur.lastrowid, p["site"], p["sku"], deal.price, sender or "?")
     return {**out, "alert_id": cur.lastrowid}
 
@@ -417,20 +436,30 @@ class Telegram:
                                 (data.get("parameters") or {}).get("retry_after"))
         return data["result"]
 
-    def send(self, chat_id: int | str, text: str, buttons: list[list[dict]] | None = None) -> dict:
+    def send(self, chat_id: int | str, text: str, buttons: list[list[dict]] | None = None,
+             reply_to: int | None = None) -> dict:
         return self.call("sendMessage", chat_id=chat_id, text=text, parse_mode="HTML",
                          link_preview_options={"is_disabled": False, "prefer_small_media": True},
-                         reply_markup={"inline_keyboard": buttons} if buttons else None)
+                         reply_markup={"inline_keyboard": buttons} if buttons else None,
+                         reply_parameters={"message_id": reply_to} if reply_to else None)
 
-    def send_photo(self, chat_id: int | str, photo: bytes | str, caption: str) -> dict:
+    def send_photo(self, chat_id: int | str, photo: bytes | str, caption: str, buttons: list[list[dict]] | None = None,
+                   reply_to: int | None = None) -> dict:
         """A JPEG (uploaded) or a photo Telegram already has (its file_id)."""
+        markup = {"inline_keyboard": buttons} if buttons else None
+        reply = {"message_id": reply_to} if reply_to else None
         if isinstance(photo, str):
-            return self.call("sendPhoto", chat_id=chat_id, photo=photo, caption=caption, parse_mode="HTML")
+            return self.call("sendPhoto", chat_id=chat_id, photo=photo, caption=caption, parse_mode="HTML",
+                             reply_markup=markup, reply_parameters=reply)
         form = CurlMime()
         form.addpart(name="photo", content_type="image/jpeg", filename="deal.jpg", data=photo)
+        fields = {"chat_id": str(chat_id), "caption": caption, "parse_mode": "HTML"}
+        if markup:
+            fields["reply_markup"] = json.dumps(markup)
+        if reply:
+            fields["reply_parameters"] = json.dumps(reply)
         try:
-            r = requests.post(f"https://api.telegram.org/bot{self.token}/sendPhoto", timeout=60, multipart=form,
-                              data={"chat_id": str(chat_id), "caption": caption, "parse_mode": "HTML"})
+            r = requests.post(f"https://api.telegram.org/bot{self.token}/sendPhoto", timeout=60, multipart=form, data=fields)
         finally:
             form.close()
         return self._result(r)
@@ -438,14 +467,14 @@ class Telegram:
     def updates(self, offset: int | None = None, wait: int = 0) -> list[dict]:
         """Incoming messages; with wait > 0 this long-polls (Telegram holds the request open)."""
         return self.call("getUpdates", http_timeout=wait + 15, offset=offset, timeout=wait,
-                         allowed_updates=["message", "callback_query"])
+                         allowed_updates=["message", "callback_query", "my_chat_member"])
 
 
 class AlertSender(threading.Thread):
     """Hands each alert to its recipients and delivers them, retrying per person.
 
-    Deal alerts go to every active subscriber; system alerts (and the daily report) to the admin and
-    the active helper admins.
+    Deal alerts go to every active subscriber, or to the review group when that is set up (publish.py);
+    system alerts (and the daily report) to the admin and the active helper admins.
     """
 
     def __init__(self, cfg: Config, stop: threading.Event, interval: float = 3.0, telegram: Telegram | None = None):
@@ -464,6 +493,8 @@ class AlertSender(threading.Thread):
                 self.confirm(conn, now)
                 self.fan_out(conn, now)
                 self.deliver(conn, now)
+                if self.configured and self.cfg.review_enabled:
+                    publish.step(conn, self.cfg, self.telegram, now)
             except Exception:
                 log.exception("alert delivery loop failed")
 
@@ -476,6 +507,12 @@ class AlertSender(threading.Thread):
                     log.info("ALERT %s", a["message"].replace("\n", " | "))
                     conn.execute("UPDATE alerts SET sent_at = ?, error = 'telegram not configured' WHERE id = ?",
                                  (iso(now), a["id"]))
+                    continue
+                if self.cfg.review_enabled and a["kind"] != "system":
+                    # Its card goes to the review group (publish.step); no subscriber gets it.
+                    card = conn.execute("SELECT 1 FROM reviews WHERE alert_id = ?", (a["id"],)).fetchone()
+                    conn.execute("UPDATE alerts SET sent_at = ?, error = ? WHERE id = ?",
+                                 (iso(now), None if card else "no review card", a["id"]))
                     continue
                 who = ("is_admin = 1 OR (is_manager = 1 AND status = 'active')" if a["kind"] == "system"
                        else "status = 'active'")

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from deals import audit, db, scheduler, uptime
+from deals import audit, db, publish, scheduler, uptime
 from deals.alerts import KIND_TITLE, SITE_NAME
 from deals.config import Config
 from deals.db import iso, parse_iso
@@ -70,6 +70,21 @@ def run_checks(conn: sqlite3.Connection, cfg: Config, now: datetime) -> list[Che
             add(Check("telegram", WARN, f"{stuck} messages waiting > 15 min; {detail}", f"{stuck} رسالة متأخرة في الإرسال"))
         else:
             add(Check("telegram", OK, detail))
+
+    # the admins' review of deals (publish.py)
+    if cfg.review_enabled:
+        waiting = one("SELECT COUNT(*) FROM reviews WHERE status = 'pending' AND message_id IS NOT NULL")[0]
+        failed = one("SELECT COUNT(*) FROM reviews WHERE status = 'failed' AND decided_at >= ?", iso(now - timedelta(days=1)))[0]
+        behind = one("""SELECT COUNT(*) FROM reviews r JOIN alerts a ON a.id = r.alert_id
+                        WHERE r.status = 'pending' AND r.message_id IS NULL AND a.error IS NULL AND r.created_at < ?""",
+                     iso(now - publish.BACKLOG))[0]
+        detail = f"{waiting} waiting for a decision"
+        if failed:
+            add(Check("review", FAIL, f"{failed} approved deals could not be posted in 24h; {detail}", f"{failed} عرض لم يُنشر على القناة"))
+        elif behind:
+            add(Check("review", WARN, f"{behind} cards waiting > {publish.BACKLOG.seconds // 60} min to reach the group; {detail}", f"{behind} عرض متأخر عن جروب المراجعة"))
+        else:
+            add(Check("review", OK, detail))
 
     # workers
     recent = conn.execute("SELECT * FROM workers WHERE last_seen_at >= ?", (iso(now - timedelta(days=7)),)).fetchall()
@@ -189,6 +204,14 @@ def daily_report(conn: sqlite3.Connection, cfg: Config, now: datetime) -> str:
         + (" (" + " · ".join(f"{KIND_TITLE[k].split(' ', 1)[1]} {n}" for k, n in by_kind.items()) + ")" if by_kind else ""),
         f"👥 المشتركون: {subs}",
     ]
+    if cfg.review_enabled:
+        counts = {r["status"]: r["n"] for r in conn.execute(
+            "SELECT status, COUNT(*) n FROM reviews WHERE created_at >= ? GROUP BY status", (since,))}
+        times = sorted((parse_iso(r["decided_at"]) - parse_iso(r["created_at"])).total_seconds() for r in conn.execute(
+            "SELECT created_at, decided_at FROM reviews WHERE created_at >= ? AND decided_at IS NOT NULL", (since,)))
+        lines.append(f"🧑‍⚖️ المراجعة: نُشر {counts.get('published', 0)} · رُفض {counts.get('rejected', 0)} · "
+                     f"انتهى وقته {counts.get('expired', 0)} · ينتظر {counts.get('pending', 0)}"
+                     + (f" · متوسط القرار {times[len(times) // 2] / 60:.0f} دقيقة" if times else ""))
     workers = conn.execute("SELECT name, last_seen_at FROM workers WHERE last_seen_at >= ?",
                            (iso(now - timedelta(days=7)),)).fetchall()
     if workers:

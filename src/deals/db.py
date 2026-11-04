@@ -495,6 +495,35 @@ MIGRATIONS = [
     );
     CREATE INDEX shop_rule_hits_last ON shop_rule_hits (rule, last_at);
     """,
+    # 22: the admins' review of each deal, and what went to the public channel (publish.py)
+    """
+    CREATE TABLE reviews (
+        alert_id          INTEGER PRIMARY KEY REFERENCES alerts(id),
+        status            TEXT NOT NULL,  -- pending | approved | published | rejected | expired | failed | skipped
+        card              TEXT NOT NULL,  -- the English text for the admins
+        tier              TEXT NOT NULL,  -- crazy | strong | good
+        basis             TEXT NOT NULL,  -- what the reference rests on: history | early | claim | none
+        all_time_low      INTEGER NOT NULL DEFAULT 0,
+        grp               TEXT,           -- the group's display name (a hashtag on the post)
+        note              TEXT,           -- the admin's note on a hand-sent alert
+        message_id        INTEGER,        -- the card in the review group
+        created_at        TEXT NOT NULL,
+        expires_at        TEXT NOT NULL,
+        attempts          INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at   TEXT NOT NULL,
+        decided_by        INTEGER,
+        decided_by_name   TEXT,
+        decided_at        TEXT,
+        reason            TEXT,           -- publish.REASONS
+        price             INTEGER,        -- the price published
+        hook              TEXT,           -- the first line used, "pool:index" (publish.HOOKS)
+        public_message_id INTEGER,
+        published_at      TEXT,
+        error             TEXT
+    );
+    CREATE INDEX reviews_status ON reviews (status, next_attempt_at);
+    CREATE INDEX reviews_created ON reviews (created_at);
+    """,
 ]
 
 # Price moves smaller than this are noise (amazon.eg prices creep by a piastre per

@@ -38,6 +38,19 @@ class AlertRules:
 
 
 @dataclass(frozen=True)
+class ReviewRules:
+    """The admins' review of deals before the public channel (deals/publish.py, docs/PUBLISHING.md)."""
+    expire_hours: float = 6  # a deal nobody decided on by then is stale: its card closes
+    min_score: int = 0  # deals scoring lower get no card (hand-sent ones always do)
+    # How loud the public post is: "crazy", "strong" or "good" (publish.tier)
+    crazy_score: int = 70
+    crazy_low_drop: float = 0.40  # an all-time low at least this far below usual
+    solid_low_days: float = 14  # a lowest price only means something on this much history (for the post's words too)
+    strong_score: int = 50
+    strong_drop: float = 0.35
+
+
+@dataclass(frozen=True)
 class Schedule:
     min_interval_minutes: int = 10  # hottest slices never get crawled more often than this
     max_interval_factor: float = 3.0  # quiet slices back off up to watch interval x this
@@ -113,6 +126,10 @@ class Config:
     workers: dict[str, str] = field(default_factory=dict)  # name -> token
     telegram_token: str = ""
     telegram_chat_id: str = ""
+    # With both set, deals go to the review group and approved ones to the public channel, not to subscribers.
+    telegram_review_chat_id: str = ""
+    telegram_public_chat_id: str = ""  # "@username" (the link people join by comes from it)
+    review: ReviewRules = ReviewRules()
     admin_token: str = ""  # logs in to the web UI (/ui); worker tokens work too
     alerts: AlertRules = AlertRules()
     schedule: Schedule = Schedule()
@@ -123,6 +140,14 @@ class Config:
     @property
     def db_path(self) -> Path:
         return self.data_dir / "deals.db"
+
+    @property
+    def shots_dir(self) -> Path:
+        return self.data_dir / "shots"
+
+    @property
+    def review_enabled(self) -> bool:
+        return bool(self.telegram_review_chat_id and self.telegram_public_chat_id)
 
     def site(self, name: str) -> SiteSettings:
         return self.sites.get(name, SiteSettings())
@@ -175,6 +200,9 @@ def load(path: Path) -> Config:
         workers=dict(raw.get("workers", {})),
         telegram_token=telegram.get("bot_token", ""),
         telegram_chat_id=str(telegram.get("chat_id", "")),
+        telegram_review_chat_id=str(telegram.get("review_chat_id", "")),
+        telegram_public_chat_id=str(telegram.get("public_chat_id", "")),
+        review=ReviewRules(**raw.get("review", {})),
         admin_token=server.get("admin_token", ""),
         alerts=AlertRules(**raw.get("alerts", {})),
         schedule=Schedule(**raw.get("schedule", {})),

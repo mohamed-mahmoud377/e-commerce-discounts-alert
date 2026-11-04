@@ -79,7 +79,8 @@ def alerts(conn: sqlite3.Connection, now: datetime, days: float, kind: str | Non
                   a.product_id, p.site, p.title, p.url, p.grp,
                   CASE WHEN a.confirm_until IS NOT NULL THEN 'held' WHEN a.error LIKE 'cancelled%' THEN 'cancelled'
                        WHEN a.sent_at IS NULL THEN 'queued' ELSE 'sent' END AS state,
-                  (SELECT COUNT(*) FROM deliveries d WHERE d.alert_id = a.id AND d.sent_at IS NOT NULL) delivered
+                  (SELECT COUNT(*) FROM deliveries d WHERE d.alert_id = a.id AND d.sent_at IS NOT NULL) delivered,
+                  (SELECT r.status FROM reviews r WHERE r.alert_id = a.id) review
            FROM alerts a LEFT JOIN products p ON p.id = a.product_id
            WHERE a.created_at >= ? AND (? IS NULL OR a.kind = ?)
            ORDER BY a.created_at DESC LIMIT ?""",
@@ -625,7 +626,7 @@ const views = {
       ${sel.price ? `<div class='box3'><div><div class='k'>Now</div><div class='v'>${money(sel.price)}</div></div><div><div class='k'>Typical, 90 d</div><div class='v'>${money(sel.reference_price)}</div></div>
         <div class='good'><div class='k'>Real drop</div><div class='v'>▼ ${pct(sel.drop_pct)}</div></div></div>` : ''}
       <div class='sub' style='font-weight:500'>Telegram message</div><div class='bubble' dir='rtl'>${esc(plain(sel.message))}</div>
-      <div class='sub'>${sel.state === 'sent' ? `Delivered to ${sel.delivered} ${sel.delivered === 1 ? 'person' : 'people'}` : sel.state === 'held' ? 'Held until the price is seen again, then sent' : sel.state === 'queued' ? 'Waiting to be sent' : esc(sel.error || sel.state)}</div>
+      <div class='sub'>${sel.review ? `Review: ${esc(sel.review)}` : sel.state === 'sent' ? `Delivered to ${sel.delivered} ${sel.delivered === 1 ? 'person' : 'people'}` : sel.state === 'held' ? 'Held until the price is seen again, then sent' : sel.state === 'queued' ? 'Waiting to be sent' : esc(sel.error || sel.state)}</div>
       ${sel.product_id ? `<div class='row'><a class='btn pri' href='#Products:${sel.product_id}'>Price history</a><a class='btn' href='${esc(sel.url)}' target='_blank' rel='noopener'>Open in shop ↗</a></div>` : ''}`;
     return head('Deals', 'Every alert the rules produced, with the exact Telegram message that went out',
         `<span><b class='num'>${dz.data.length - count('held') - count('queued') - count('cancelled')}</b> <span class='muted'>sent</span></span>&nbsp;
@@ -1169,17 +1170,17 @@ async function alertPanel(id) {
     <div class='box3'>${cell('Now', money(d.price))}${cell(ref, d.basis === 'none' ? '—' : money(d.reference))}
       ${cell(d.basis === 'none' ? 'Drop' : up ? 'Above it by' : 'Drop', d.basis === 'none' ? '—' : (up ? '▲ ' : '▼ ') + Math.abs(Math.round(d.drop * 100)) + '%' + (down ? ` · saves ${money(d.saving)}` : ''), down ? 'good' : '')}</div>
     <div class='row' style='gap:6px'>${notes}</div>
-    <label class='sub' for='anote' style='font-weight:500'>Note for subscribers (optional, shown in the message)</label>
+    <label class='sub' for='anote' style='font-weight:500'>Note for ${d.review ? 'the post' : 'subscribers'} (optional, shown in the message)</label>
     <div class='row'><input id='anote' class='field' dir='auto' style='flex:1 1 300px' maxlength='300' placeholder='e.g. كوبون خصم إضافي 10%: SAVE10' value='${esc(az.note)}' onchange='az.note=this.value;alertPanel(${id})'>
       <button class='btn small' type='button' onclick="az.note=$('#anote').value;alertPanel(${id})">Update preview</button></div>
     <div class='sub' style='font-weight:500'>Telegram message</div><div class='bubble' dir='rtl'>${esc(plain(d.message))}</div>
-    <div class='row'><button class='btn pri' type='button' onclick='sendAlert(${id}, ${d.recipients})'>Send to ${d.recipients} subscriber${d.recipients === 1 ? '' : 's'}</button>
+    <div class='row'><button class='btn pri' type='button' onclick='sendAlert(${id}, ${d.recipients}, ${d.review})'>${d.review ? 'Send to the review group' : `Send to ${d.recipients} subscriber${d.recipients === 1 ? '' : 's'}`}</button>
       <span class='sub'>with a screenshot of the shop's page when a worker can take one; counts as an alert, so the rules won't repeat it within a week unless the price falls 5% more</span></div>`;
   box.scrollIntoView({behavior: 'smooth', block: 'nearest'});
 }
-async function sendAlert(id, n) {
+async function sendAlert(id, n, review) {
   az.note = ($('#anote') || {}).value || az.note;
-  if (!confirm(`Send this alert to ${n} subscriber${n === 1 ? '' : 's'} on Telegram now?`)) return;
+  if (!confirm(review ? 'Send this deal to the review group on Telegram now?' : `Send this alert to ${n} subscriber${n === 1 ? '' : 's'} on Telegram now?`)) return;
   try { const r = await api(`/api/products/${id}/alert`, 'POST', {note: az.note}); toast(`Alert #${r.alert_id} is on its way`); az.note = ''; render(); }
   catch (e) { toast(e.message); }
 }
@@ -1600,6 +1601,7 @@ QUERIES: dict[str, dict] = {
                   UNION ALL SELECT 'price_history', COUNT(*) FROM price_history
                   UNION ALL SELECT 'alerts', COUNT(*) FROM alerts
                   UNION ALL SELECT 'deliveries', COUNT(*) FROM deliveries
+                  UNION ALL SELECT 'reviews', COUNT(*) FROM reviews
                   UNION ALL SELECT 'jobs', COUNT(*) FROM jobs
                   UNION ALL SELECT 'events', COUNT(*) FROM events
                   UNION ALL SELECT 'subscribers', COUNT(*) FROM subscribers

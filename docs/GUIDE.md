@@ -770,6 +770,11 @@ The rules, why model codes (no shop shows a barcode) and how accurate it is on o
 
 ## Alerts and the Telegram bot
 
+**With the review group on** (since 4 Nov 2026, [PUBLISHING.md](PUBLISHING.md)) deals don't go to subscribers:
+every deal goes to the admins' private group as a detailed English card with Approve and Reject buttons, and
+approved ones to the public channel as a short Arabic post whose first line rotates and follows how good the deal is.
+The rest of this section describes the Arabic message, kept in `alerts.message`, and how system messages are delivered.
+
 **What a deal message contains**, top to bottom: the kind and the discount; the product link, brand and
 rating; the numbers (price now, typical price, how much you save, the price just before, the range we
 recorded and for how long, the shop's crossed-out price with the discount it claims or a note to ignore
@@ -805,6 +810,9 @@ left, limited-time deal, the shop's "lowest price in a year", rating); and final
 seller on noon, the confidence and the score. Product names stay as the shop writes them.
 
 ### Alert screenshots
+
+Under review nothing waits for the screenshot and it is kept on disk until the deal is decided
+([PUBLISHING.md](PUBLISHING.md), "The screenshot"). The rest of this section holds for both.
 
 Above each deal alert comes a photo of the product's own page on the shop, in Arabic, with red boxes around
 the price block (price, discount, crossed-out price) and the seller line ("shipped and sold by Amazon.eg"),

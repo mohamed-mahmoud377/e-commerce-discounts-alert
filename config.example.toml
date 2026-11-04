@@ -17,6 +17,19 @@ local = "change-me"
 [telegram]
 bot_token = ""          # from @BotFather
 chat_id = ""            # run 'deals telegram' after sending your bot a message
+# The public release (docs/PUBLISHING.md). With both set, deals go to the review group with Approve and Reject
+# buttons, approved ones to the public channel, and subscribers get no deals in private any more.
+# review_chat_id = ""   # the admins' private group; add the bot and it tells the owner the id
+# public_chat_id = ""   # the public channel's "@username"; the bot must be an admin there
+
+# [review]
+# expire_hours = 6      # a deal nobody decided on by then closes
+# min_score = 0         # deals scoring lower get no card (0: review everything)
+# crazy_score = 70      # the post's tone: "crazy" from this score, or a price error
+# crazy_low_drop = 0.40 # ...or an all-time low at least this far below usual
+# solid_low_days = 14   # a "lowest price" only counts (on the post too) on this much history
+# strong_score = 50     # "strong" from this score
+# strong_drop = 0.35    # ...or this drop; "good" below both
 
 [details]
 # Reading each product's page once for its barcode and model number (better cross-shop matching; prices never

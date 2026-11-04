@@ -2,6 +2,12 @@
 
 Ordered by value for effort. "Why" says what problem each one solves.
 
+## Now: the public release
+
+**Admins review every deal, approved ones go to the public channel** (built 4 Nov 2026, [PUBLISHING.md](PUBLISHING.md)).
+Next on that path: a Review page in the web UI; editing a public post when the deal ends; the deals that can skip review,
+learned from the admins' decisions (until then, publishing waits for a person, which costs flash sales); affiliate links.
+
 ## Now: do these first
 
 1. **Connect Telegram** (2 min, needs you): see the README. Until then alerts are only visible with `make alerts`.

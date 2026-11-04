@@ -9,7 +9,7 @@ Read [README.md](README.md), [docs/GUIDE.md](docs/GUIDE.md) (design and algorith
 [docs/PRICING_RESEARCH.md](docs/PRICING_RESEARCH.md) is the research on how Amazon and noon price and on detection science
 (raw notes in `docs/research/`); [docs/MONITORING.md](docs/MONITORING.md) is the runbook and [docs/COMMANDS.md](docs/COMMANDS.md) lists every command.
 [docs/SHOP_RULES.md](docs/SHOP_RULES.md) lists what each shop gets wrong in its data (placeholder prices, noisy signals) and what we
-do about it (`src/deals/shop_rules.py`, shown on the web UI's Rules page); [docs/CATEGORIES.md](docs/CATEGORIES.md) holds category ids and shop quirks; [docs/JUMIA.md](docs/JUMIA.md), [docs/CAIROSALES.md](docs/CAIROSALES.md), [docs/2B.md](docs/2B.md), [docs/BTECH.md](docs/BTECH.md), [docs/DREAM2000.md](docs/DREAM2000.md), [docs/CARREFOUR.md](docs/CARREFOUR.md), [docs/DUBAIPHONE.md](docs/DUBAIPHONE.md), [docs/HARDWAREMARKET.md](docs/HARDWAREMARKET.md) and [docs/AMAZON_NOW.md](docs/AMAZON_NOW.md) are the per-shop analyses. Keep these in step with the code, and
+do about it (`src/deals/shop_rules.py`, shown on the web UI's Rules page); [docs/PUBLISHING.md](docs/PUBLISHING.md) is the way to the public channel (the admins' review group, the Arabic posts); [docs/CATEGORIES.md](docs/CATEGORIES.md) holds category ids and shop quirks; [docs/JUMIA.md](docs/JUMIA.md), [docs/CAIROSALES.md](docs/CAIROSALES.md), [docs/2B.md](docs/2B.md), [docs/BTECH.md](docs/BTECH.md), [docs/DREAM2000.md](docs/DREAM2000.md), [docs/CARREFOUR.md](docs/CARREFOUR.md), [docs/DUBAIPHONE.md](docs/DUBAIPHONE.md), [docs/HARDWAREMARKET.md](docs/HARDWAREMARKET.md) and [docs/AMAZON_NOW.md](docs/AMAZON_NOW.md) are the per-shop analyses. Keep these in step with the code, and
 write down anything new you learn about the shops or the operations there (the user wants findings kept).
 
 ## Where things run
@@ -26,7 +26,8 @@ write down anything new you learn about the shops or the operations there (the u
   code, restart it: `launchctl kickstart -k gui/$(id -u)/com.deals.worker`. After changing `worker.env`
   (e.g. `DEALS_SITES`) run `make install-mac-worker` instead: the agent copies the env at install time.
 - Telegram bot @Jerrys_deals_bot; the admin is `[telegram] chat_id`. Friends subscribe with /start
-  and the admin approves.
+  and the admin approves, until `[telegram] review_chat_id` and `public_chat_id` are set: then deals go to the
+  admins' review group and approved ones to the public channel, and /start gives the channel's link (docs/PUBLISHING.md).
 
 ## Everyday commands
 

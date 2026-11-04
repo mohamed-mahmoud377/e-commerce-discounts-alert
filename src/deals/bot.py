@@ -7,6 +7,8 @@
 - The owner (config [telegram] chat_id) answers join requests and manages people
   from /subscribers: remove someone, or make them a helper admin. Helper admins
   also get the system warnings and the daily report, nothing more.
+- Once the public channel is set up (publish.py) deals go there: /start just gives its link, nobody asks
+  to join any more, and the buttons on the review group's cards come through here too.
 
 Updates are read by long polling, so nothing has to listen on a public port.
 """
@@ -17,7 +19,7 @@ import sqlite3
 import threading
 from datetime import datetime
 
-from deals import db
+from deals import db, publish
 from deals.alerts import Telegram
 from deals.config import Config
 from deals.db import iso, utcnow
@@ -48,6 +50,7 @@ MADE_MANAGER = ("⭐ جعلك المسؤول مساعدًا له.\n"
                 "ستصلك من الآن تنبيهات النظام (مشاكل الجمع والحظر وغيرها) والتقرير اليومي، بالإضافة إلى تنبيهات العروض.")
 NO_LONGER_MANAGER = "لم تعد مساعدًا للمسؤول. ستصلك تنبيهات العروض فقط كالمعتاد."
 NOT_ALLOWED = "هذا الإجراء للمسؤول فقط"
+JOIN_CHANNEL = "🔥 كل العروض الحقيقية بتتنشر على قناتنا، اشترك وتابعها من هنا:\n{url}"
 STATUS_LABEL = {"active": "✅ مشترك", "pending": "⏳ ينتظر الموافقة", "stopped": "🔕 أوقف التنبيهات",
                 "rejected": "❌ مرفوض", "removed": "🗑 أزيل", "blocked": "🚫 حظر البوت"}
 
@@ -78,9 +81,14 @@ def handle_update(conn: sqlite3.Connection, cfg: Config, tg: Telegram, update: d
     now = now or utcnow()
     owner = int(cfg.telegram_chat_id)
     if "callback_query" in update:
-        _on_button(conn, tg, update["callback_query"], owner, now)
+        _on_button(conn, cfg, tg, update["callback_query"], owner, now)
+        return
+    if "my_chat_member" in update:
+        _on_added(conn, tg, update["my_chat_member"], owner)
         return
     msg = update.get("message")
+    if msg and msg.get("chat", {}).get("type") in ("group", "supergroup"):
+        _in_group(conn, tg, msg, owner)
     if not msg or msg.get("chat", {}).get("type") != "private":
         return  # ignore groups and edits
     chat_id = msg["chat"]["id"]
@@ -93,6 +101,9 @@ def handle_update(conn: sqlite3.Connection, cfg: Config, tg: Telegram, update: d
     if command == "/start":
         if chat_id == owner:
             tg.send(chat_id, ADMIN_START)
+        elif cfg.review_enabled and not (sub and sub["is_manager"] and sub["status"] == "active"):
+            url = publish.channel_url(cfg)
+            tg.send(chat_id, JOIN_CHANNEL.format(url=url) if url else HELP)
         elif sub and sub["status"] == "active":
             tg.send(chat_id, MANAGER_INFO if sub["is_manager"] else ALREADY_ACTIVE)
         elif sub and sub["status"] == "pending":
@@ -127,10 +138,42 @@ def handle_update(conn: sqlite3.Connection, cfg: Config, tg: Telegram, update: d
         tg.send(chat_id, HELP)
 
 
-def _on_button(conn, tg: Telegram, cq: dict, owner: int, now: datetime) -> None:
+def _on_added(conn, tg: Telegram, change: dict, owner: int) -> None:
+    """The bot joined a group or channel: tell the owner its id, for the config. Only when an admin did it;
+    anyone can add a bot to anything."""
+    chat = change.get("chat") or {}
+    who = (change.get("from") or {}).get("id")
+    if (chat.get("type") in ("group", "supergroup", "channel")
+            and (change.get("new_chat_member") or {}).get("status") in ("member", "administrator")
+            and (who == owner or is_manager(conn, who))):
+        title = html.escape(chat.get("title") or "", quote=False)
+        status = change["new_chat_member"]["status"]
+        can_post = (change["new_chat_member"].get("can_post_messages") if chat["type"] == "channel" else True)
+        tg.send(owner, f"The bot was added to “{title}” ({chat['type']}) as {status}.\nchat id: <code>{chat['id']}</code>"
+                       + (f"\nusername: @{chat['username']}" if chat.get("username") else "")
+                       + ("" if status == "administrator" and can_post else
+                          "\n⚠️ It can't post there yet: make it an administrator with the right to post messages."))
+
+
+def _in_group(conn, tg: Telegram, msg: dict, owner: int) -> None:
+    """A group's id changes when Telegram upgrades it to a supergroup; /id in the group tells it too."""
+    chat_id = msg["chat"]["id"]
+    who = (msg.get("from") or {}).get("id")
+    if msg.get("migrate_to_chat_id"):
+        tg.send(owner, f"A group the bot is in moved to a new id: <code>{msg['migrate_to_chat_id']}</code> "
+                       f"(it was {chat_id}). If it is the review group, update [telegram] review_chat_id.")
+    elif (msg.get("text") or "").split("@")[0].strip() == "/id" and (who == owner or is_manager(conn, who)):
+        tg.send(chat_id, f"chat id: <code>{chat_id}</code>")
+
+
+def _on_button(conn, cfg: Config, tg: Telegram, cq: dict, owner: int, now: datetime) -> None:
     presser = cq.get("from", {}).get("id")
     action, _, target = (cq.get("data") or "").partition(":")
     message = cq.get("message") or {}
+
+    if action.startswith("rv_"):  # a card in the review group: the owner and the helper admins decide
+        publish.on_button(conn, cfg, tg, cq, presser == owner or is_manager(conn, presser), now)
+        return
 
     def answer(text: str) -> None:
         tg.call("answerCallbackQuery", callback_query_id=cq["id"], text=text)

@@ -47,6 +47,7 @@ explain the reasons behind decisions that the code alone does not show.
 | Same product on other shops | `docs/MATCHING.md` | `matching.py`, `details.py`, `detailq.py` | `test_matching.py`, `fixtures/matching_gold.tsv` |
 | Screenshots | GUIDE "Alert screenshots" | `shots.py`, `shotq.py` | `test_shots.py` |
 | Bot, subscribers | GUIDE "Alerts and the Telegram bot" | `bot.py` | `test_bot.py` |
+| Review group, public channel, the Arabic posts | `docs/PUBLISHING.md` | `publish.py` | `test_publish.py` |
 | Health, devices, logs, errors, uptime | `docs/MONITORING.md` | `health.py`, `monitor.py`, `audit.py`, `uptime.py` | `test_health.py`, `test_monitor.py`, `test_uptime.py` |
 | Web UI | INTERNALS code map | `webui.py` | `test_webui.py` |
 | How Amazon/noon price, detection science | `docs/PRICING_RESEARCH.md` | | |

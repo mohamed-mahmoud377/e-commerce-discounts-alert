@@ -621,7 +621,8 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
         image = await request.body() if status == "ok" else None
         if image is not None and (len(image) > shotq.MAX_BYTES or not image.startswith(b"\xff\xd8")):
             raise HTTPException(422, "not a JPEG, or too big")
-        return {"ok": True, "status": shotq.record(conn, alert_id, worker, image, reason, utcnow())}
+        store = cfg.shots_dir if cfg.review_enabled else None
+        return {"ok": True, "status": shotq.record(conn, alert_id, worker, image, reason, utcnow(), store=store)}
 
     class PauseIn(BaseModel):
         worker: str = "*"  # a device name, or '*' for all

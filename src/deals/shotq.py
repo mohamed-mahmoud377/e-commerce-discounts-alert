@@ -7,11 +7,15 @@ the deal) carries the job; the alert sender holds the alert until the image arri
 `alerts.screenshot_wait_seconds` pass, then sends the photo and the text. The image lives only in this
 process's memory: once Telegram has it, its file_id is kept instead, and a restart just means the alert
 goes out as text.
+
+With the admins' review on (publish.py) nothing waits for the screenshot, but the image has to last until
+someone approves the deal: it is kept on disk instead (publish.sweep_images removes it) and may arrive later.
 """
 
 import threading
 import time
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from deals.config import Config
 from deals.db import iso
@@ -23,6 +27,7 @@ SHOOTER_SEEN = timedelta(minutes=10)  # a screenshot-taking worker is "there" fo
 KEEP_SECONDS = 3 * 3600  # an image nobody sent (Telegram down) is dropped after this long
 MAX_IMAGES = 40  # about 6 MB at most
 MAX_BYTES = 2_000_000
+REVIEW_WAIT_SECONDS = 1800  # under review nobody waits for the screenshot, so it may come this late
 
 
 class _Images:
@@ -74,7 +79,8 @@ def add(conn, cfg: Config, alert_id: int, site: str, url: str, now: datetime, *,
     holding the alert would only delay it)."""
     if not (cfg.alerts.screenshots and site in SPECS and (force or can_shoot(site, now))):
         return False
-    wait = cfg.alerts.screenshot_wait_seconds if wait_seconds is None else wait_seconds
+    usual = REVIEW_WAIT_SECONDS if cfg.review_enabled else cfg.alerts.screenshot_wait_seconds
+    wait = usual if wait_seconds is None else wait_seconds
     conn.execute("INSERT OR IGNORE INTO shots (alert_id, site, url, status, created_at, wait_until) "
                  "VALUES (?, ?, ?, 'pending', ?, ?)", (alert_id, site, url, iso(now), iso(now + timedelta(seconds=wait))))
     return True
@@ -96,8 +102,10 @@ def lease(conn, sites: list[str], worker: str, now: datetime) -> dict | None:
     return {"alert_id": row["alert_id"], "site": row["site"], "url": row["url"]}
 
 
-def record(conn, alert_id: int, worker: str, image: bytes | None, reason: str | None, now: datetime) -> str:
-    """A worker's screenshot (or why there is none). Kept in memory only if the alert still waits for it."""
+def record(conn, alert_id: int, worker: str, image: bytes | None, reason: str | None, now: datetime,
+           store: Path | None = None) -> str:
+    """A worker's screenshot (or why there is none). Kept in memory only if the alert still waits for it,
+    or in `store` when the alert is under review."""
     row = conn.execute("SELECT status, wait_until FROM shots WHERE alert_id = ?", (alert_id,)).fetchone()
     if row is None:
         return "unknown"
@@ -111,7 +119,11 @@ def record(conn, alert_id: int, worker: str, image: bytes | None, reason: str | 
         status = "late"  # the alert already went out as text
     else:
         status = "ok"
-        IMAGES.put(alert_id, image)
+        if store is None:
+            IMAGES.put(alert_id, image)
+        else:
+            store.mkdir(parents=True, exist_ok=True)
+            (store / f"{alert_id}.jpg").write_bytes(image)
     with conn:
         conn.execute("UPDATE shots SET status = ?, worker = ?, taken_at = ?, bytes = ?, error = ? WHERE alert_id = ?",
                      (status, worker, iso(now), len(image) if image else None, (reason or "")[:300] or None, alert_id))

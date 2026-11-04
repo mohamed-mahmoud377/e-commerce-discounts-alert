@@ -287,6 +287,14 @@ Early drops (since 27 October) and Path A alerts are never held.
 minutes... up to an hour, at most 10 times; someone who blocked the bot is marked `blocked` and skipped.
 System warnings and the daily report go only to the owner and the helper admins.
 
+### 8a. With the review group on: admins first, then the public channel (since 4 Nov 2026)
+
+When `[telegram] review_chat_id` and `public_chat_id` are set, step 8's hand-out changes and nothing before it
+does: every alert that passes the rules gets a `reviews` row with an English card, no `deliveries` row, and no
+subscriber gets it. An admin approves or rejects; an approved deal goes to the public channel at its current price;
+one nobody decides on closes after 6 hours. System messages are unchanged. The whole path is in
+[PUBLISHING.md](PUBLISHING.md).
+
 ### 8b. An alert sent by hand (web UI, since 4 Nov 2026)
 
 Sometimes a product is worth telling people about although the rules stay quiet: a 12% drop on something
@@ -307,7 +315,8 @@ the same as for an automatic alert:
   "📣 عرض مختار", with the other shops' prices and a screenshot, and the sender hands it to every active
   subscriber. It counts as an alert: the rules won't repeat the product within a week unless the price
   falls another 5%. A second manual alert for the same product within 10 minutes is refused (a double
-  click). A sold-out product or one without a price can't be sent.
+  click). A sold-out product or one without a price can't be sent. With the review group on (8a) it goes there
+  like any other deal, with its note.
 
 ## 9. One product, start to finish (a worked timeline)
 

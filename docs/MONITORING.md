@@ -187,6 +187,14 @@ is sent only for something you were told went down. A shop paused by hand while 
 
 ## Runbook
 
+**The review group and the public channel** ([PUBLISHING.md](PUBLISHING.md)). The `review` line in `make health`: cards
+waiting for a decision. ❌ means approved deals could not be posted: the card says why and has **Try again**, usually the bot was
+removed from the channel or lost its *Post messages* right. ⚠️ means cards took over 30 minutes to reach the group:
+a burst, or Telegram refusing them; if the error is "group chat was upgraded to a supergroup", the group's id changed, the bot
+told the owner the new one, update `[telegram] review_chat_id` and restart. Look at the queue with
+`SELECT status, COUNT(*) FROM reviews GROUP BY 1` and the errors with `SELECT alert_id, error FROM reviews WHERE error IS NOT NULL`.
+
+
 **What went wrong while nobody was looking?** web UI → Errors (or `make errors`, `make errors DAYS=1 SITE=jumia_eg`):
 the newest first, "Times" says how often. Hover a kind for its cause; the table under it says what to do. A row
 seen within the hour is still happening. web UI → Uptime → History (or `make uptime`) says when each shop and

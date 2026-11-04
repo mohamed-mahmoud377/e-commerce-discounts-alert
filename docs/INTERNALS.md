@@ -30,8 +30,9 @@ owns one job.
 | `scheduler.py` | 241 | The job queue: leases, intervals, blocks, failures, worker bookkeeping, events | db, planner |
 | `shop_rules.py` | 234 | Every shop's known misbehaviour in one list (`RULES`, see [SHOP_RULES.md](SHOP_RULES.md)): `clean()` turns placeholder prices (Jumia's 100,000 and 50,000 EGP) into "no price" for every listing, `stops()` names the deals that must not be sent (a reference that is a placeholder or doubtful, like Jumia's 10,000; any new-listing claim on a `no_claim_alerts` shop, noon), `clean_history()` applies the placeholders to what is stored (at every start), `hit()` and `summary()` count what each rule caught for the web UI | models |
 | `pricing.py` | 288 | Price statistics and the deal rules (`evaluate`), and `manual_deal` for an alert an admin sends by hand; pure functions, no database (the low-stock shops come from `shop_rules`) | config, models, shop_rules |
-| `alerts.py` | 585 | Judging a changed product, writing alerts, formatting the Arabic message, `manual_alert` (preview or send an alert by hand), the Telegram client and the delivery loop | db, pricing |
-| `bot.py` | 292 | The Telegram conversation: /start, /stop, approvals, subscribers; `decide()` is shared with the web UI | alerts, db |
+| `alerts.py` | 622 | Judging a changed product, writing alerts, formatting the Arabic message, `manual_alert` (preview or send an alert by hand), the Telegram client and the delivery loop | db, pricing, publish |
+| `publish.py` | 562 | The way to the public channel ([PUBLISHING.md](PUBLISHING.md)): the admins' English card, the Arabic post with its rotating hooks, the review buttons, and `step()`, the loop that sends cards and posts | db, pricing, shops |
+| `bot.py` | 335 | The Telegram conversation: /start, /stop, approvals, subscribers; `decide()` is shared with the web UI; passes review buttons to `publish`, tells the owner a new chat's id | alerts, db, publish |
 | `health.py` | 231 | Health checks (including `parser <shop>`: a page of in-stock listings without prices in the last hour) and the daily report | db, alerts |
 | `matching.py` | 590 | The same product on different shops: model codes read from titles once (`product_codes`), the hourly grouping streamed through SQL into `models` / `product_models` (in a `nice 19` subprocess), `same_model()` for the views. See [MATCHING.md](MATCHING.md) | db |
 | `details.py` | 150 | Product page parsers per shop (barcode, model number, specs) and `fetch_details`, which never retries a challenge | models |
@@ -160,6 +161,7 @@ many have run, and `db.connect()` runs the missing ones in a transaction on star
 | 19 | `errors` (the error book), `status`, `status_changes` (uptime) |
 | 20 | `users` (the admins of the web UI and API) |
 | 21 | `shop_rule_hits` (what each shop rule caught, by rule, site and SKU) |
+| 22 | `reviews` (the admins' decision on each deal and what went to the public channel) |
 
 **Tables and columns** (prices are integer piastres; times are UTC ISO text, which sorts correctly as text):
 
@@ -180,6 +182,7 @@ many have run, and `db.connect()` runs the missing ones in a transaction on star
 | `status` | `subject` (`shop:<site>`, `device:<name>`, `device_shop:<name>/<site>`) | Current state (uptime.py): `kind`, `name`, `state` (shop `up`/`down`/`paused`; device `online`/`offline`; device_shop `ok`/`blocked`/`failing`/`offline`), `since`, `reason`, `notified` (the admins were told it went bad, so they hear when it is back), `checked_at`. A device_shop is `blocked` while its `blocks` row exists (until a page works), not just during the pause |
 | `status_changes` | `id`; indexes on time and subject | Every change: `subject`, `kind` (also `server`), `name`, `old_state`, `new_state`, `at`, `lasted_s` (how long the old state lasted), `reason`, `notified`. Server outages are one `down → up` row. Pruned after 180 days |
 | `users` | `username` (case-insensitive) | The admins (auth.py): `password` (`pbkdf2_sha256$rounds$salt$hash`; a plain value typed in with sqlite3 is taken as the password and hashed at the next login), `created_at`, `last_login_at` |
+| `reviews` | `alert_id`; indexes `(status, next_attempt_at)`, `(created_at)` | One deal's way to the public channel ([PUBLISHING.md](PUBLISHING.md)): `status` (`pending`, `approved`, `published`, `rejected`, `expired`, `failed`, `skipped`), `card` (the English text), what the post needs (`tier`, `basis`, `all_time_low`, `grp`, `note`), `message_id` (the card), `expires_at`, `attempts`, `next_attempt_at`, `decided_by`, `decided_by_name`, `decided_at`, `reason`, and what went out: `price`, `hook`, `public_message_id`, `published_at`, `error` |
 | `kv` | `key` | `telegram_offset` (last Telegram update handled), `uptime:last_round` (the watchdog's last round, to notice server outages) |
 | `product_codes` | `product_id` (cascade delete) | The codes read from one title, kept so a pass re-reads only changed titles: `title_hash`, `version`, `heads`, `shop_brand`, `own`, `mentions`, `before`, `capacity`, `used`, `accessory` ([MATCHING.md](MATCHING.md)) |
 | `product_code_index` | `(product_id, code)`; index `(code)` | One row per code of a product (`rank`), for the SQL counts |
@@ -315,6 +318,11 @@ commented template.
 | `[server] admin_token` | empty | An admin key for scripts and `make ui`'s one-click login (`deals token` makes one); people log in with a username and password (`users` table) |
 | `[workers] NAME = "token"` | | One line per device; the name shows in devices and logs. `deals token` makes one |
 | `[telegram] bot_token`, `chat_id` | empty | The bot and the admin chat (`make telegram TOKEN=...` fills both) |
+| `[telegram] review_chat_id`, `public_chat_id` | empty | With both set, deals go to the review group and approved ones to the public channel `@username`, and no subscriber gets them ([PUBLISHING.md](PUBLISHING.md)) |
+| `[review] expire_hours` | 6 | A deal nobody decided on by then closes |
+| `[review] min_score` | 0 | Deals scoring lower get no card (hand-sent ones always do) |
+| `[review] crazy_score`, `crazy_low_drop`, `solid_low_days` | 70, 0.40, 14 | The post's loudest tone: from this score, or a lowest price this far below usual; a lowest price only counts on this much history |
+| `[review] strong_score`, `strong_drop` | 50, 0.35 | The middle tone; below both, "good" |
 | `[alerts] min_drop` | 0.20 | Real price drop threshold versus typical (3+ days of history) |
 | `[alerts] early_min_drop` | 0.30 | Threshold for early drops (1 to 3 days of history) |
 | `[alerts] atl_min_drop` | 0.15 | All-time-low threshold (14+ days of history) |

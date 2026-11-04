@@ -125,7 +125,7 @@ def test_saved_queries_run_and_need_login(client):
     assert client.get("/api/queries/new_products?site=noon_eg&hours=48").json()["rows"] == []
     assert client.get("/api/queries/new_products?site=amazon_eg&hours=48").json()["rows"][0][2] == "Samsung 55 inch TV"
     d = client.get("/api/queries/tables?grp=TVs").json()  # no such columns: filter ignored, not an error
-    assert d["filters"] == {"grp": False, "site": False, "q": False} and len(d["rows"]) == 8
+    assert d["filters"] == {"grp": False, "site": False, "q": False} and len(d["rows"]) == 9
 
 
 def test_product_page_data_and_filters(client):
@@ -236,7 +236,7 @@ def test_saved_query_text_search(client):
     d = client.get("/api/queries/new_products?hours=48&q=samsung 55").json()
     assert d["filters"]["q"] is True and len(d["rows"]) == 1
     assert client.get("/api/queries/new_products?hours=48&q=iphone").json()["rows"] == []
-    assert len(client.get("/api/queries/tables?q=whatever").json()["rows"]) == 8  # no title column: ignored
+    assert len(client.get("/api/queries/tables?q=whatever").json()["rows"]) == 9  # no title column: ignored
 
 
 def test_new_screens_data(client):
