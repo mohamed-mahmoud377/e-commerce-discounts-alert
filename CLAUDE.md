@@ -45,6 +45,10 @@ write down anything new you learn about the shops or the operations there (the u
 
 ## Rules of thumb
 
+- For any debugging, fix, feature or investigation, follow the `work-on-deals` skill
+  (`.claude/skills/work-on-deals/SKILL.md`): orient, read the right doc, debug from live data, check that
+  nothing broke, verify live, update the docs.
+
 - The user's first principle (27 Oct 2026): flash sales can be gone in minutes, so *notice drops fast* and
   *alert only on real discounts*. Any change to scheduling, crawling or alert rules must keep the worst-case
   time-to-notice short (group `max_interval_minutes`, the deal-feed fast lanes) and the reference honest
