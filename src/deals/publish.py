@@ -112,10 +112,14 @@ def format_card(alert_id: int, p: sqlite3.Row, stats: PriceStats, deal: Deal, le
     def egp(minor: int) -> str:
         return f"{minor / 100:,.0f} EGP"
 
+    def days(n: float) -> str:
+        return f"{n:.0f} day{'' if f'{n:.0f}' == '1' else 's'}"
+
     shop = SHOPS[p["site"]].label if p["site"] in SHOPS else p["site"]
     where = [shop, p["grp"] or "", f"seller: {e(p['seller'])}" if p["seller"] else ""]
     lines = [
         f"{TIER_ICON[level]} <b>REVIEW #{alert_id}</b> · {deal.kind} · score {deal.score} · {deal.confidence} confidence",
+        "",
         f"<a href=\"{html.escape(p['url'])}\">{e(p['title'][:200])}</a>",
         " · ".join(w for w in where if w),
     ]
@@ -138,45 +142,48 @@ def format_card(alert_id: int, p: sqlite3.Row, stats: PriceStats, deal: Deal, le
     if p["reviews"] is not None and p["reviews"] < 5:
         flags.append("few reviews")
     if flags:
-        lines.append("⚠️ " + " · ".join(flags))
-    lines.append("")
+        lines += ["", "⚠️ " + " · ".join(flags)]
 
-    lines.append(f"<b>Price</b> {egp(deal.price)}" + (f" (was {egp(deal.previous)} just before)" if deal.previous else ""))
+    # One number a line: a card is read fast, on a phone, and the decision rests on these.
+    lines += ["", f"💰 Price: <b>{egp(deal.price)}</b>"]
     basis = _basis(deal)
-    saving = deal.reference - deal.price
     if basis == "none":
-        lines.append("<b>Usual</b> no history and no crossed-out price to compare with")
+        lines.append("Usual: no history and no crossed-out price to compare with")
     elif basis == "claim":
-        lines.append(f"<b>Shop's claim</b> {egp(deal.reference)} → −{deal.drop:.0%}, saves {saving / 100:,.0f} (not from our history)")
+        lines.append(f"Shop's claim: <b>{egp(deal.reference)}</b> (not from our history)")
     elif deal.drop >= 0.005:
-        lines.append(f"<b>Usual</b> {egp(deal.reference)} over {deal.reference_days:.0f} d → −{deal.drop:.0%}, saves {saving / 100:,.0f}")
+        lines.append(f"Usual: <b>{egp(deal.reference)}</b> (over {days(deal.reference_days)})")
     else:
-        lines.append(f"<b>Usual</b> {egp(deal.reference)} over {deal.reference_days:.0f} d: not below it")
-    history = [f"tracked {stats.tracked_days:.0f} d", f"{stats.changes_90d} change{'' if stats.changes_90d == 1 else 's'} in 90 d"]
-    if stats.low is not None:
-        history.append(f"range {stats.low / 100:,.0f}–{stats.high / 100:,.0f}")
-    if deal.share_at_or_below is not None:
-        history.append(f"this cheap {deal.share_at_or_below:.0%} of the time")
-    if deal.all_time_low:
-        history.append("lowest we saw")
-    lines.append("<b>History</b> " + " · ".join(history))
+        lines.append(f"Usual: <b>{egp(deal.reference)}</b> (over {days(deal.reference_days)}), not below it")
+    if basis == "claim" or (basis != "none" and deal.drop >= 0.005):
+        lines += [f"Drop: <b>−{deal.drop:.0%}</b>", f"Saves: <b>{egp(deal.reference - deal.price)}</b>"]
+    if deal.previous:
+        lines.append(f"Just before: {egp(deal.previous)}")
     if p["list_price"] and basis != "claim":
-        lines.append(f"<b>Crossed out</b> {egp(p['list_price'])}" + (f" (claims −{1 - deal.price / p['list_price']:.0%})" if p["list_price"] > deal.price else ""))
+        lines.append(f"Crossed out: {egp(p['list_price'])}" + (f" (claims −{1 - deal.price / p['list_price']:.0%})" if p["list_price"] > deal.price else ""))
 
-    elsewhere = [f"other seller {other_offer / 100:,.0f}"] if other_offer is not None else []
-    elsewhere += [f"{SHOPS[o['site']].label if o['site'] in SHOPS else o['site']} {o['price'] / 100:,.0f}" for o in others]
+    lines += ["", f"📊 Tracked: {days(stats.tracked_days)}", f"Changes: {stats.changes_90d} in 90 days"]
+    if stats.low is not None:
+        lines.append(f"Range: {stats.low / 100:,.0f} – {egp(stats.high)}")
+    if deal.share_at_or_below is not None:
+        lines.append(f"This cheap: {deal.share_at_or_below:.0%} of the time")
+    if deal.all_time_low:
+        lines.append("Lowest we saw")
+
+    elsewhere = [f"Other seller: {egp(other_offer)}"] if other_offer is not None else []
+    elsewhere += [f"{SHOPS[o['site']].label if o['site'] in SHOPS else o['site']}: {egp(o['price'])}" for o in others]
     if elsewhere:
-        lines.append("<b>Elsewhere</b> " + " · ".join(elsewhere))
-    product = [f"★ {p['rating']:.1f} ({p['reviews'] or 0:,})" if p["rating"] else "",
-               f"{p['stock_left']} left" + (" (shown on half the shop)" if p["site"] in LOW_STOCK_EVERYWHERE else "")
+        lines += ["", "🏪 Elsewhere", *elsewhere]
+
+    product = [f"Rating: ★ {p['rating']:.1f} ({p['reviews'] or 0:,})" if p["rating"] else "",
+               f"Stock: {p['stock_left']} left" + (" (shown on half the shop)" if p["site"] in LOW_STOCK_EVERYWHERE else "")
                if p["stock_left"] is not None and p["stock_left"] <= 5 else "",
-               ", ".join(code for code, _ in deal.signals)]
+               "Signals: " + ", ".join(code for code, _ in deal.signals) if deal.signals else ""]
     if any(product):
-        lines.append("<b>Product</b> " + " · ".join(x for x in product if x))
-    lines.append(f"<b>Past</b> {past} earlier alert{'' if past == 1 else 's'} · found {now.astimezone(CAIRO):%H:%M} Cairo")
+        lines += ["", *(x for x in product if x)]
     if note:
-        lines.append(f"<b>Note</b> {e(note)}")
-    lines.append(f"<b>Public tone</b> {level}")
+        lines += ["", f"📝 {e(note)}"]
+    lines += ["", f"Past alerts: {past} · found {now.astimezone(CAIRO):%H:%M} Cairo · public tone: {level}"]
     return "\n".join(lines)
 
 

@@ -127,11 +127,35 @@ def test_the_card_is_english_and_has_the_details_and_the_buttons(env):
     cfg, conn, tg = env
     alert_id = carded(env)
     card = tg.sent[0]
-    for words in (f"REVIEW #{alert_id}", "price_drop", "score", "6,000 EGP", "10,000 EGP", "−40%", "saves 4,000",
-                  "tracked 60 d", "Amazon", "https://shop.example/TV1"):
+    for words in (f"REVIEW #{alert_id}", "price_drop", "score", "6,000 EGP", "10,000 EGP", "−40%", "4,000 EGP",
+                  "Tracked: 60 days", "Amazon", "https://shop.example/TV1"):
         assert words in card["text"], words
     assert not any("؀" <= c <= "ۿ" for c in card["text"].replace("تلفزيونات", ""))
     assert [b["callback_data"] for b in card["buttons"][0]] == [f"rv_ok:{alert_id}", f"rv_no:{alert_id}", f"rv_view:{alert_id}"]
+
+
+def test_the_card_gives_every_price_its_own_line_and_separates_its_sections(env):
+    carded(env)
+    text = env[2].sent[0]["text"]
+    lines = text.split("\n")
+    for line in ("💰 Price: <b>6,000 EGP</b>", "Usual: <b>10,000 EGP</b> (over 60 days)", "Drop: <b>−40%</b>", "Saves: <b>4,000 EGP</b>"):
+        assert line in lines, line
+    assert lines.index("💰 Price: <b>6,000 EGP</b>") + 1 == lines.index("Usual: <b>10,000 EGP</b> (over 60 days)")
+    assert len(text.split("\n\n")) >= 4  # header, title, prices, history
+
+
+def test_the_card_lists_the_other_prices_one_a_line(env):
+    cfg, conn, tg = env
+    pid = product(conn)
+    with conn:
+        conn.execute("UPDATE products SET list_price = 1200000 WHERE id = ?", (pid,))
+    p, deal = db.product(conn, pid), alerts.Deal(kind="price_drop", price=600_000, reference=1_000_000, drop=0.4, previous=900_000,
+                                                 confidence="medium", score=40, reference_days=60)
+    others = [{"site": "noon_eg", "price": 650_000}, {"site": "jumia_eg", "price": 700_000}]
+    lines = publish.format_card(1, p, alerts.product_stats(conn, pid, utcnow()), deal, "good", other_offer=620_000, others=others, past=2,
+                                note="", now=utcnow()).split("\n")
+    for line in ("Just before: 9,000 EGP", "Crossed out: 12,000 EGP (claims −50%)", "Other seller: 6,200 EGP", "noon: 6,500 EGP", "Jumia: 7,000 EGP"):
+        assert line in lines, line
 
 
 def test_the_card_warns_about_renewed_goods_and_marketplace_sellers(env):
@@ -489,7 +513,7 @@ def test_a_lowest_price_on_a_few_days_of_history_is_not_called_the_lowest(env):
     sender_round(cfg, conn, tg)
     press(conn, cfg, tg, f"rv_ok:{alert_id}")
     publish.step(conn, cfg, tg, utcnow())
-    assert not review(conn, alert_id)["hook"].startswith("low:") and "lowest we saw" in tg.sent[0]["text"]
+    assert not review(conn, alert_id)["hook"].startswith("low:") and "Lowest we saw" in tg.sent[0]["text"]
 
 
 def test_a_new_listing_never_claims_our_own_history(env):

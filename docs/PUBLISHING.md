@@ -44,6 +44,40 @@ confidence, the title (linked), shop, group and seller; the warnings; price agai
 the shop's claim; history (days tracked, changes, range, how often this cheap, lowest we saw); the crossed-out
 price; the same product elsewhere; rating and stock; earlier alerts; the admin's note on a hand-sent alert.
 
+One number a line and a blank line between sections (changed 4 Nov 2026: the admins could not pick the numbers out
+of `Usual 6,000 EGP over 9 d → −28%, saves 1,702`). The text is stored when the alert is created, so cards
+already waiting keep the old layout until they close:
+
+```
+🟡 REVIEW #1454 · price_drop · score 31 · medium confidence
+
+Zolo Power Bank, 20,000mAh 22.5W ...
+noon · Chargers & power banks · seller: Egyptian German
+
+⚠️ marketplace seller · low rating 3.7
+
+💰 Price: 1,078 EGP
+Usual: 1,374 EGP (over 4 days)
+Drop: −22%
+Saves: 296 EGP
+Just before: 1,285 EGP
+Crossed out: 1,470 EGP (claims −27%)
+
+📊 Tracked: 4 days
+Changes: 3 in 90 days
+Range: 1,285 – 1,374 EGP
+This cheap: 0% of the time
+Lowest we saw
+
+🏪 Elsewhere
+Other seller: 1,300 EGP
+
+Rating: ★ 3.7 (29)
+Signals: limited_deal
+
+Past alerts: 0 · found 23:18 Cairo · public tone: good
+```
+
 Warnings: renewed or used (from the title), noon marketplace seller, possible pricing mistake, low confidence, inflated
 crossed-out price, a round usual price that may be the shop's placeholder (10,000 or 100,000 EGP, see
 [SHOP_RULES.md](SHOP_RULES.md)), low rating, few reviews.
