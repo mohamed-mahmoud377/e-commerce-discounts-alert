@@ -824,7 +824,7 @@ and Dream 2000 sell their own stock and get the price box alone.
 | Shop | Page | Price box | Seller box | Context | Time (Mac) |
 |---|---|---|---|---|---|
 | amazon_eg, amazon_now_eg | `/-/ar/dp/` | `#corePriceDisplay_desktop_feature_div` | `#offerDisplayFeatures_desktop`, `#fresh-merchant-info` | title, image | 5 to 8 s |
-| noon_eg | `/egypt-ar/` | `div[class*="_priceOfferCtr_"]` | `a[class*="_partnerRatingsCtr_"]` | title only (the gallery comes 30 s late) | 15 to 20 s |
+| noon_eg | `/egypt-ar/` | `div[class*="_priceOfferCtr_"]` | `a[class*="_partnerRatingsCtr_"]` | title, image (waiting for it also brings the Arabic labels) | 11 to 16 s |
 | jumia_eg | `/ar/` | `.col10 .-phm > .-hr.-pvm` | `section.card:has(> a > h2) > .-hr.-pam` | title, image | 3 to 4 s |
 | btech_eg | `/ar/p/` | `[data-testid="pdp-price"]` | the "يباع من" row (its icon) | title, image | 11 s |
 | 2b_eg | `/ar/` | `.product-info-main div.price-wrapper` | | title, image | 9 s |
@@ -868,7 +868,7 @@ docs/CATEGORIES.md. Times include starting the browser and a 2 s wait for the pa
 
 **The speed principle.** The wait costs at most 30 s, against the minutes a slice takes to be revisited
 (the worst-case time to notice, above), and only when a screenshot worker is actually there; in the measured
-runs the photo was ready in 3 to 11 s, noon's in 15 to 20 s (its server takes 10 s before the first byte of a
+runs the photo was ready in 3 to 11 s, noon's in 11 to 16 s (its server takes 10 s before the first byte of a
 product page). Screenshots are taken one at a time, so a second noon deal found in the same minute can miss its
 30 s and go out as text. Turn it off with `[alerts] screenshots = false`.
 

@@ -51,11 +51,14 @@ SPECS: dict[str, Spec] = {
                      context=(".col10 h1", "#imgs"), ready=".col10 h1",
                      arabic=("jumia.com.eg/", "jumia.com.eg/ar/")),
     # CSS-module classes (`_priceOfferCtr_1fgtw_1`): matched on the name, the hash changes with each build.
-    # The page shows the offer that wins the buy box, whose seller is a link to /seller/. No image: the
-    # gallery is drawn only once the page has streamed in whole, 30 s after the price (docs/CATEGORIES.md).
+    # The page shows the offer that wins the buy box, whose seller is a link to /seller/. The price is drawn
+    # 2 s before hydration, which brings the Arabic labels and the main image: waiting for that image is what
+    # keeps out "Sold by" and "25% Off" (docs/CATEGORIES.md). The ticker beside the price rolls: gone.
     "noon_eg": Spec(boxes=(('div[class*="_priceOfferCtr_"]', '[data-qa="div-price-now"]'),
                            ('a[class*="_partnerRatingsCtr_"]', 'a[href*="/seller/p-"]')),
-                    context=('h1[data-qa="pdp-product-name"]',),
+                    context=('h1[data-qa="pdp-product-name"]',
+                             '[data-pdp-gallery] [class*="_imageContainer_"]:first-child [class*="_mediaContainer_"] img'),
+                    hide=('div[class*="_nudgesContainer_"]',),
                     ready='div[class*="_priceOfferCtr_"]', arabic=("/egypt-en/", "/egypt-ar/")),
     # Next.js with Tailwind classes; test ids on the price. The seller is the "يباع من" row of the details
     # card, known by its icon; the saving ("هتوفر") is a badge on the image.
@@ -147,7 +150,7 @@ _UNCOVER = """([extra, keep]) => {
 
 # True once every context element is on the page and its first image (the main product image) has loaded:
 # lazy loaders put a 1-pixel placeholder in `src` until the image is in view, and noon renders its gallery
-# after the price.
+# after the price (about 2 s).
 _LOADED = """(context) => context.every(s => {
   const e = document.querySelector(s), i = e && (e.tagName === 'IMG' ? e : e.querySelector('img'));
   return e && (!i || (i.complete && i.naturalWidth > 1));

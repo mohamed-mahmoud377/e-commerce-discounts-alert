@@ -31,7 +31,7 @@ SAVED = [
     ("amazon_eg", "amazon_product_ar.html.gz", ("%", "جنيه"), "Electro.Zone"),
     ("amazon_now_eg", "amazon_now_product.html.gz", ("%", "جنيه"), "Amazon Now"),
     ("jumia_eg", "jumia_product_rendered.html.gz", ("2,799.00 جنيه", "3,499.00", "20%"), "Miracle Trading"),
-    ("noon_eg", "noon_product_rendered.html.gz", ("13999.00", "14999.00", "خصم 6%"), "Elsweedyphone"),
+    ("noon_eg", "noon_product_rendered.html.gz", ("3529.00", "4750.00", "خصم 25%"), "جون بي سي"),
     ("btech_eg", "btech_product_rendered.html.gz", ("113,335", "124,335"), "الحريري جروب"),
     ("2b_eg", "2b_product_rendered.html.gz", ("70,999", "96,899", "27%"), None),
     ("cairosales_eg", "cairosales_product_rendered.html.gz", ("10,270", "11,670", "-12%"), None),
@@ -129,6 +129,41 @@ def test_annotate_draws_the_boxes_hides_overlays_and_returns_a_jpeg():
             assert page.evaluate("getComputedStyle(document.querySelector('#sp-cc')).display") == "none"
             page.evaluate("document.querySelector('#corePriceDisplay_desktop_feature_div').remove()")
             assert shots.annotate(page, shots.SPECS["amazon_eg"]) is None  # no price block: no screenshot
+        finally:
+            browser.close()
+
+
+# noon's product page while it hydrates: the gallery has its placeholder and no image yet, the labels are still
+# English, and the "lowest price / few left" ticker rolls next to the price.
+NOON_EARLY = """<html dir="rtl"><body style="margin:0;font:16px sans-serif">
+<h1 data-qa="pdp-product-name">مقلاة</h1>
+<div class="_priceAndNudgesContainer_1cnog_67"><div class="_priceOfferCtr_1fgtw_1" style="height:40px">3529.00 25% Off</div>
+  <div class="_nudgesContainer_1cnog_75" style="height:16px;overflow:hidden">few left</div></div>
+<a class="_partnerRatingsCtr_x" href="/egypt-ar/seller/p-1/" style="display:block;height:80px">Sold by JP</a>
+<div data-pdp-gallery=""><div class="_imageContainer_135hb_63"><div class="_mediaContainer_1lnxf_39"></div></div>
+  <div class="_placeholderContainer_1lnxf_32"><img alt="placeholder" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></div></div>
+</body></html>"""
+PIXELS = ("data:image/gif;base64,R0lGODlhAgACAIAAAAAAAP///yH5BAEAAAEALAAAAAACAAIAAAICjF8AOw==")
+
+
+def test_noon_waits_for_the_gallery_image_and_drops_the_rolling_ticker():
+    """Hydration brings the Arabic labels and the image together: a shot before it has English and no image."""
+    sync_playwright = pytest.importorskip("playwright.sync_api").sync_playwright
+    spec = shots.SPECS["noon_eg"]
+    with sync_playwright() as p:
+        try:
+            browser = p.chromium.launch(headless=True)
+        except Exception as exc:
+            pytest.skip(f"no Chromium here: {exc}")
+        try:
+            page = browser.new_page(viewport=shots.VIEWPORT)
+            page.set_content(NOON_EARLY)
+            assert not page.evaluate(shots._LOADED, list(spec.context))  # not yet: the price alone is not enough
+            page.evaluate("""(src) => { const i = document.createElement('img'); i.src = src;
+                document.querySelector('[class*="_mediaContainer_"]').appendChild(i); }""", PIXELS)
+            page.wait_for_function(shots._LOADED, arg=list(spec.context), timeout=2000)
+            assert shots.annotate(page, spec)[:2] == b"\xff\xd8"
+            assert page.evaluate("""getComputedStyle(document.querySelector('[class*="_nudgesContainer_"]')).display""") == "none"
         finally:
             browser.close()
 

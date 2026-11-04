@@ -145,10 +145,15 @@ Facts that shaped the crawler:
 - **Product pages for alert screenshots (3 Nov 2026).** From the Mac, Playwright's headless shell is cut off
   at the HTTP/2 layer (`net::ERR_HTTP2_PROTOCOL_ERROR`), and so is the full Chromium in new headless mode
   while its user agent says "HeadlessChrome"; the full Chromium under a normal Chrome agent passes. The
-  product page itself is slow: 10 s before the first byte (`curl_cffi` too), the price visible at 14 s, the
-  HTML streamed in until 28 to 33 s, and the image gallery drawn only after that (hydration), so the
-  screenshot (15 to 20 s) has the title, price and seller but no image. `/egypt-ar/` is the Arabic page (same
-  path otherwise). The page shows the offer that wins the buy box, whose seller matched the `@seller` of the
+  product page itself is slow: 10 s before the first byte (`curl_cffi` too). Measured 4 Nov 2026 (the 30 s
+  stream of 3 Nov is gone): price visible at 11 s with **English labels** ("Sold by", "25% Off") although the
+  page is `/egypt-ar/`, Arabic at 12.2 s, main image at 12.4 to 12.8 s (the same on three products). Until that
+  image, the gallery holds only a placeholder `<img>` (22 px wide) and an empty `_mediaContainer_`, and the
+  "lowest price / few left" ticker beside the price is unstyled and cut in half. A screenshot taken when the
+  price shows gets all of that, so the spec waits for
+  `[data-pdp-gallery] [class*="_imageContainer_"]:first-child [class*="_mediaContainer_"] img` (at most 5 s, then
+  it is taken as it is) and hides `_nudgesContainer_`, which rolls even once styled. `/egypt-ar/` is the Arabic
+  page (same path otherwise). The page shows the offer that wins the buy box, whose seller matched the `@seller` of the
   product key in the three checked. Class names are CSS modules (`_priceOfferCtr_1fgtw_1`): the spec
   matches the name part (`[class*="_priceOfferCtr_"]`), the hash changes with a build. Stable hooks:
   `data-qa="pdp-product-name"`, `div-price-now`, `div-price-was`, `div-price-saving`; the seller card is a
