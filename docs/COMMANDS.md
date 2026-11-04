@@ -8,8 +8,9 @@ What the output means: [MONITORING.md](MONITORING.md). How it all works: [GUIDE.
 
 Screens (sidebar on a computer, tab bar on a phone): Overview, Deals (every alert by kind, with the exact
 Telegram message), Products (search, shop, group, sort, in stock, "price changed in the last 24 h / 7 days /
-30 days"; click a product for its price chart, typical price, rarity, other sellers and alerts), Devices, Jobs,
-Logs (live), Queries (17 saved reports with search and filters), Subscribers, Rules & watches. Click a table
+30 days"; click a product for its price chart, typical price, rarity, other sellers and alerts), Devices,
+Uptime (what is up and down, downtime, every change), Errors (the error book: every kind of problem, counted,
+with cause and fix; the admin marks rows resolved), Jobs, Logs (live), Queries (17 saved reports with search and filters), Subscribers, Rules & watches. Click a table
 header to sort by it. Light, dark or Auto (follows the device) from the switch at the bottom of the sidebar.
 
 A small website served by the coordinator itself: nothing to install or run. Worker tokens can only look; the
@@ -37,6 +38,8 @@ crawling or alerts. It runs over plain HTTP: fine for a personal tool, but don't
 | `make devices` | Every connected device and its state per shop (ok, crawling, idle, blocked, failing, offline) |
 | `make dashboard` | The same in your browser, refreshing every 15 s, with everyone's logs |
 | `make status` | Workers, blocked IPs, backlog per shop, freshness per group |
+| `make uptime` | What is up and down now (shops, devices, blocked device-on-shop), downtime in 24 h, and every change in 7 days with its reason and how long it lasted. `DAYS=30`, `NAME=mac` (or a shop), `ALL=1` adds every device-on-shop change. Web UI → Uptime |
+| `make errors` | The error book: every kind of problem in 7 days, counted, newest first, then what each kind means and what to do. `DAYS=1`, `SITE=jumia_eg`, `ALL=1` (resolved ones too). Web UI → Errors (mark resolved there) |
 | `make report` | Sends the daily Arabic report to your Telegram now |
 
 ## Logs
@@ -161,6 +164,8 @@ database, so run them on the server as shown above.
 | `logs [-f] [--source] [--level]` | Log lines from everyone | anywhere (API) |
 | `report [--send]` | The daily report | server |
 | `alerts [--days] [--system]` | Recent alerts | server |
+| `uptime [--days] [--name] [--all]` | Up/down now, 24 h downtime, history of changes | server |
+| `errors [--days] [--site] [--kind] [--device] [--all]` | The error book, with cause and fix per kind | server |
 | `movers [--days] [--group] [--min-price]` | Biggest price moves | server |
 | `product SITE SKU` | One product's stats and history | server |
 | `categories SITE [ID]` | Child categories, to find ids for the config | anywhere |
@@ -188,6 +193,9 @@ or a Bearer header (no token needed on the server itself). Full reference: [INTE
 | `GET /api/jobs` | Every job, failing first |
 | `GET /api/products?q=samsung+55&changed_since=<UTC time>` / `GET /api/products/{id}` | Product search / one product with stats and history |
 | `GET /api/subscribers`, `GET /api/rules` | Subscribers; alert rules, schedule and watches from the config |
+| `GET /api/uptime?days=7&kind=&name=` | Up/down now, 24 h outages, history of changes |
+| `GET /api/errors?days=7&site=&category=&source=&only_open=1` | The error book with cause and fix per kind |
+| `POST /api/errors/{id}/{resolve,reopen}` | Admin token only: mark a problem resolved (opens again if it recurs) |
 | `POST /api/subscribers/{chat_id}/{approve,reject,remove,promote,demote}`, `POST /api/report` | Admin token only: manage a subscriber; send the daily report now |
 | `GET /dashboard` | The older one-page dashboard |
 | `GET /docs` | Interactive API schema |

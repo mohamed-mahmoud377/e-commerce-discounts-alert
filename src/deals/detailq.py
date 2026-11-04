@@ -72,7 +72,7 @@ def record(conn: sqlite3.Connection, cfg: Config, product_id: int, site: str, ip
                 """INSERT INTO detail_state (site, ip, paused_until, reason) VALUES (?, ?, ?, ?)
                    ON CONFLICT (site, ip) DO UPDATE SET paused_until = excluded.paused_until, reason = excluded.reason""",
                 (site, ip, iso(until), (report.get("reason") or "")[:300]))
-        log.warning("product pages of %s paused for %s until %s: %s", site, ip, iso(until)[:16], report.get("reason"))
+        log.info("product pages of %s paused for %s until %s: %s", site, ip, iso(until)[:16], report.get("reason"))
         return
     title = conn.execute("SELECT title FROM products WHERE id = ? AND site = ?", (product_id, site)).fetchone()
     if title is None:

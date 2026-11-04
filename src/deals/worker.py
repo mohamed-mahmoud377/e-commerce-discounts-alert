@@ -51,7 +51,10 @@ class LogShipper(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         at = datetime.fromtimestamp(record.created, UTC).isoformat(timespec="seconds")
         thread = f"[{record.threadName}] " if record.threadName in SITES else ""
-        self.buffer.append({"at": at, "level": record.levelname, "message": f"{thread}{record.getMessage()}"})
+        msg = record.getMessage()
+        if record.exc_info and record.exc_info[1] is not None:  # log.exception(): say what it was
+            msg += f" ({record.exc_info[1].__class__.__name__}: {str(record.exc_info[1])[:300]})"
+        self.buffer.append({"at": at, "level": record.levelname, "message": f"{thread}{msg}"})
 
     def _loop(self) -> None:
         while True:

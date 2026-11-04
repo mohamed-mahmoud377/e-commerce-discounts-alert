@@ -40,6 +40,9 @@ def overview(conn: sqlite3.Connection, cfg: Config, now: datetime, revision: str
             "pending": one("SELECT COUNT(*) FROM subscribers WHERE status = 'pending'"),
             "warnings_24h": one("SELECT COUNT(*) FROM events WHERE at >= ? AND level IN ('WARNING', 'ERROR')", since),
             "errors_24h": one("SELECT COUNT(*) FROM events WHERE at >= ? AND level = 'ERROR'", since),
+            "down_now": one("SELECT COUNT(*) FROM status WHERE kind IN ('shop', 'device') AND state IN ('down', 'offline')"),
+            "problems_1h": one("SELECT COUNT(*) FROM errors WHERE last_seen_at >= ? AND (resolved_at IS NULL "
+                               "OR last_seen_at > resolved_at)", iso(now - timedelta(hours=1))),
         },
         "latest": [dict(r) for r in conn.execute(
             """SELECT a.id, a.created_at, a.kind, a.price, a.drop_pct, a.product_id, p.site, p.title, p.grp
@@ -367,7 +370,7 @@ body.loading #bar{opacity:1;width:70%}
 </nav>
 <div class='toast' id='toast' role='status'></div>
 <script>
-const TABS = ['Overview', 'Deals', 'Products', 'Devices', 'Jobs', 'Logs', 'Queries'], ADMIN = ['Subscribers', 'Rules'];
+const TABS = ['Overview', 'Deals', 'Products', 'Devices', 'Uptime', 'Errors', 'Jobs', 'Logs', 'Queries'], ADMIN = ['Subscribers', 'Rules'];
 const LABEL = {Rules: 'Rules & watches'};
 const SITES = [['amazon_eg', 'Amazon', 'A'], ['noon_eg', 'noon', 'N'], ['jumia_eg', 'Jumia', 'J'], ['cairosales_eg', 'Cairo Sales', 'C'],
   ['2b_eg', '2B', '2B'], ['btech_eg', 'B.TECH', 'BT'], ['dream2000_eg', 'Dream 2000', 'D'], ['carrefour_eg', 'Carrefour', 'CF'],
@@ -414,8 +417,9 @@ function setTheme(t) {
 }
 function side() {
   const t = ov?.totals || {}, link = name => {
-    const n = name === 'Deals' ? t.alerts_24h : name === 'Logs' ? t.warnings_24h : name === 'Subscribers' ? t.pending : 0;
-    return `<a href='#${name}' class='${name === tab ? 'on' : ''}' ${name === tab ? "aria-current='page'" : ''}>${esc(LABEL[name] || name)}${n ? ` <span class='cnt ${name === 'Subscribers' ? 'hot' : ''}'>${n}</span>` : ''}</a>`; };
+    const n = name === 'Deals' ? t.alerts_24h : name === 'Logs' ? t.warnings_24h : name === 'Subscribers' ? t.pending
+      : name === 'Uptime' ? t.down_now : name === 'Errors' ? t.problems_1h : 0;
+    return `<a href='#${name}' class='${name === tab ? 'on' : ''}' ${name === tab ? "aria-current='page'" : ''}>${esc(LABEL[name] || name)}${n ? ` <span class='cnt ${name === 'Subscribers' || name === 'Uptime' ? 'hot' : ''}'>${n}</span>` : ''}</a>`; };
   $('#nav').innerHTML = TABS.map(link).join(''); $('#nav2').innerHTML = ADMIN.map(link).join('');
   let theme = 'auto'; try { theme = localStorage.getItem('theme') || 'auto'; } catch (e) {}
   document.querySelectorAll('.theme button').forEach(b => b.classList.toggle('on', b.dataset.t === theme));
@@ -591,6 +595,67 @@ const views = {
       ${pausesCard(d)}`;
   },
 
+  // ---------------------------------------------------------------- Uptime
+  async Uptime() {
+    const d = await api(`/api/uptime?days=${uz.days}` + (uz.kind ? '&kind=' + uz.kind : ''));
+    // "Everything" leaves out the device-on-shop rows that are fine: there is one per device and shop
+    const now = d.status.filter(s => uz.kind ? s.kind === uz.kind : s.kind !== 'device_shop' || !s.good);
+    const hidden = uz.kind ? 0 : d.status.filter(s => s.kind === 'device_shop' && s.good).length;
+    const of = k => d.status.filter(s => s.kind === k), up = k => of(k).filter(s => s.good).length;
+    const card = (k, v, s, bad) => `<div class='card kpi'><div class='k'>${k}</div><div class='v' ${bad ? `style='color:var(--fail-fg)'` : ''}>${v}</div><div class='s'>${s}</div></div>`;
+    const told = c => c.notified ? `<span title='Told on Telegram'>🔔</span>` : '';
+    every(30000, render);
+    return head('Uptime', 'What is running and what is not: every shop, device, and device on each shop, checked every minute. Telegram says when a shop or device goes down and again when it is back.') +
+      `<section class='cards'>${card('Shops up', `${up('shop')} / ${of('shop').length}`, 'something finished within the hour', up('shop') < of('shop').filter(s => s.state !== 'paused').length)}
+        ${card('Devices online', `${up('device')} / ${of('device').length}`, 'talked to the server in 30 min', up('device') < of('device').length)}
+        ${card('Device on shop blocked', of('device_shop').filter(s => s.state === 'blocked').length, 'a block lasts until a page works again')}
+        ${card('Outages, 24 h', d.outages.reduce((n, o) => n + o.times, 0), d.outages.length ? 'shops, devices and the server' : 'none')}</section>
+      <div class='row' role='group' aria-label='Show'>${[['', 'Everything'], ['shop', 'Shops'], ['device', 'Devices'], ['device_shop', 'Device on shop'], ['server', 'Server']].map(([k, l]) => `<button type='button' class='chip ${uz.kind === k ? 'on' : ''}' onclick="uz.kind='${k}';render()">${l}</button>`).join('')}</div>
+      ${uz.kind === 'server' ? '' : `<section class='card' style='overflow:hidden'><div class='cardhead'><h2>Now</h2><span class='sub'>what is not working first</span></div><div class='scroll'><table>
+        <tr><th>What</th><th>State</th><th>Since</th><th class='r'>For</th><th>Why</th></tr>
+        ${now.map(s => `<tr class='${s.good ? '' : 'bad'}'><td class='nw'>${who(s.kind, s.name)}</td><td>${pill(stateClass(s.state), s.state, 1)}${s.notified ? ' ' + told(s) : ''}</td>
+          <td class='muted nw'>${hhmm(s.since)}</td><td class='num r nw'>${dur(s.for_s)}</td><td class='muted'>${esc(s.reason || '')}</td></tr>`).join('') || `<tr><td class='empty' colspan='5'>Nothing checked yet (the server checks every minute)</td></tr>`}</table></div>
+        ${hidden ? `<div class='cardfoot'>${hidden} device-on-shop rows are fine and not shown <a href='#Uptime' onclick="uz.kind='device_shop';render();return false">show them</a></div>` : ''}</section>`}
+      ${d.outages.length ? `<section class='card' style='overflow:hidden'><div class='cardhead'><h2>Downtime, last 24 h</h2><span class='sub'>blocks of one device on one shop are routine and left out</span></div><div class='scroll'><table>
+        <tr><th>What</th><th class='r'>Times down</th><th class='r'>Down for</th><th>Now</th></tr>
+        ${d.outages.map(o => `<tr><td class='nw'>${who(o.kind, o.name)}</td><td class='num r'>${o.times}</td><td class='num r'>${dur(o.down_s)}</td><td>${o.ongoing ? pill('fail', 'still down', 1) : pill('ok', 'back', 1)}</td></tr>`).join('')}</table></div></section>` : ''}
+      <section class='card' style='overflow:hidden'><div class='cardhead'><h2>History</h2><div class='row' style='gap:6px'>${[[1, '24 h'], [7, '7 days'], [30, '30 days'], [180, '180 days']].map(([v, l]) => `<button type='button' class='chip small ${uz.days === v ? 'on' : ''}' onclick='uz.days=${v};render()'>${l}</button>`).join('')}</div></div><div class='scroll'><table>
+        <tr><th>When</th><th>What</th><th>Change</th><th class='r' title='how long the state before this change lasted'>After</th><th>Why</th></tr>
+        ${d.changes.map(c => `<tr><td class='muted nw'>${hhmm(c.at)}</td><td class='nw'>${who(c.kind, c.name)}</td>
+          <td class='nw'>${c.old_state ? pill(stateClass(c.old_state), c.old_state) + ' → ' : ''}${pill(stateClass(c.new_state), c.new_state, 1)} ${told(c)}</td>
+          <td class='num r nw'>${dur(c.lasted_s)}</td><td class='muted'>${esc(c.reason || '')}</td></tr>`).join('') || `<tr><td class='empty' colspan='5'>No changes in this period</td></tr>`}</table></div>
+        <div class='cardfoot'>"After" is how long the state before the change lasted: for a shop coming back up, how long it was down · 🔔 told on Telegram · kept 180 days</div></section>`;
+  },
+
+  // ---------------------------------------------------------------- Errors
+  async Errors() {
+    const d = await api(`/api/errors?days=${ez.days}&only_open=${ez.open}` + (ez.site ? '&site=' + ez.site : '') + (ez.cat ? '&category=' + ez.cat : '') + (ez.src ? '&source=' + encodeURIComponent(ez.src) : ''));
+    const rows = d.errors, cats = [...new Set(rows.map(e => e.category))];
+    const dayAgo = Date.now() - 86400000, srcs = [...new Set(rows.map(e => e.source).concat(ez.src ? [ez.src] : []))].sort();
+    const card = (k, v, s) => `<div class='card kpi'><div class='k'>${k}</div><div class='v'>${v}</div><div class='s'>${s}</div></div>`;
+    const catPill = c => pill(c === 'bug' || c === 'parser' || c === 'config' ? 'fail' : c === 'blocked' || c === 'server_unreachable' ? 'warn' : 'idle', (d.categories[c] || [c])[0]);
+    every(30000, render);
+    return head('Errors', 'Every problem any device or the server has met, one row per kind of problem, counted, with its likely cause and what to do. From the logs of every device plus the failed and blocked reports of workers; kept 90 days.') +
+      `<section class='cards'>${card('Kinds of problem', rows.length, ez.open ? 'open (not marked resolved)' : 'all')}
+        ${card('Times seen', rows.reduce((n, e) => n + e.count, 0).toLocaleString(), 'since each was first seen')}
+        ${card('New, 24 h', rows.filter(e => Date.parse(e.first_seen_at) >= dayAgo).length, 'first seen in the last day')}
+        ${card('Still happening', rows.filter(e => Date.now() - Date.parse(e.last_seen_at) < 3600000).length, 'seen within the hour')}</section>
+      <div class='row'><div class='row' role='group' aria-label='Show'>${[[1, 'Open'], [0, 'All, resolved too']].map(([v, l]) => `<button type='button' class='chip ${ez.open === v ? 'on' : ''}' onclick='ez.open=${v};render()'>${l}</button>`).join('')}</div>
+        <span class='grow'></span><label class='sr' for='ed'>Seen within</label><select id='ed' class='field' onchange='ez.days=+this.value;render()'>${[[1, 'Seen in 24 h'], [7, 'Seen in 7 days'], [30, 'Seen in 30 days'], [90, 'Seen in 90 days']].map(([v, l]) => `<option value='${v}' ${ez.days === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        <label class='sr' for='es'>Shop</label><select id='es' class='field' onchange='ez.site=this.value;render()'>${shopOptions(ez.site)}</select>
+        <label class='sr' for='ec'>Kind</label><select id='ec' class='field' onchange='ez.cat=this.value;render()'>${options(Object.entries(d.categories).map(([k, v]) => [k, v[0]]), ez.cat, 'All kinds')}</select>
+        <label class='sr' for='eo'>From</label><select id='eo' class='field' onchange='ez.src=this.value;render()'>${options(srcs.map(s => [s, s]), ez.src, 'All devices')}</select></div>
+      <section class='card' style='overflow:hidden'><div class='scroll'><table>
+        <tr><th>Last seen</th><th>Kind</th><th>Shop</th><th>From</th><th>Message (the latest)</th><th class='r'>Times</th><th>First seen</th>${d.admin ? '<th></th>' : ''}</tr>
+        ${rows.map(e => `<tr class='${e.level === 'ERROR' && e.open ? 'bad' : ''}'><td class='muted nw'>${ago(e.last_seen_at)} ago</td><td class='nw' title='${esc(e.cause)}'>${catPill(e.category)}</td>
+          <td class='nw'>${e.site ? esc(shop(e.site)) : '—'}</td><td class='nw'>${esc(e.source)}</td><td class='mono' style='min-width:340px;max-width:620px'>${esc(e.message)}</td>
+          <td class='num r'>${e.count.toLocaleString()}</td><td class='muted nw'>${hhmm(e.first_seen_at)}</td>
+          ${d.admin ? `<td class='r nw'>${e.open ? `<button class='btn small' type='button' onclick='resolveError(${e.id})'>Resolved</button>` : `<button class='btn small' type='button' onclick='resolveError(${e.id}, 1)'>Reopen</button>`}</td>` : ''}</tr>`).join('') || `<tr><td class='empty' colspan='8'>No problems in this period 🎉</td></tr>`}</table></div>
+        <div class='cardfoot'>Numbers in messages are blanked to group them, so one row covers every page and attempt · a resolved problem opens again if it happens after · hover a kind for its cause</div></section>
+      ${cats.length ? `<section class='card' style='overflow:hidden'><div class='cardhead'><h2>What these mean</h2></div><div class='scroll'><table><tr><th>Kind</th><th>Likely cause</th><th>What to do</th></tr>
+        ${cats.map(c => `<tr><td class='nw'>${catPill(c)}</td><td>${esc(d.categories[c][1])}</td><td class='muted'>${esc(d.categories[c][2])}</td></tr>`).join('')}</table></div></section>` : ''}`;
+  },
+
   // ---------------------------------------------------------------- Jobs
   async Jobs() {
     const d = await api('/api/jobs?limit=2000'), now = Date.now();
@@ -743,6 +808,13 @@ const views = {
 const dz = {days: '1', loaded: null, data: [], kind: 'all', site: '', state: '', q: '', sel: null, shown: 50};
 const pz = {q: '', site: '', grp: '', sort: 'recent', stock: false, changed: 24};
 const jz = {only: 'all', site: '', grp: ''}, lz = {level: 'info', src: '', q: '', paused: false};
+const uz = {days: 7, kind: ''}, ez = {open: 1, days: 7, site: '', cat: '', src: ''};
+const stateClass = s => ({up: 'ok', online: 'ok', ok: 'ok', paused: 'idle', blocked: 'warn'}[s] || 'fail');
+const dur = s => s == null ? '' : s < 120 ? s + ' s' : s < 7200 ? Math.round(s / 60) + ' min' : s < 172800 ? (s / 3600).toFixed(1) + ' h' : (s / 86400).toFixed(1) + ' d';
+const who = (kind, name) => kind === 'shop' ? esc(shop(name)) : kind === 'device_shop' ? `${esc(name.split('/')[0])} <span class='muted'>on</span> ${esc(shop(name.split('/')[1]))}` : kind === 'server' ? 'Server' : esc(name);
+async function resolveError(id, reopen) {
+  try { await api(`/api/errors/${id}/${reopen ? 'reopen' : 'resolve'}`, 'POST'); toast(reopen ? 'Reopened' : 'Marked resolved'); render(); } catch (e) { toast(e.message); }
+}
 const qz = {list: null, groups: null, name: null, hours: '24', grp: '', site: '', q: '', sort: null, desc: false, listQ: '', topic: 'all'};
 const TOPICS = {Alerts: ['alerts_by_day', 'held_and_cancelled', 'deliveries'], Crawling: ['coverage', 'schedule', 'device_hours', 'tables'],
   Matching: ['same_product', 'match_review', 'match_left_out', 'match_coverage']};

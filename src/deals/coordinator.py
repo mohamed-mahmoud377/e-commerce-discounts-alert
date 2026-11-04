@@ -25,7 +25,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
-from deals import alerts, bot, db, detailq, health, matching, monitor, scheduler, shotq, webui
+from deals import alerts, audit, bot, db, detailq, health, matching, monitor, scheduler, shotq, uptime, webui
 from deals.config import Config
 from deals.db import iso, utcnow
 from deals.models import Listing, Slice
@@ -118,6 +118,8 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
         return c
     scheduler.sync_watches(conn, cfg, utcnow())
     bot.ensure_admin(conn, cfg, utcnow())
+    if n := audit.backfill(conn):
+        log.info("error book started from %d warnings and errors already in the logs", n)
     stop = threading.Event()
 
     @asynccontextmanager
@@ -298,6 +300,8 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
             # most likely the site changed its page layout.
             reason = f"0 products parsed, slice had {job['expected_total']} (site layout changed?)"
             failures = scheduler.fail(conn, job, reason, now)
+            audit.record(conn, job["lease_worker"] or "coordinator", "ERROR", f"{job['target']}: {reason}", iso(now),
+                         site=job["site"], category="parser")
             if failures >= 3:
                 alerts.system_alert(conn, f"parser:{job['site']}",
                                     f"{_site(job['site'])}: لم نستخرج أي منتج من {job['target']} رغم أنه كان يحتوي "
@@ -329,14 +333,16 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
         with conn:
             until = scheduler.block(conn, job["site"], ip, body.reason, now)
             scheduler.worker_site_problem(conn, worker, job["site"], now, f"blocked: {body.reason}", blocked=True)
+            audit.record(conn, worker, "WARNING", body.reason, iso(now), site=job["site"], category="blocked")
             scheduler.release(conn, job_id)
             strikes = conn.execute("SELECT strikes FROM blocks WHERE site = ? AND ip = ?",
                                    (job["site"], ip)).fetchone()["strikes"]
-            if strikes >= 3:
-                alerts.system_alert(conn, f"blocked:{job['site']}:{ip}",
-                                    f"{_site(job['site'])} يحظر الجهاز {worker} ({ip}) للمرة {strikes} على التوالي. "
-                                    f"متوقف عن هذا الموقع حتى {until:%H:%M} UTC. السبب: {body.reason}", now)
-        log.warning("%s blocked on %s (%s) until %s", worker, job["site"], ip, until)
+            if strikes >= 3 and alerts.system_alert(
+                    conn, f"blocked:{job['site']}:{ip}",
+                    f"{_site(job['site'])} يحظر الجهاز {worker} ({ip}) للمرة {strikes} على التوالي. "
+                    f"متوقف عن هذا الموقع حتى {until:%H:%M} UTC. السبب: {body.reason}", now):
+                uptime.mark_notified(conn, f"device_shop:{worker}/{job['site']}")  # so it hears when it's back
+        log.info("%s blocked on %s (%s) until %s", worker, job["site"], ip, until)  # the error book has it
         return {"ok": True, "paused_until": iso(until)}
 
     @app.post("/api/jobs/{job_id}/failed")
@@ -346,6 +352,8 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
         with conn:
             failures = scheduler.fail(conn, job, f"{worker}: {body.reason}", now)
             scheduler.worker_site_problem(conn, worker, job["site"], now, body.reason)
+            audit.record(conn, worker, "ERROR", f"{job['kind']} {job['target']}: {body.reason}", iso(now),
+                         site=job["site"])
             if failures >= 3:
                 alerts.system_alert(conn, f"failing:{job['id']}",
                                     f"مهمة {job['kind']} على {_site(job['site'])} ({job['target']}) فشلت {failures} "
@@ -592,6 +600,35 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
                                 timedelta(0), raw_html=True)
         return {"ok": True}
 
+    @app.get("/api/uptime", dependencies=[Depends(viewer)])
+    def uptime_api(days: float = 7, kind: str | None = None, name: str | None = None, limit: int = 500):
+        """What is up and down now, the history of changes, and the last day's outages (uptime.py)."""
+        now = utcnow()
+        with closing(read_conn()) as rc:
+            return {"status": uptime.current(rc, now), "outages": uptime.outages(rc, now),
+                    "changes": uptime.changes(rc, now, days=max(0.1, min(days, 180)), kind=kind or None,
+                                              name=name or None, limit=max(1, min(limit, 2000)))}
+
+    @app.get("/api/errors", dependencies=[Depends(viewer)])
+    def errors_api(request: Request, days: float = 7, site: str | None = None, category: str | None = None,
+                   source: str | None = None, only_open: int = 0, limit: int = 500):
+        """The error book (audit.py): one row per kind of problem, with its cause and what to do."""
+        with closing(read_conn()) as rc:
+            rows = audit.listing(rc, utcnow(), days=max(0.1, min(days, 90)), site=site or None,
+                                 category=category or None, source=source or None, open_only=bool(only_open),
+                                 limit=max(1, min(limit, 2000)))
+        return {"errors": rows, "categories": audit.CATEGORIES, "admin": is_admin(request)}
+
+    @app.post("/api/errors/{error_id}/{action}", dependencies=[Depends(admin)])
+    def error_action(error_id: int, action: str):
+        """Mark a problem resolved (it opens again if it happens after), or reopen it."""
+        if action not in ("resolve", "reopen"):
+            raise HTTPException(404, "no such action")
+        with closing(db.connect(cfg.db_path)) as wc:
+            if not audit.resolve(wc, error_id, utcnow(), reopen=action == "reopen"):
+                raise HTTPException(404, "no such problem")
+        return {"ok": True}
+
     @app.get("/api/rules", dependencies=[Depends(viewer)])
     def rules_api():
         return webui.rules(cfg)
@@ -604,9 +641,9 @@ def _site(name: str) -> str:
 
 
 class Watchdog(threading.Thread):
-    """Notices problems nobody reports (stalled sites, silent workers, low disk), sends the
-    admin's daily report, does daily maintenance (compressed backup, planner stats), and
-    matches products across shops every hour."""
+    """Notices problems nobody reports (stalled shops, silent devices, low disk) and when they
+    are over (uptime.py), sends the admin's daily report, does daily maintenance (compressed
+    backup, planner stats), and matches products across shops every hour."""
 
     MATCH_EVERY = timedelta(hours=1)
 
@@ -614,6 +651,7 @@ class Watchdog(threading.Thread):
         super().__init__(name="watchdog", daemon=True)
         self.cfg, self.stop_event, self.interval = cfg, stop, interval
         self.next_match: datetime | None = None  # first run on the first round after a start
+        self.started = utcnow()
 
     def run(self) -> None:
         conn = db.connect(self.cfg.db_path)
@@ -639,28 +677,10 @@ class Watchdog(threading.Thread):
                  s.extracted, s.in_model, s.products, s.cross_shop, s.changed, s.seconds)
 
     def check(self, conn: sqlite3.Connection, now: datetime) -> None:
+        for subject in uptime.track(conn, now, settling=now - self.started < uptime.SETTLE):
+            log.info("status: %s is now %s", subject,
+                     conn.execute("SELECT state FROM status WHERE subject = ?", (subject,)).fetchone()["state"])
         with conn:
-            for row in conn.execute(
-                    """SELECT site, MIN(next_due_at) AS oldest_due, MAX(last_done_at) AS last_done
-                       FROM jobs GROUP BY site""").fetchall():
-                if scheduler.site_paused(conn, row["site"], now):
-                    continue  # paused by hand: quiet on purpose
-                overdue = now - db.parse_iso(row["oldest_due"])
-                last_done = db.parse_iso(row["last_done"]) if row["last_done"] else None
-                if overdue > timedelta(minutes=45) and (last_done is None or now - last_done > timedelta(hours=1)):
-                    blocks = conn.execute("SELECT ip, until FROM blocks WHERE site = ? AND until > ?",
-                                          (row["site"], iso(now))).fetchall()
-                    detail = "، ".join(f"{b['ip']} حتى {b['until'][11:16]}" for b in blocks) or "لا يوجد"
-                    alerts.system_alert(conn, f"stalled:{row['site']}",
-                                        f"{_site(row['site'])} متوقف: العمل متأخر {overdue.total_seconds() / 3600:.1f} "
-                                        f"ساعة ولم يكتمل شيء خلال الساعة الأخيرة. الأجهزة المحظورة: {detail}. "
-                                        f"هل يوجد جهاز (worker) شغّال لهذا الموقع؟ (مثلًا الماك نائم)", now)
-            for w in conn.execute("SELECT name, last_seen_at FROM workers").fetchall():
-                silent = now - db.parse_iso(w["last_seen_at"])
-                if timedelta(minutes=30) < silent < timedelta(days=2):
-                    alerts.system_alert(conn, f"offline:{w['name']}",
-                                        f"الجهاز {w['name']} لم يتواصل منذ {silent.total_seconds() / 60:.0f} دقيقة",
-                                        now, timedelta(hours=12))
             usage = shutil.disk_usage(self.cfg.data_dir)
             if usage.free / usage.total < 0.1:
                 alerts.system_alert(conn, "disk", f"المساحة على الخادم أوشكت على النفاد: "
@@ -681,6 +701,8 @@ class Watchdog(threading.Thread):
             old.unlink()  # (uncompressed ones are from before backups were compressed)
         monitor.archive_events(conn, self.cfg.data_dir / "logs", now.date())  # before pruning: kept 90 days
         conn.execute("DELETE FROM events WHERE at < ?", (iso(now - timedelta(days=7)),))
+        audit.prune(conn, now)
+        uptime.prune(conn, now)
         conn.commit()
         conn.execute("PRAGMA optimize")
         log.info("daily maintenance done: backup %s (%.1f MB)", target.name, target.stat().st_size / 1e6)

@@ -17,6 +17,7 @@ import secrets
 import sqlite3
 from datetime import datetime, timedelta
 
+from deals import audit
 from deals.config import Config
 from deals.db import iso
 from deals.planner import PlannedSlice
@@ -314,6 +315,7 @@ def worker_site_problem(conn: sqlite3.Connection, worker: str, site: str, now: d
 
 
 def add_events(conn: sqlite3.Connection, source: str, events: list[tuple[str, str, str]]) -> None:
-    """events: (at, level, message)."""
+    """events: (at, level, message). Warnings and errors are also counted in the error book."""
     conn.executemany("INSERT INTO events (at, source, level, message) VALUES (?, ?, ?, ?)",
                      [(at, source, level, message[:1000]) for at, level, message in events])
+    audit.record_events(conn, source, events)

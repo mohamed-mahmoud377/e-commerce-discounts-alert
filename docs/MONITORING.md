@@ -7,15 +7,26 @@ Background: [GUIDE.md](GUIDE.md). Code-level detail: [INTERNALS.md](INTERNALS.md
 
 Monitoring takes under a minute a day: read the 09:00 Telegram report, and only open a terminal when it
 says something needs attention. The system warns you on Telegram by itself when a shop stalls, a device goes
-silent, an IP keeps getting blocked, a page layout seems to change, or the disk fills up.
+silent, an IP keeps getting blocked, a page layout seems to change, or the disk fills up, and tells you
+again (✅) when the shop, the device or the server is back.
+
+Two tables record what happens in the background, so it can be read back later:
+
+- **Uptime** (`status`, `status_changes`; web UI → Uptime, `make uptime`): the state of every shop (up, down,
+  paused), device (online, offline) and device on each shop (ok, blocked, failing, offline), checked every
+  minute, and every change with its reason and how long the state before it lasted. Kept 180 days.
+- **Errors**, the error book (`errors`; web UI → Errors, `make errors`): every warning and error any device or
+  the server logs, plus the workers' failed and blocked reports, one row per kind of problem (device, shop,
+  kind, message with numbers blanked), counted, with first and last time seen, the likely cause and what to
+  do. Mark a row resolved in the web UI; it opens again if the problem comes back. Kept 90 days.
 
 | When | What | Time |
 | --- | --- | --- |
 | Any time | `make ui`: the web UI shows status, deals, products, devices, jobs, logs and subscribers in one place | 1 minute |
 | Every morning | Read the daily report (09:00 Cairo). "كل شيء يعمل بشكل طبيعي" means nothing to do | 10 seconds |
 | When a warning arrives | Follow its row in the Telegram warnings section below | 1 to 5 minutes |
-| When something looks off | `make health`, then `make devices`, then `make events LEVEL=warning` | 2 minutes |
-| Once a week | `make health`, `make movers`, glance at `make dashboard`; check that alerts still feel useful | 5 minutes |
+| When something looks off | `make health`, then `make uptime`, then `make errors DAYS=1` | 2 minutes |
+| Once a week | `make health`, `make errors`, `make movers`; resolve what is fixed in web UI → Errors; check that alerts still feel useful | 5 minutes |
 | After any code change | `make deploy`, then `make health`, then `make devices` | 3 minutes |
 
 All commands run from the project folder on your Mac (`~/IdeaProjects/e-commerce-discounts-alert`). The ones
@@ -152,14 +163,20 @@ Lines worth reacting to:
 
 ## Telegram warnings
 
-System messages start with ⚙️ and go to you and your helper admins (⭐ in `/subscribers`). Each kind is sent at most once per cooldown, so a lasting
-problem does not flood the chat.
+System messages go to you and your helper admins (⭐ in `/subscribers`). They start with ⚙️, or 🔴 when a shop or
+device goes down and ✅ when it is back. Each warning is sent at most once per cooldown, so a lasting problem does
+not flood the chat. Down and back come from `uptime.py`: a state is announced when it changes, once, and "back"
+is sent only for something you were told went down. A shop paused by hand while down is not announced as back.
 
 | Message starts with | Sent when | Cooldown | What to do |
 | --- | --- | --- | --- |
-| "… متوقف: العمل متأخر" (shop stalled) | Work for that shop is 45+ min overdue and nothing finished for an hour | 6 h | Usually the Mac is asleep or off. Wake it; `make devices` |
-| "الجهاز … لم يتواصل" (device silent) | A device seen in the last 2 days has been silent 30+ min | 12 h | Same as above, for that device |
+| "🔴 … متوقف: العمل متأخر" (shop stalled) | Work for that shop is 45+ min overdue and nothing finished for an hour | once per outage (1 h if it flaps) | Usually the Mac is asleep or off. Wake it; `make uptime`, `make devices` |
+| "✅ … عاد للعمل" (shop back) | A slice of that shop finished again; says how long it was down | each time | Nothing |
+| "🔴 الجهاز … لم يتواصل" (device silent) | A device has been silent 30+ min | once per outage (1 h if it flaps) | Same as above, for that device |
+| "✅ الجهاز … عاد للاتصال" (device back) | The device talked to the server again; says how long it was gone | each time | Nothing |
 | "… يحظر الجهاز" (shop blocking a device) | The same shop blocked the same IP 3 times in a row | 6 h | Runbook: repeated blocks |
+| "✅ … لم يعد يحظر الجهاز" (block over) | After that warning, a page from that device worked again | each time | Nothing |
+| "✅ الخادم عاد للعمل" (server back) | The watchdog had no round for 10+ min: the server was stopped or crashed (nothing was watched or sent meanwhile) | each time | `make logs` around that time; a reboot or out of memory? |
 | "لم نستخرج أي منتج" (no products parsed) | A slice that had products parsed empty 3 times | 6 h | Runbook: layout changed |
 | "مهمة … فشلت" (job failing) | A job failed 3 times in a row; the message has the error | 24 h | Read the error; runbook |
 | "… شريحة أكبر من أن نجمعها" (slice too big) | Planning could not split a category below the shop's limit | 7 days | Raise the group's `min_price` or point it at narrower categories |
@@ -168,6 +185,11 @@ problem does not flood the chat.
 | "🔔 طلب اشتراك جديد" (subscription request) | Someone pressed Start | Each time | Tap approve or reject |
 
 ## Runbook
+
+**What went wrong while nobody was looking?** web UI → Errors (or `make errors`, `make errors DAYS=1 SITE=jumia_eg`):
+the newest first, "Times" says how often. Hover a kind for its cause; the table under it says what to do. A row
+seen within the hour is still happening. web UI → Uptime → History (or `make uptime`) says when each shop and
+device went down, why, and for how long. Device-on-shop blocks are listed with `ALL=1`.
 
 **Alerts come without a screenshot.** Only amazon.eg and Amazon Now alerts have one, and only while a
 `DEALS_SCREENSHOTS=1` worker (the Mac) crawls the shop. `make sql`, then

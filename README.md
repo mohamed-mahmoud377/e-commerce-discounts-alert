@@ -189,6 +189,8 @@ src/deals/
   planner.py      split a category into slices each site lets us page through completely
   scheduler.py    job queue: leases, adaptive revisit intervals, per-IP block cooldowns
   coordinator.py  HTTP API for workers + watchdog (stalls, offline workers, backups)
+  uptime.py       what is up and down (shops, devices), every change, "down" and "back" on Telegram
+  audit.py        the error book: every problem any device meets, grouped, with cause and fix
   worker.py       lease → crawl → report loop, one thread per site, failure handling
   pricing.py      time-weighted price statistics and deal rules
   alerts.py       alert outbox, message formatting, Telegram delivery with retries

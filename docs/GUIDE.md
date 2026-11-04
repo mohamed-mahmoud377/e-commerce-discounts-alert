@@ -878,14 +878,19 @@ What happens when something goes wrong:
 | Network error on a page | Retried after 5, 20 and 60 seconds, then the job is retried later (5 minutes, doubling up to 6 hours); 3 failures send you a warning |
 | A shop changes its page layout | A slice that had products but now parses as empty counts as a failure, not as "everything disappeared"; 3 in a row send a "layout changed?" warning |
 | Typo in a noon category | The breadcrumb check fails the plan job with a clear message |
-| A shop has no working worker | Work more than 45 minutes overdue with nothing finished for an hour sends "stalled", listing blocked IPs |
-| A worker goes silent | Warning after 30 minutes (at most every 12 hours) |
+| A shop has no working worker | Work more than 45 minutes overdue with nothing finished for an hour sends "stalled", listing blocked IPs; "back" when a slice finishes again |
+| A worker goes silent | Warning after 30 minutes; "back" when it talks again, with how long it was gone |
+| The server itself was down | When it starts again, "back" with how long the gap was |
 | Telegram down or rate-limited | Alerts wait in the outbox and are retried |
 | Disk below 10% free | Warning (at most every 12 hours) |
 | Data loss | Daily compressed backup in `/var/lib/deals/backups`, 7 kept; `deals backup` makes one on demand |
 
-The watchdog that sends these warnings runs every minute inside the coordinator. Once a day it also takes
-the backup, prunes logs older than 7 days and refreshes the database's query statistics (`PRAGMA optimize`).
+The watchdog that sends these warnings runs every minute inside the coordinator. It keeps the state of every
+shop, device and device on each shop in the `status` table and writes every change to `status_changes`
+(uptime.py), so downtime can be read back (web UI → Uptime). Every warning and error any device logs is
+counted in the error book, `errors` (audit.py; web UI → Errors), with its likely cause and what to do. Once a
+day the watchdog also takes the backup, prunes logs older than 7 days, the error book after 90 days and the
+status history after 180, and refreshes the database's query statistics (`PRAGMA optimize`).
 
 ## Scaling and what's next
 

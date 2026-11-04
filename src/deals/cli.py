@@ -10,7 +10,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from deals import config as config_mod
-from deals import db, matching, planner
+from deals import audit, db, matching, planner, uptime
 from deals.alerts import Telegram, product_stats
 from deals.db import iso, parse_iso, utcnow
 from deals.models import Slice
@@ -153,6 +153,46 @@ def cmd_alerts(args) -> None:
                 print(f"    {a['url']}")
     if not rows:
         print("no alerts in that period")
+
+
+def cmd_errors(args) -> None:
+    """The error book: one line per kind of problem, newest first, then what each kind means."""
+    conn = db.connect(_config(args).db_path)
+    rows = audit.listing(conn, utcnow(), days=args.days, site=args.site, category=args.kind, source=args.device,
+                         open_only=not args.all, limit=args.limit)
+    for e in rows:
+        print(f"{_ago(e['last_seen_at']):>9}  {e['count']:>6}x  {e['category']:<18} {(e['site'] or '-'):<17} "
+              f"{e['source']:<16} {e['message'][:150]}{'' if e['open'] else '  [resolved]'}")
+    if not rows:
+        print(f"no {'' if args.all else 'open '}problems seen in {args.days:g} days")
+        return
+    print("\nwhat they mean:")
+    for cat in sorted({e["category"] for e in rows}):
+        title, cause, fix = audit.CATEGORIES.get(cat, audit.CATEGORIES["other"])
+        print(f"  {cat} ({title}): {cause}\n      -> {fix}")
+
+
+def cmd_uptime(args) -> None:
+    """What is up and down now, the last day's outages, and the history of changes."""
+    conn = db.connect(_config(args).db_path)
+    now = utcnow()
+    print("now:")
+    for s in uptime.current(conn, now):
+        if args.all or not s["good"] or s["kind"] != "device_shop":
+            print(f"  {'  ' if s['good'] else '!!'} {s['kind']:<11} {s['name']:<32} {s['state']:<8} "
+                  f"since {s['since'][5:16].replace('T', ' ')} UTC  {s['reason'] or ''}")
+    if outages := uptime.outages(conn, now):
+        print("\ndowntime in the last 24 h:")
+        for o in outages:
+            print(f"  {o['kind']:<7} {o['name']:<20} down {o['times']}x, {o['down_s'] / 60:.0f} min"
+                  + ("  (still down)" if o["ongoing"] else ""))
+    print(f"\nchanges in {args.days:g} days (after = how long the state before lasted):")
+    for c in uptime.changes(conn, now, days=args.days, name=args.name, limit=args.limit):
+        if args.all or c["kind"] != "device_shop":
+            after = f"{(c['lasted_s'] or 0) / 60:.0f} min" if c["lasted_s"] is not None else "-"
+            print(f"  {c['at'][5:16].replace('T', ' ')}  {c['kind']:<11} {c['name']:<32} "
+                  f"{c['old_state'] or '-'} -> {c['new_state']:<8} after {after:>8}{'  [told]' if c['notified'] else ''}"
+                  f"  {c['reason'] or ''}")
 
 
 def cmd_movers(args) -> None:
@@ -583,6 +623,18 @@ def main() -> None:
     p.add_argument("--days", type=float, default=1)
     p.add_argument("--limit", type=int, default=50)
     p.add_argument("--system", action="store_true", help="include system alerts")
+    p = add("errors", cmd_errors, "the error book: every kind of problem seen, counted, with cause and fix")
+    p.add_argument("--days", type=float, default=7, help="seen within this many days (default 7)")
+    p.add_argument("--site", choices=sorted(SITES))
+    p.add_argument("--kind", choices=sorted(audit.CATEGORIES), help="only this kind of problem")
+    p.add_argument("--device", help="only from this worker (or 'coordinator')")
+    p.add_argument("--all", action="store_true", help="resolved ones too")
+    p.add_argument("--limit", type=int, default=100)
+    p = add("uptime", cmd_uptime, "what is up and down now, and when shops and devices went down and came back")
+    p.add_argument("--days", type=float, default=7)
+    p.add_argument("--name", help="only this shop or device (e.g. jumia_eg, mac)")
+    p.add_argument("--all", action="store_true", help="also every device-on-shop row (blocks)")
+    p.add_argument("--limit", type=int, default=200)
     p = add("movers", cmd_movers, "biggest price drops (and rises) recently")
     p.add_argument("--days", type=float, default=1)
     p.add_argument("--group", help="only this watch group, e.g. TVs")

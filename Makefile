@@ -2,7 +2,7 @@ HOST ?= root@207.154.206.127
 HOST_IP = $(lastword $(subst @, ,$(HOST)))
 SSH_DEALS = ssh $(HOST) runuser -u deals -- /opt/deals/.venv/bin/deals
 
-.PHONY: test deploy keep-awake allow-sleep save-logs ui ui-token ssh restart-server restart-mac-worker health devices dashboard events worker-log report telegram db sql dbweb status alerts movers models pause resume pauses logs mac-worker-env mac-worker install-mac-worker uninstall-mac-worker
+.PHONY: test deploy keep-awake allow-sleep save-logs ui ui-token ssh restart-server restart-mac-worker health devices dashboard events worker-log report telegram db sql dbweb status errors uptime alerts movers models pause resume pauses logs mac-worker-env mac-worker install-mac-worker uninstall-mac-worker
 
 test:                 ## run the test suite
 	.venv/bin/pytest -q
@@ -67,6 +67,12 @@ dbweb:                ## live database in your browser at http://localhost:8001 
 
 status:               ## workers, blocks, backlog, freshness (on the server)
 	$(SSH_DEALS) status --config /etc/deals/config.toml
+
+errors:               ## the error book: every kind of problem in 7 days, counted, with cause and fix (DAYS=1, SITE=jumia_eg, ALL=1)
+	$(SSH_DEALS) errors --config /etc/deals/config.toml $(if $(DAYS),--days $(DAYS)) $(if $(SITE),--site $(SITE)) $(if $(ALL),--all)
+
+uptime:               ## what is up and down now, outages, and the history of changes (DAYS=7, NAME=mac, ALL=1)
+	$(SSH_DEALS) uptime --config /etc/deals/config.toml $(if $(DAYS),--days $(DAYS)) $(if $(NAME),--name $(NAME)) $(if $(ALL),--all)
 
 alerts:               ## deal alerts from the last 24h
 	$(SSH_DEALS) alerts --config /etc/deals/config.toml --system

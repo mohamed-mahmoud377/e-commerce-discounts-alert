@@ -424,6 +424,52 @@ MIGRATIONS = [
     CREATE INDEX shots_open ON shots (status, site);
     ALTER TABLE deliveries ADD COLUMN photo_sent_at TEXT;
     """,
+    """
+    -- The error book (audit.py): every problem a device or the server meets, one row per kind of
+    -- problem (who, shop, category, the message with its numbers blanked), counted. Kept 90 days.
+    CREATE TABLE errors (
+        id            INTEGER PRIMARY KEY,
+        fingerprint   TEXT NOT NULL UNIQUE,
+        category      TEXT NOT NULL,  -- blocked | timeout | network | parser | config | ... (audit.CATEGORIES)
+        source        TEXT NOT NULL,  -- worker name, or 'coordinator'
+        site          TEXT,
+        level         TEXT NOT NULL,  -- WARNING | ERROR (the worst seen)
+        message       TEXT NOT NULL,  -- the latest one, in full
+        count         INTEGER NOT NULL,
+        first_seen_at TEXT NOT NULL,
+        last_seen_at  TEXT NOT NULL,
+        resolved_at   TEXT            -- marked resolved by hand; open again when it happens after that
+    );
+    CREATE INDEX errors_seen ON errors (last_seen_at);
+
+    -- What is up and what is down (uptime.py): every shop, device and device-on-a-shop, checked each minute.
+    CREATE TABLE status (
+        subject    TEXT PRIMARY KEY,  -- 'shop:jumia_eg', 'device:mac', 'device_shop:mac/jumia_eg'
+        kind       TEXT NOT NULL,     -- shop | device | device_shop
+        name       TEXT NOT NULL,
+        state      TEXT NOT NULL,     -- shop: up | down | paused; device: online | offline;
+                                      -- device_shop: ok | blocked | failing | offline
+        since      TEXT NOT NULL,
+        reason     TEXT,
+        notified   INTEGER NOT NULL DEFAULT 0,  -- the admins were told it went bad: they hear when it is back
+        checked_at TEXT NOT NULL
+    );
+    -- Every change of those states (and server outages), kept 180 days: when, why, how long the old one lasted.
+    CREATE TABLE status_changes (
+        id        INTEGER PRIMARY KEY,
+        subject   TEXT NOT NULL,
+        kind      TEXT NOT NULL,      -- shop | device | device_shop | server
+        name      TEXT NOT NULL,
+        old_state TEXT,
+        new_state TEXT NOT NULL,
+        at        TEXT NOT NULL,
+        lasted_s  INTEGER,            -- how long the old state lasted
+        reason    TEXT,
+        notified  INTEGER NOT NULL DEFAULT 0  -- Telegram was told
+    );
+    CREATE INDEX status_changes_at ON status_changes (at);
+    CREATE INDEX status_changes_subject ON status_changes (subject, at);
+    """,
 ]
 
 # Price moves smaller than this are noise (amazon.eg prices creep by a piastre per

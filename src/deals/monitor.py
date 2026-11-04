@@ -120,6 +120,16 @@ def _ago(t: datetime, now: datetime) -> str:
 
 # --- the coordinator's own log lines go to the events table too -------------------
 
+def with_exception(record: logging.LogRecord) -> str:
+    """The message, plus the exception's type and text for log.exception() lines (the traceback
+    stays in the local log): 'watchdog check failed (OperationalError: database is locked)'."""
+    msg = record.getMessage()
+    if record.exc_info and record.exc_info[1] is not None:
+        exc = record.exc_info[1]
+        msg += f" ({exc.__class__.__name__}: {str(exc)[:300]})"
+    return msg
+
+
 class EventLogHandler(logging.Handler):
     """Queues log records; a background thread writes them (never blocks the caller)."""
 
@@ -131,7 +141,7 @@ class EventLogHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
-            self.queue.put((iso(utcnow()), record.levelname, f"{record.name}: {record.getMessage()}"))
+            self.queue.put((iso(utcnow()), record.levelname, f"{record.name}: {with_exception(record)}"))
         except Exception:
             pass
 

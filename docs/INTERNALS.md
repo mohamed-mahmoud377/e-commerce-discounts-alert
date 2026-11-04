@@ -37,6 +37,8 @@ owns one job.
 | `shotq.py` | 125 | The alert screenshot, coordinator side: `add()` a `shots` row when a screenshot worker crawls the shop, `lease()` it in a reply, `record()` the upload; `IMAGES`, the in-memory store the alert sender reads (nothing on disk) | config, shots |
 | `detailq.py` | 170 | The coordinator's side of product pages: offer one to an idle worker (paced, capped, paused after a refusal), record what it gave, refill the queue | db, config |
 | `monitor.py` | 166 | Device states, events (logs), the dashboard page | db, scheduler |
+| `uptime.py` | 243 | What is up and down: `observe()` the state of every shop, device and device on a shop; `track()` (each watchdog round) records changes in `status_changes`, sends 🔴 down and ✅ back (back only for what the admins were told), notices the server's own outages from a gap in the rounds; `current`, `changes`, `outages` for the views | alerts, scheduler |
+| `audit.py` | 194 | The error book: `record()` groups a problem by fingerprint (device, shop, category, message with numbers blanked), `categorize()` by ordered regex `RULES`, `CATEGORIES` holds each kind's cause and fix; fed by `scheduler.add_events` (WARNING/ERROR lines) and the failed/blocked/parser reports | db, sites |
 | `webui.py` | 1182 | The web UI page (one HTML + CSS + JS string, light and dark themes) and its queries | health, monitor, alerts |
 | `coordinator.py` | 570 | The FastAPI app (all endpoints) and the watchdog thread (which also starts the hourly matching) | everything above |
 | `worker.py` | 271 | The crawling loop on each device, retries, log shipping | sites, planner, HTTP to the coordinator |
@@ -166,7 +168,10 @@ many have run, and `db.connect()` runs the missing ones in a transaction on star
 | `shots` | `alert_id`; index `(status, site)` | An alert's screenshot: `site`, `url`, `status` (`pending`, `taking`, `ok`, `none` = no price block or an error, `late` = arrived after the text went out), `created_at`, `wait_until` (the alert waits until then), `worker`, `leased_until`, `attempts` (2 at most), `taken_at`, `bytes`, `file_id` (Telegram's, reused for every recipient), `error`. The image itself is kept only in the coordinator's memory |
 | `subscribers` | `chat_id` | `name`, `username`, `status` (`pending`, `active`, `rejected`, `removed`, `stopped`, `blocked`), `is_admin` (the owner), `is_manager` (helper admin: also gets system alerts and the daily report), `approved_at` |
 | `events` | `id`; indexes on time and source | `at`, `source`, `level`, `message`; pruned after 7 days |
-| `kv` | `key` | `telegram_offset` (last Telegram update handled) |
+| `errors` | `id`; unique `fingerprint`; index `(last_seen_at)` | The error book (audit.py): one row per kind of problem: `category` (`audit.CATEGORIES`), `source` (device or `coordinator`), `site`, `level` (worst seen), `message` (latest, in full), `count`, `first_seen_at`, `last_seen_at`, `resolved_at` (set by hand; open again when `last_seen_at` is later). Started from the logs on first start (`audit.backfill`); pruned after 90 days |
+| `status` | `subject` (`shop:<site>`, `device:<name>`, `device_shop:<name>/<site>`) | Current state (uptime.py): `kind`, `name`, `state` (shop `up`/`down`/`paused`; device `online`/`offline`; device_shop `ok`/`blocked`/`failing`/`offline`), `since`, `reason`, `notified` (the admins were told it went bad, so they hear when it is back), `checked_at`. A device_shop is `blocked` while its `blocks` row exists (until a page works), not just during the pause |
+| `status_changes` | `id`; indexes on time and subject | Every change: `subject`, `kind` (also `server`), `name`, `old_state`, `new_state`, `at`, `lasted_s` (how long the old state lasted), `reason`, `notified`. Server outages are one `down → up` row. Pruned after 180 days |
+| `kv` | `key` | `telegram_offset` (last Telegram update handled), `uptime:last_round` (the watchdog's last round, to notice server outages) |
 | `product_codes` | `product_id` (cascade delete) | The codes read from one title, kept so a pass re-reads only changed titles: `title_hash`, `version`, `heads`, `shop_brand`, `own`, `mentions`, `before`, `capacity`, `used`, `accessory` ([MATCHING.md](MATCHING.md)) |
 | `product_code_index` | `(product_id, code)`; index `(code)` | One row per code of a product (`rank`), for the SQL counts |
 | `models` | `model` (`<brand> <code>[ <capacity>]`); index `(status, sites)` | One product across shops: `kind` (`gtin`, `mpn`, `line`, `similar`, `manual`), `code`, `capacity`, `brand`, `status` (`ok`, `probable`, `conflict`, `spec`), `products`, `sites`, `site_list`, `low`/`median`/`high`, `note`, `version`, `updated_at`. Rebuilt hourly |
@@ -212,6 +217,9 @@ Base address `http://207.154.206.127:8787` (port 8787 open in the firewall). Wor
 | `GET /api/rules` | viewer | | alert rules, schedule and watched groups from the config (read-only) |
 | `POST /api/subscribers/{chat_id}/{action}` | admin token | | `approve`, `reject`, `remove`, `promote`, `demote` (as the bot's buttons; tells the person on Telegram). 403 for other tokens, 409 if already decided |
 | `POST /api/report` | admin token | | queue the daily report to the admins now |
+| `GET /api/uptime?days=&kind=&name=&limit=` | viewer | | `{status: [...], outages: [...], changes: [...]}` (uptime.py) |
+| `GET /api/errors?days=&site=&category=&source=&only_open=&limit=` | viewer | | `{errors: [... with title, cause, fix, open], categories: {kind: [title, cause, fix]}, admin}` |
+| `POST /api/errors/{id}/{resolve,reopen}` | admin token | | `{ok}`; 404 for an unknown id or action |
 
 Responses over 2 KB are gzipped (the web UI page is about 80 KB, 23 KB compressed); the page is one static
 string, and lists are paged in SQL, so the UI costs the 1 GB droplet next to nothing at rest.

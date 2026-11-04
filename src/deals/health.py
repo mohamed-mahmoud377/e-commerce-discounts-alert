@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from deals import db, scheduler
+from deals import audit, db, scheduler, uptime
 from deals.alerts import KIND_TITLE, SITE_NAME
 from deals.config import Config
 from deals.db import iso, parse_iso
@@ -186,6 +186,18 @@ def daily_report(conn: sqlite3.Connection, cfg: Config, now: datetime) -> str:
     if workers:
         state = lambda w: "✅" if now - parse_iso(w["last_seen_at"]) < timedelta(minutes=15) else "💤"  # noqa: E731
         lines.append("🖥️ الأجهزة: " + " · ".join(f"{html.escape(w['name'])} {state(w)}" for w in workers))
+    if down := uptime.outages(conn, now):
+        label = {"shop": lambda n: SITE_NAME.get(n, n), "device": lambda n: f"الجهاز {n}", "server": lambda n: "الخادم"}
+        lines.append("⏱️ انقطاعات خلال 24 ساعة: " + "، ".join(
+            html.escape(f"{label[o['kind']](o['name'])} {uptime.ar_duration(o['down_s'])}"
+                        + (" ومازال متوقفًا" if o["ongoing"] else f" ({o['times']} مرة)" if o["times"] > 1 else ""),
+                        quote=False) for o in down[:6]))
+    errs = conn.execute("""SELECT category, COUNT(*) n, SUM(first_seen_at >= ?) new FROM errors
+                           WHERE last_seen_at >= ? GROUP BY category ORDER BY n DESC""", (since, since)).fetchall()
+    if errs:
+        lines.append(f"🧯 أنواع المشاكل خلال 24 ساعة: {sum(e['n'] for e in errs)}"
+                     f" (جديدة {sum(e['new'] for e in errs)}) · "
+                     + "، ".join(f"{audit.CATEGORY_AR.get(e['category'], e['category'])} {e['n']}" for e in errs[:4]))
 
     top = conn.execute(
         """SELECT a.drop_pct, a.price, p.title, p.url FROM alerts a JOIN products p ON p.id = a.product_id
