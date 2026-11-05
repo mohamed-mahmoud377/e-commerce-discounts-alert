@@ -5,6 +5,10 @@ An ASP.NET and React shop behind Cloudflare. A category page (`/en/women-clothin
 `ItemCount` and `PageCount`, `?PageIndex=N`. Past the last page it answers page 1 again, so paging stops on
 `PageCount`. Its AJAX endpoint ignores the category and the page: don't use it.
 
+A renamed category answers a 301 to its new name and **the redirect drops the query**, so `PageIndex` and `MinPrice`
+are lost and every page is page 1 of the whole category. The menu still hands out old names (`femei-incaltaminte-t-33`
+is `women-shoes-t-33`), so a redirect is asked again under the new name, once per worker run.
+
 `MinPrice` narrows the count but **`MaxPrice` doesn't hold** (asking for 300 to 500 returns products at 1,299),
 so the group's minimum is passed and the planner never splits (`max_slice_total` above any category). An empty
 result isn't empty: `ProductFound` is false and the page fills up with 52 unrelated products, which must not
@@ -18,7 +22,8 @@ The droplet gets HTTP 403 whatever it sends: home connections only. docs/LCWAIKI
 """
 
 import json
-from urllib.parse import urlencode
+from dataclasses import replace
+from urllib.parse import urlencode, urlsplit
 
 from curl_cffi import requests
 
@@ -37,17 +42,31 @@ class LcWaikikiEG:
 
     def __init__(self, state_dir=None):
         self._session = requests.Session(impersonate=IMPERSONATE)
+        self._renamed: dict[str, str] = {}  # category name in the config -> the name it redirects to
 
     def fetch_page(self, slice: Slice, page: int) -> PageResult:
         if slice.kind != "category":
             raise UnknownTarget(f"{self.name}: only category:<page name>, e.g. category:women-clothing-t-10")
-        r = self._session.get(page_url(slice, page), timeout=60)
+        r = self._get(slice, page)
+        if r.status_code == 200 and urlsplit(str(r.url)).path != _path(self._current(slice)):
+            self._renamed[slice.value] = urlsplit(str(r.url)).path.removeprefix("/en/")
+            r = self._get(slice, page)
         if r.status_code == 404:
             raise UnknownTarget(f"{self.name}: no category {slice.value!r} (HTTP 404)")
         if r.status_code in (403, 429, 503):
             raise Blocked(f"{self.name}: HTTP {r.status_code} (Cloudflare)")
         r.raise_for_status()
-        return parse_listing(r.text)
+        return parse_listing(r.text, page)
+
+    def _get(self, slice: Slice, page: int):
+        return self._session.get(page_url(self._current(slice), page), timeout=60)
+
+    def _current(self, slice: Slice) -> Slice:
+        return replace(slice, value=self._renamed.get(slice.value, slice.value))
+
+
+def _path(slice: Slice) -> str:
+    return f"/en/{slice.value.strip('/')}"
 
 
 def page_url(slice: Slice, page: int) -> str:
@@ -56,10 +75,10 @@ def page_url(slice: Slice, page: int) -> str:
         params.append(("MinPrice", slice.price_min))
     if page > 1:
         params.append(("PageIndex", page))
-    return f"{BASE}/en/{slice.value.strip('/')}" + (f"?{urlencode(params)}" if params else "")
+    return BASE + _path(slice) + (f"?{urlencode(params)}" if params else "")
 
 
-def parse_listing(text: str) -> PageResult:
+def parse_listing(text: str, page: int = 1) -> PageResult:
     start = text.find(_MODEL)
     if start < 0:
         raise ValueError("lcwaikiki_eg: no catalogModel in the page (layout changed?)")
@@ -73,7 +92,7 @@ def parse_listing(text: str) -> PageResult:
         if listing:
             listings.setdefault(listing.sku, listing)
     return PageResult(listings=list(listings.values()), total=catalog.get("ItemCount"),
-                      has_next=(catalog.get("PageIndex") or 1) < (catalog.get("PageCount") or 0))
+                      has_next=page < (catalog.get("PageCount") or 0))  # the page asked for: an answer can say 1 forever
 
 
 def _parse_item(p: dict) -> Listing | None:

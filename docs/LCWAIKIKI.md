@@ -25,7 +25,8 @@ It allows the bare category pages but **disallows `*PageIndex=*`, `*MinPrice=*`,
 
 | Asked | Answered |
 | --- | --- |
-| A page past the last | **Page 1 again**, so stop on `PageCount` |
+| A page past the last | **Page 1 again**, so stop on `PageCount`, counting the page asked for: the answer's own `PageIndex` can say 1 forever |
+| A category's old name | **301 to the new name, and the redirect drops the query**: `PageIndex` and `MinPrice` are lost, so every page is page 1 of the whole category. The adapter asks again under the new name |
 | An unknown category | HTTP 404 |
 | An empty range | **`ProductFound: false` and 52 unrelated products**, from 249 EGP. Check `ProductFound` first |
 | `MaxPrice` | **Doesn't hold:** "300 to 500" lists 860 products at 349 to 1,699. So the planner must never split (`max_slice_total` 20,000) |
@@ -55,7 +56,7 @@ Group **Fashion** (from 500 EGP, 35% `min_drop`, every 120 minutes, at most 180)
 | men-clothing-t-9 | 5,315 | 54 |
 | girls-clothing-t-100046 | 1,066 | 11 |
 | boys-clothing-t-200046 | 786 | 8 |
-| femei-incaltaminte-t-33 (women's shoes) | 169 | 2 |
+| femei-incaltaminte-t-33 (women's shoes; redirects to women-shoes-t-33) | 128 | 2 |
 
 **About 130 pages a pass and 14 minutes of one worker. About 65 pages an hour, from home IPs only.** About 12,700 products. Baby clothes (1,100 from 500 EGP) and men's shoes aren't watched.
 
@@ -72,6 +73,7 @@ Group **Fashion** (from 500 EGP, 35% `min_drop`, every 120 minutes, at most 180)
 | `blocked: lcwaikiki_eg: HTTP 403` | Cloudflare. Expected on any cloud IP | Keep it off cloud workers; if on a home IP, slow it down. `make pause SITE=lcwaikiki_eg HOURS=3` |
 | `no catalogModel in the page` | The layout changed | Save a new page in `tests/fixtures/` |
 | A root reads 0 products for a long time | `ProductFound` false: the category was renamed | `GetMenuData` |
+| A slice runs for hours and `run_count` passes `expected_total` | Paging doesn't end. It happened on 5 Nov 2026: `femei-incaltaminte-t-33` redirected, every page answered `PageIndex` 1, and `has_next` read that. About 2 hours at 13 pages a minute, 4 s apart, against a budget of 65 pages an hour; no block, but the shop's other four roots had to wait | Fixed in the adapter: see the listing table. `curl -sI` the category to see a redirect |
 
 ## Alert screenshots
 

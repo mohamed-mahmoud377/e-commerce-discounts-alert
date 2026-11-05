@@ -1074,6 +1074,34 @@ def test_lcwaikiki_empty_result_is_not_its_52_filler_products():
         parse_listing("<html>a challenge page</html>")
 
 
+def test_lcwaikiki_paging_stops_on_the_page_asked_for_not_the_page_answered():
+    from deals.sites.lcwaikiki_eg import parse_listing
+    text = fixture_text("lcwaikiki_shoes.html.gz")  # PageIndex 1, PageCount 2; a redirected URL answers this for every page
+    assert parse_listing(text, page=1).has_next
+    assert not parse_listing(text, page=2).has_next  # it looped here for 2 hours on 5 Nov 2026
+
+
+def test_lcwaikiki_renamed_category_is_asked_again_under_its_new_name(monkeypatch):
+    from deals.sites.lcwaikiki_eg import BASE, LcWaikikiEG
+    site = LcWaikikiEG()
+    page = fixture_text("lcwaikiki_shoes.html.gz")
+    asked = []
+
+    def get(url, **_):  # the 301 drops the query, so MinPrice and PageIndex are lost on the old name
+        asked.append(url)
+        answer = _response(200, {})
+        answer.text, answer.url = page, f"{BASE}/en/women-shoes-t-33" if "femei" in url else url
+        return answer
+
+    monkeypatch.setattr(site._session, "get", get)
+    target = Slice("category", "femei-incaltaminte-t-33", 500)
+    site.fetch_page(target, 1)
+    site.fetch_page(target, 2)
+    assert asked == [f"{BASE}/en/femei-incaltaminte-t-33?MinPrice=500",
+                     f"{BASE}/en/women-shoes-t-33?MinPrice=500",  # one extra request, once
+                     f"{BASE}/en/women-shoes-t-33?MinPrice=500&PageIndex=2"]
+
+
 def test_lcwaikiki_unknown_and_block(monkeypatch):
     from deals.models import Blocked, UnknownTarget
     from deals.sites.lcwaikiki_eg import LcWaikikiEG

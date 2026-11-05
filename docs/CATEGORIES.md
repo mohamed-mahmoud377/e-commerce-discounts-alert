@@ -338,7 +338,7 @@ From `/en/sitemap.xml`, with ids from `GetCategoryDetails`: `smart-phones` 1033,
 
 ## lcwaikiki.eg category names
 
-The URL's last part, keeping its `-t-<id>`: `women-clothing-t-10`, `men-clothing-t-9`, `girls-clothing-t-100046`, `boys-clothing-t-200046`, `baby-girls-clothing-t-100045`, `baby-boys-clothing-t-200045`, `femei-incaltaminte-t-33` (women's shoes), `women-accessories-t-26`, `men-accessories-t-25`, `women-dresses-t-149`. Every one: `GET /en/ajax/Home/GetMenuData?platformId=1`. Details: [LCWAIKIKI.md](LCWAIKIKI.md).
+The URL's last part, keeping its `-t-<id>`: `women-clothing-t-10`, `men-clothing-t-9`, `girls-clothing-t-100046`, `boys-clothing-t-200046`, `baby-girls-clothing-t-100045`, `baby-boys-clothing-t-200045`, `femei-incaltaminte-t-33` (women's shoes; the menu's old name, it redirects to `women-shoes-t-33`), `women-accessories-t-26`, `men-accessories-t-25`, `women-dresses-t-149`. Every one: `GET /en/ajax/Home/GetMenuData?platformId=1`. Details: [LCWAIKIKI.md](LCWAIKIKI.md).
 
 ## defacto.com.eg category names
 
