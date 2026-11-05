@@ -14,7 +14,9 @@ BESTSELLER = "bestseller"
 class Coupon:
     """An offer the shop shows next to a product, on top of its price (docs/COUPONS.md). Money is in piastres."""
 
-    kind: str  # code, multibuy (needs several items), bank (needs a bank's card), badge (no code), auto (in the price)
+    # code, multibuy (needs several items), bank (needs a bank's card), badge (no code), auto (in the price),
+    # promo (an Amazon promotion whose page we have not read yet: only its id and the card's words are known)
+    kind: str
     title: str  # as the shop writes it
     code: str | None = None
     detail: str | None = None
@@ -23,6 +25,8 @@ class Coupon:
     cap: int | None = None  # the most a percentage can take off
     min_order: int | None = None  # the order must reach this
     group_url: str | None = None  # the shop's page of every product the coupon covers
+    min_quantity: int | None = None  # items the order must hold (multibuy)
+    typed: bool = True  # False: `code` is only our key for it (an Amazon promotion id), nobody types it
 
     def saving(self, price: int | None) -> int | None:
         """What it takes off one item at this price; None when that is not a price anyone can simply get:
@@ -37,6 +41,25 @@ class Coupon:
         else:
             return None
         return off if 0 < off < price else None
+
+    def share(self, price: int | None) -> float | None:
+        """How much of the order it takes off when it is used as written, at this item price: 50 off 200 is a
+        quarter however cheap the item, since the order fills up with others. None when the words don't say."""
+        if not price or self.kind not in ("code", "badge", "multibuy"):
+            return None
+        if self.kind != "multibuy" and (off := self.saving(price)):
+            return off / price
+        if self.amount and self.min_order and price < self.min_order:
+            return self.amount / self.min_order
+        if self.amount and self.min_quantity:
+            return min(self.amount / (price * self.min_quantity), 1.0)
+        if self.percent is None:
+            return None
+        order = price * max(self.min_quantity or 1, 1)
+        if self.min_order:
+            order = max(order, self.min_order)
+        off = order * self.percent
+        return min(off, self.cap) / order if self.cap else self.percent
 
 
 @dataclass(frozen=True)

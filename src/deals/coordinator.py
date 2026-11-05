@@ -56,6 +56,8 @@ class CouponIn(BaseModel):
     cap: int | None = None
     min_order: int | None = None
     group_url: str | None = None
+    min_quantity: int | None = None
+    typed: bool = True
 
 
 class ListingIn(BaseModel):
@@ -98,6 +100,7 @@ class PageIn(BaseModel):
     done: bool = False
     no_results: bool = False  # the site said the slice is empty now (not a parse failure)
     shoot: bool = False  # as in LeaseIn
+    reads_promotions: bool = False  # it can read a promotion's page: a reply may name one (older workers can't)
 
 
 class PlannedIn(BaseModel):
@@ -390,6 +393,10 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
         reply = {"ok": True, "changes": changes, "deals": deals, "skipped": skipped}
         if shot := take_shot(body.shoot, [job["site"]], worker, now):
             reply["shot"] = shot  # usually a deal on this very page: the worker takes it at once
+        if body.reads_promotions:
+            with conn:
+                if promotion := coupon_messages.next_promotion(conn, job["site"], now):
+                    reply["promotion"] = promotion
         return reply
 
     def _finish_crawl(job_id: int, now: datetime) -> None:
@@ -637,6 +644,26 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
     async def detail_done(product_id: int, body: DetailIn, request: Request, worker: str = Depends(worker_name)):
         """What a worker read from a product page (or that the shop refused it: pauses that shop's pages)."""
         detailq.record(conn, cfg, product_id, body.site, client_ip(request), body.model_dump(), utcnow())
+        return {"ok": True}
+
+    class PromotionIn(BaseModel):
+        site: str
+        code: str
+        status: str  # ok | gone | failed
+        title: str = ""
+        schedule: str = ""
+        min_quantity: int = 0
+        min_amount: float = 0
+        benefit_amount: float = 0
+        benefit_percent: float = 0
+        benefit_cap: float = 0
+        reason: str | None = None
+
+    @app.post("/api/coupons/facts")
+    async def promotion_read(body: PromotionIn, worker: str = Depends(worker_name)):
+        """What a worker read from a promotion's page."""
+        with conn:
+            coupon_messages.record_promotion(conn, body.model_dump(), utcnow())
         return {"ok": True}
 
     @app.post("/api/shots/{alert_id}")

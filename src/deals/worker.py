@@ -205,6 +205,21 @@ class Worker:
         except LeaseLost:
             pass
 
+    def read_promotion(self, promo: dict) -> None:
+        """Read one promotion's page (coupon_messages.py hands them out, a few an hour). A refusal is reported, not retried."""
+        report: dict = {"site": promo["site"], "code": promo["code"]}
+        try:
+            found = self.site(promo["site"]).fetch_promotion(promo["url"])
+        except Exception as exc:
+            log.info("promotion %s not read: %s", promo["code"], exc.__class__.__name__)
+            report.update(status="failed", reason=f"{exc.__class__.__name__}: {exc}"[:300])
+        else:
+            report.update(status="ok", **found) if found else report.update(status="gone")
+        try:
+            self.api.call("/api/coupons/facts", report)
+        except LeaseLost:
+            pass
+
     def take_shot(self, reply: dict) -> None:
         if reply.get("shot") and self.shooter is not None:
             self.shooter.submit(reply["shot"])
@@ -256,8 +271,11 @@ class Worker:
                 "lease_token": job["lease_token"], "page": page,
                 "listings": [_listing_json(x) for x in result.listings], "done": not result.has_next,
                 "no_results": result.total == 0 and not result.listings, "shoot": self.screenshots,
+                "reads_promotions": True,
             })
             self.take_shot(reply)  # a deal this page revealed: its screenshot, taken now
+            if reply.get("promotion"):
+                self.read_promotion(reply["promotion"])
             products += len(result.listings)
             changes += reply.get("changes", 0)
             if not result.has_next:

@@ -200,7 +200,7 @@ def format_card(alert_id: int, p: sqlite3.Row, stats: PriceStats, deal: Deal, le
                "Signals: " + ", ".join(code for code, _ in deal.signals) if deal.signals else ""]
     if any(product):
         lines += ["", *(x for x in product if x)]
-    if coupon := coupons.from_row(p):
+    if (coupon := coupons.from_row(p)) and coupon.title:
         lines += ["", coupons.card_line(coupon, p["price"])]
     if note:
         lines += ["", f"📝 {e(note)}"]
@@ -284,7 +284,8 @@ def _facts(conn, alert_id: int) -> dict | None:
         """SELECT r.*, a.kind, a.price AS alert_price, a.reference_price AS reference, a.message,
                   p.title, p.url, p.site, p.price AS now_price, p.in_stock, p.coupon_kind, p.coupon_code, p.coupon_title,
                   p.coupon_detail, p.coupon_amount, p.coupon_percent, p.coupon_cap, p.coupon_min_order, p.coupon_url,
-                  c.site AS code_site, c.code AS code, c.group_url AS code_url
+                  p.coupon_min_quantity, p.coupon_typed,
+                  c.site AS code_site, c.code AS code, c.group_url AS code_url, c.ends_at AS code_ends
            FROM reviews r JOIN alerts a ON a.id = r.alert_id LEFT JOIN products p ON p.id = a.product_id
            LEFT JOIN coupons c ON c.id = a.coupon_id
            WHERE r.alert_id = ?""", (alert_id,)).fetchone()
@@ -302,7 +303,8 @@ def _facts(conn, alert_id: int) -> dict | None:
         # A coupon message has no one product: it is still good while products show the code.
         left = conn.execute("SELECT COUNT(*) FROM products WHERE site = ? AND coupon_code = ? AND in_stock = 1",
                             (f["code_site"], f["code"])).fetchone()[0]
-        f.update(in_stock=left > 0, now_price=0, alert_price=0, reference=0, coupon_gone=not left)
+        ended = f["code_ends"] and f["code_ends"] < datetime.now(CAIRO).date().isoformat()
+        f.update(in_stock=left > 0, now_price=0, alert_price=0, reference=0, coupon_gone=ended or not left)
     return f
 
 
@@ -332,9 +334,7 @@ def _post(conn, f: sqlite3.Row) -> tuple[str, str, list[list[dict]]]:
 
 def _photo(conn, cfg: Config, f: sqlite3.Row) -> bytes | str | None:
     """The deal's screenshot, unless the price has moved away from what it shows."""
-    if f["kind"] == "coupon":
-        return None
-    if abs(f["now_price"] - f["alert_price"]) > f["alert_price"] * PRICE_NOISE:
+    if f["kind"] != "coupon" and abs(f["now_price"] - f["alert_price"]) > f["alert_price"] * PRICE_NOISE:
         return None
     shot = conn.execute("SELECT status, file_id FROM shots WHERE alert_id = ?", (f["alert_id"],)).fetchone()
     if shot is None or shot["status"] != "ok":
@@ -575,7 +575,7 @@ def on_button(conn: sqlite3.Connection, cfg: Config, tg, cq: dict, allowed: bool
 def _moved(f: sqlite3.Row) -> str | None:
     """Why the deal is not what the card says any more; a price that fell further is still fine."""
     if f["kind"] == "coupon":
-        return "No product shows this coupon any more." if f["coupon_gone"] else None
+        return "This coupon has ended, or no product shows it any more." if f["coupon_gone"] else None
     if not f["in_stock"] or f["now_price"] is None:
         return "It is sold out now."
     if f["coupon_gone"]:

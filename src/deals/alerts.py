@@ -359,8 +359,8 @@ def format_deal(p: sqlite3.Row, stats: PriceStats, deal: Deal, group: str = "", 
                    else f" (خصم معلن {1 - deal.price / p['list_price']:.0%})" if p["list_price"] > deal.price else "")
         lines.append(f"🏷 السعر المشطوب على الموقع: {_egp(p['list_price'])}{claimed}")
 
-    if coupon := coupons.from_row(p):
-        lines.append(coupons.line(coupon, p["price"]))
+    if (coupon := coupons.from_row(p)) and (said := coupons.line(coupon, p["price"])):
+        lines.append(said)
 
     # --- why we think it's real
     if deal.kind == "manual":

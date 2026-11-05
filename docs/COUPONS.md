@@ -11,7 +11,7 @@ the text, the lines in messages), `db._record_coupon`, `alerts._coupon_deal`, `c
 | Raneen | Listing card `.rn-card__coupon code` ("USE Code WF500") | A code, with no value | Yes |
 | Carrefour | Card badge `DiscountCoupon` ("Extra 500EGP Off") | An amount, with no code | Yes |
 | B.TECH | `price.discounts[name=item_coupon]` | An amount **already in `final_price`** | Yes |
-| Amazon, Amazon Now | Product page only (`couponsInBuybox`, "Enter code NBEOCT500"); mostly bank cards. Search has "Coupons" and "Buy More, Save More" filters | Code and words, one page per product | Not yet |
+| Amazon, Amazon Now | Search cards: the promotion's id, and its words under the price. `/-/ar/promotion/psp/<id>`: everything else | A promotion's numbers, dates and a page of all its products | Yes (see below) |
 | e& | Category name ("Mobile Deals (Use code: MOBILE25)") | A code per category | Not yet (`eand-promo-codes-not-read`) |
 | Dubai Phone | `couponBadge` on a product | Unknown: null in our saved pages | Not yet |
 
@@ -30,6 +30,27 @@ A small sample: the first page of 6 categories, about 300 products.
   and `https://www.noon.com/egypt-en/eg-nov26-mobile-300/` is a page people can open (HTTP 200, the code on the page).
 
 So on phones a coupon alone rarely reaches the 20% alert rule.
+
+## Amazon's promotions (measured 5-6 November 2026)
+
+These are what deal channels post ("3 بسعر 2 على منتجات Braes"). There is no code to type: Amazon applies them to the cart.
+
+- **Every search card names its promotion:** `data-csa-c-item-id="amzn1.asin.X:amzn1.promotion.A18KBWDDL262Z4"`, on 57 of 60 cards of a normal
+  `shampoo` search. Finding them adds no crawl pages. A card names one promotion even when several apply.
+- **The card's words can be another offer's.** "Buy 5 products and get 5% off", "Buy 350 get 50" and "Buy 400 get 75" are right, but Elvive's
+  (`A2XJ3FFU2U5GTP`, buy 2 save 15%) shows only the NBE line. So a card gives the id, and only the page says what it is.
+- **Most are banks':** 37 of those 60 cards had NBE's `A10EJ9XHRVH2JC`. The id changes between months.
+- **The page's HTML holds the numbers:** `#promotionTitle`, `#promotionSchedule`, and in its script `minQuantity`, `minAmount`, `benefitAmount`, `benefitPercent`,
+  `benefitAmountCap`. "Buy 5, 5% off" has a cap of 50 EGP the card never mentions. The title and dates come in the session's language, whatever the URL says
+  ("From 05 Nov 2026 to 12 Nov 2026", "من 05 نوفمبر 2026 حتى 12 نوفمبر 2026", "Expires: Monday, 30 November 2026"); some have none. The products load by script
+  (`/promotion/psp/productInfoList`), so only a real browser's screenshot shows them.
+- **The sort menu is the page's script:** no link opens the page cheapest first, as far as we found.
+- **Screenshots:** checked on two live promotions and noon's `/eg-nov26-mobile-300`, 6 November 2026. noon's images need about 10 s after its products appear; at 4 s most tiles were still its logo.
+
+**How it flows.** A card stores a coupon of kind `promo`: its id in `code`, `typed = 0` (nobody types it, so it is never shown as a code), and the card's words, which never lower a price.
+A reply to a page upload can name one unread promotion (`coupon_messages.next_promotion`, at most 20 an hour per shop, to workers that say `reads_promotions`). The worker reads the page and posts
+what it found to `POST /api/coupons/facts`, which fills in the `coupons` row; a title naming a bank makes it `bank`, a missing page `ended`, and one not answered is asked for again after 6 hours.
+Each product takes on those facts when next crawled (`db._read_promotion`), which is also when a coupon that makes it a real discount gets judged.
 
 ## What we store
 
@@ -52,6 +73,7 @@ first orders or new customers gets no number.
 | `code`, minimum spend above the price | Buy For 350 Get 50 | Yes, says the minimum | No, on that product | Yes |
 | `multibuy` | Buy 2 get 20% off | Yes, says several are needed | No | Yes, says several are needed |
 | `bank` | NBEOCT500 | Yes, says it needs the card | No | No |
+| `promo`, not read yet | Amazon's card | The card's words only | No | No, until read |
 | `badge`, an amount with no code | Extra 500 EGP Off | Yes, with the price after it | Yes | No |
 | `auto`, already in the price | B.TECH | "Already in the price" | Already a normal price drop | No |
 
@@ -76,7 +98,22 @@ with `alerts.price` being the price after the coupon.
 - It shares the existing limits (`_recently_alerted`, shop rules, the shop's own floors).
 - At approval the post is checked against the price after the coupon. If the coupon has ended the card says so.
 
-### C. One message per coupon
+### C. One post per coupon
+
+Modelled on the channels' posts: a screenshot of the page of products, one line, its end date when known, a link.
+
+```
+[screenshot: the banner and the first row of products]
+
+🎟 وفر 75 جنيه لما تشتري بـ 400 جنيه أو أكتر من TRESemmé
+🏪 أمازون مصر
+⏳ لحد 12 نوفمبر
+[🛒 كل المنتجات]
+```
+
+The line comes from the coupon's numbers (`coupons.headline`), and only falls back to the shop's own words. The brand is added when at least 60% of its products' titles start with one word.
+A coupon with a code to type adds it. A shop with no page of products (Raneen) lists up to 5 instead, and has no screenshot. A failed screenshot costs only the picture.
+**Value:** the coupon as used, against each product's own usual price: 50 off 200 is 25% on a 30 EGP sweet too, since the order fills up with others, and a cap counts ("Buy 5, 5% off, at most 50" is 1% on 1,000 EGP goods).
 
 `coupon_messages.step`, every 5 minutes in the Watchdog. A code is looked at `coupon_message_wait_minutes` (60) after first
 sighting, because a crawl finds a code's products gradually. It goes out when it covers `coupon_message_min_products` (5) in-stock watched
@@ -89,6 +126,7 @@ products where there is one. It goes through the review group like any deal.
 - **No flood:** with the switch off, due codes are marked `would_send` or `below_floor`, so those active on the day it is switched on are
   already decided.
 - A shop with its alerts off or silent (web UI) gets `would_send`, never a message.
+- **Not read after 48 hours:** `unread`. **Past its end date, or its page gone:** `ended`, and Approve refuses it too. **A bank's:** `bank`.
 
 ## Looking coupons up
 
@@ -130,4 +168,6 @@ FROM products WHERE coupon_kind IS NOT NULL GROUP BY 1, 2;
 - Whether a Carrefour coupon needs anything we can't see (`api/v1/pdp/vouchers` is not explored). It is read as an amount anyone gets, so
   check some before switching B on.
 - What Raneen's `WF500` takes off: the card doesn't say.
-- How many codes noon has across all categories, which decides whether 5% and 5 a day are right.
+- How many codes noon has across all categories, and how many promotions Amazon has, which decides whether 5% and 5 a day are right.
+- What a "3 for 2" promotion's numbers look like: none was in our sample. It is read from its title ("احصل على 3 بسعر 2") or from a percentage that leaves a whole number of items.
+- Whether a read works from the droplet, where Amazon often refuses: a refusal only means it is asked again 6 hours later, possibly of the Mac.

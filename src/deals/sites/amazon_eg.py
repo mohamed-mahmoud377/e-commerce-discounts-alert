@@ -16,7 +16,8 @@ from urllib.parse import parse_qs, urlencode, urlparse
 from curl_cffi import requests
 from selectolax.lexbor import LexborHTMLParser
 
-from deals.models import LIMITED_DEAL, Blocked, Category, Listing, PageResult, Slice
+from deals import coupons
+from deals.models import LIMITED_DEAL, Blocked, Category, Coupon, Listing, PageResult, Slice
 from deals.sites.base import parse_count, parse_money
 
 log = logging.getLogger(__name__)
@@ -38,6 +39,8 @@ STOCK_LEFT = re.compile(r"Only (\d+) left in stock")
 RECENT_SALES = re.compile(r"([\d.,]+K?)\+ bought in past month")
 # "4.2 out of 5 stars | | (16.6K)"
 RATING = re.compile(r"([\d.]+) out of 5 stars(?:[ |]*\(([\d.,]+K?)\))?")
+PROMOTION_ID = re.compile(r"amzn1\.promotion\.([A-Z0-9]+)")
+PROMOTION_URL = BASE + "/-/ar/promotion/psp/{id}"
 
 
 class AmazonEG:
@@ -75,6 +78,13 @@ class AmazonEG:
             if html is None or result.decoy:
                 raise Blocked(f"{self.name}: decoy page (no result bar) for {slice.key()}")
         return result
+
+    def fetch_promotion(self, url: str) -> dict | None:
+        """One promotion's page, with this session. Blocked at a challenge, never fought: it is tried again hours later."""
+        page = self._get(url)
+        if page is None:
+            raise Blocked(f"{self.name}: promotion page challenged")
+        return parse_promotion_page(page)
 
     def search_url(self, slice: Slice, page: int) -> str:
         params = {"k": slice.value} if slice.kind == "search" else {}
@@ -266,7 +276,39 @@ def _parse_card(card, asin: str, title: str, site: str, dp_query: str) -> Listin
         rating=float(rating.group(1)) if rating else None,
         reviews=parse_count(rating.group(2)) if rating and rating.group(2) else None,
         badges=badges,
+        coupon=_promotion(card),
     )
+
+
+def _promotion(card) -> Coupon | None:
+    """The promotion a search card belongs to: its id, and the words under the price. The words can be another
+    offer's (Elvive's card shows only the NBE line), so they are kept as words until its page is read (docs/COUPONS.md)."""
+    node = card.css_first('[data-csa-c-item-id*="amzn1.promotion."]')
+    found = PROMOTION_ID.search(node.attributes.get("data-csa-c-item-id") or "") if node else None
+    if not found:
+        return None
+    lines = [s.text(strip=True) for s in card.css("div.a-row.a-size-base.a-color-secondary > span")]
+    words = [x for x in lines if x.lower().startswith("buy ")] or [x for x in lines if coupons.is_bank(x)]
+    return Coupon(kind="promo", title=words[0] if words else "", code=found.group(1), typed=False,
+                  group_url=PROMOTION_URL.format(id=found.group(1)))
+
+
+def parse_promotion_page(page: str) -> dict | None:
+    """What a promotion's own page says: Amazon's title and dates, and its numbers, which the page's script holds.
+    None when it is not a promotion page (one that has ended)."""
+    tree = LexborHTMLParser(page)
+    title = tree.css_first("#promotionTitle")
+    if title is None or not title.text(strip=True):
+        return None
+
+    def number(name: str) -> float:
+        m = re.search(rf"""["']?{name}["']?\s*[:=]\s*["']?([\d.]*)""", page)
+        return float(m.group(1)) if m and m.group(1) else 0.0
+
+    schedule = tree.css_first("#promotionSchedule")
+    return {"title": " ".join(title.text(strip=True).replace("\u200f", "").split()), "schedule": " ".join(schedule.text().split()) if schedule else "",
+            "min_quantity": int(number("minQuantity")), "min_amount": number("minAmount"), "benefit_amount": number("benefitAmount"),
+            "benefit_percent": number("benefitPercent"), "benefit_cap": number("benefitAmountCap")}
 
 
 def _parse_total(tree: LexborHTMLParser) -> int | None:

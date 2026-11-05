@@ -6,7 +6,8 @@ from types import SimpleNamespace
 from conftest import fixture_json, fixture_text
 import pytest
 
-from deals import cli, coupon_messages, coupons, db, health, webui
+from deals import cli, coupon_messages, coupons, db, health, shots, webui
+from deals.sites.amazon_eg import parse_promotion_page, parse_search_page
 from deals.alerts import AlertSender, check_product
 from deals.config import ReviewRules
 from deals.db import iso, utcnow
@@ -64,7 +65,8 @@ def test_btech_coupon_is_already_in_the_price():
     ("Extra 500EGP Off", None, {"amount": 50_000}),
     ("100 EGP off", "100 EGP off on orders over 1000 EGP", {"amount": 10_000, "min_order": 100_000}),
     ("Extra 10% OFF", "Extra 10% OFF up to 50 EGP", {"percent": 0.1, "cap": 5_000}),
-    ("Buy 2 get 200 EGP off", None, {"kind": "multibuy", "amount": None}),
+    ("Buy 2 get 200 EGP off", None, {"kind": "multibuy", "amount": 20_000, "min_quantity": 2}),
+    ("Buy 2, Get 10% off", None, {"kind": "multibuy", "percent": 0.1, "min_quantity": 2}),
     ("Save big", None, {"amount": None, "percent": None}),
     ("100 EGP off", "On your first order", {"amount": None}),
     ("10% off", "With your CIB Credit Cards", {"kind": "bank"}),
@@ -75,9 +77,25 @@ def test_only_what_is_plainly_written_becomes_a_number(title, detail, expected):
 
 
 def test_how_much_of_the_order_a_multibuy_takes():
-    assert coupons.multibuy_share("Buy 2 get 1 free") == pytest.approx(1 / 3)
-    assert coupons.multibuy_share("Buy 2, Get 20% off") == 0.2
-    assert coupons.multibuy_share("Buy 2 get 200 EGP off") is None
+    def share(title, price=10_000):
+        return coupons.order_share(coupons.parse(title=title, code="X"), price)
+    assert share("Buy 2 get 1 free") == pytest.approx(1 / 3)
+    assert share("Buy 2, Get 20% off") == 0.2
+    assert share("Buy 2 get 200 EGP off", 50_000) == 0.2  # 200 off an order of two at 500
+    assert coupons.order_share(Coupon(kind="multibuy", title="احصل على 3 بسعر 2", code="X"), 10_000) == pytest.approx(1 / 3)
+
+
+def test_a_minimum_spend_is_valued_on_the_order_not_the_cheap_item():
+    c = coupons.parse(title="Buy 200 get 50", code="X")
+    assert (c.amount, c.min_order, c.kind) == (5_000, 20_000, "code")
+    assert c.saving(3_000) is None and c.share(3_000) == 0.25  # one sweet at 30 EGP: a quarter off an order of them
+    assert c.saving(30_000) == 5_000 and c.share(30_000) == pytest.approx(5 / 30)
+
+
+def test_a_cap_lowers_what_a_quantity_offer_is_worth():
+    c = Coupon(kind="multibuy", title="Buy 5, 5% off", percent=0.05, min_quantity=5, cap=5_000)
+    assert c.share(10_000) == 0.05  # 5 at 100: 25 EGP off, under the cap
+    assert c.share(100_000) == 0.01  # 5 at 1,000: 50 EGP of 5,000
 
 
 # --- recording
@@ -305,14 +323,14 @@ def test_a_coupon_message_names_the_code_some_products_and_the_page_of_all(revie
     coupon_messages.step(conn, cfg, now)
     assert state(conn)["state"] == "sent" and state(conn)["products"] == 6
     row = conn.execute("SELECT * FROM alerts WHERE kind = 'coupon'").fetchone()
-    assert "MOBILE300" in row["message"] and row["message"].count("• ") == coupon_messages.SHOWN
+    assert "خصم 1,000 جنيه" in row["message"] and "<code>MOBILE300</code>" in row["message"] and "• " not in row["message"]
     sender_round(cfg, conn, tg)
     assert "coupon" in tg.to(REVIEW)[0]["text"] and tg.to(ADMIN) == []
     press(conn, cfg, tg, f"rv_ok:{row['id']}")
     sender_round(cfg, conn, tg)
     post = tg.to(CHANNEL)[0]
     assert post["buttons"] == [[{"text": "🛒 كل المنتجات", "url": CODE.group_url}]]
-    assert "كل المنتجات" not in post["text"] and "9,000" in post["text"]
+    assert "كل المنتجات" not in post["text"]
     assert review(conn, row["id"])["status"] == "published"
 
 
@@ -394,7 +412,7 @@ def test_a_code_comes_back_as_news_only_after_a_week_or_when_it_grows(review_env
 
 def test_products_alerted_this_week_are_left_out_of_the_message(review_env):
     cfg, conn, tg = review_env
-    now = covered(conn)
+    now = covered(conn, coupon=replace(CODE, amount=100_000, group_url=None))
     alerted = db.find_product(conn, "noon_eg", "P0")["id"]
     conn.execute("INSERT INTO alerts (product_id, kind, price, message, created_at, next_attempt_at) VALUES (?, 'price_drop', 1, 'x', ?, ?)",
                  (alerted, iso(now), iso(now)))
@@ -405,10 +423,18 @@ def test_products_alerted_this_week_are_left_out_of_the_message(review_env):
 
 def test_a_multibuy_message_says_you_need_several(review_env):
     cfg, conn, tg = review_env
-    now = covered(conn, coupon=Coupon(kind="multibuy", title="Buy 2 get 20% off", code="BUY2"))
+    now = covered(conn, coupon=coupons.parse(title="Buy 2 get 20% off", code="BUY2"))
     coupon_messages.step(conn, cfg, now)
     assert state(conn, "BUY2")["state"] == "sent"
-    assert "أكتر من قطعة" in conn.execute("SELECT message FROM alerts WHERE kind = 'coupon'").fetchone()["message"]
+    assert "اشتري 2 ووفر 20%" in conn.execute("SELECT message FROM alerts WHERE kind = 'coupon'").fetchone()["message"]
+
+
+def test_a_shop_with_no_page_lists_a_few_products(review_env):
+    cfg, conn, tg = review_env
+    now = covered(conn, coupon=replace(CODE, amount=100_000, group_url=None))
+    coupon_messages.step(conn, cfg, now)
+    message = conn.execute("SELECT message FROM alerts WHERE kind = 'coupon'").fetchone()["message"]
+    assert message.count("• ") == coupon_messages.SHOWN and "كل المنتجات" not in message
 
 
 def test_bank_codes_and_codeless_coupons_get_no_message(conn, cfg):
@@ -425,7 +451,241 @@ def test_an_approved_coupon_message_with_no_products_left_is_stopped(review_env)
     sender_round(cfg, conn, tg)
     conn.execute("UPDATE products SET coupon_code = NULL, coupon_kind = NULL")
     press(conn, cfg, tg, f"rv_ok:{alert_id}")
-    assert "No product shows this coupon" in tg.edits()[-1]["text"] and tg.to(CHANNEL) == []
+    assert "no product shows it" in tg.edits()[-1]["text"] and tg.to(CHANNEL) == []
+
+
+# --- Amazon's promotions
+
+
+PROMO = Coupon(kind="promo", title="Buy 400 get 75", code="A1GDSWPM8PBPCO", typed=False,
+               group_url="https://www.amazon.eg/-/ar/promotion/psp/A1GDSWPM8PBPCO")
+
+
+def amazon(price=30_000, sku="T0", coupon=PROMO, title=None):
+    return Listing(site="amazon_eg", sku=sku, title=title or f"TRESemmé Shampoo {sku}", url=f"https://www.amazon.eg/-/en/dp/{sku}",
+                   price=price, list_price=None, currency="EGP", in_stock=True, coupon=coupon)
+
+
+def facts(code=PROMO.code, page="amazon_promo_spend.html.gz"):
+    return {"site": "amazon_eg", "code": code, "status": "ok", **parse_promotion_page(fixture_text(page))}
+
+
+def test_amazon_cards_give_the_promotion_id_and_never_a_code_to_type():
+    found = {x.sku: x.coupon for x in parse_search_page(fixture_text("amazon_promos_search.html.gz")).listings if x.coupon}
+    assert len(found) >= 50 and all(c.kind == "promo" and not c.typed and c.saving(1_000_000) is None for c in found.values())
+    by_id = {c.code: c for c in found.values()}
+    assert by_id["A18KBWDDL262Z4"].title == "Buy 5 products and get 5% off"
+    assert by_id["A1GDSWPM8PBPCO"].group_url == PROMO.group_url
+    assert coupons.is_bank(by_id["A10EJ9XHRVH2JC"].title)
+    assert coupons.is_bank(by_id["A2XJ3FFU2U5GTP"].title)  # Elvive's card shows only the bank's line, see the next test
+
+
+def test_a_card_showing_a_bank_line_is_what_its_page_says(conn):
+    """Elvive's promotion is buy 2, save 15%, whatever its card says."""
+    now = utcnow()
+    elvive = replace(PROMO, code="A2XJ3FFU2U5GTP", title="20% off NBE Visa Signature Credit Cards")
+    pid = db.record(conn, amazon(coupon=elvive), grp="g", now=now).product_id
+    coupon_messages.record_promotion(conn, facts(elvive.code, "amazon_promo_dates.html.gz"), now)
+    db.record(conn, amazon(coupon=elvive), grp="g", now=now)
+    p = db.product(conn, pid)
+    assert (p["coupon_kind"], p["coupon_percent"], p["coupon_min_quantity"]) == ("multibuy", 0.15, 2)
+    assert coupons.headline(coupons.from_row(p)) == "اشتري 2 ووفر 15%"
+
+
+def test_promotion_pages_give_their_numbers_and_dates():
+    q = parse_promotion_page(fixture_text("amazon_promo_quantity.html.gz"))
+    assert (q["min_quantity"], q["benefit_percent"], q["benefit_cap"]) == (5, 5.0, 50.0) and q["schedule"] == ""
+    s = parse_promotion_page(fixture_text("amazon_promo_spend.html.gz"))
+    assert (s["min_amount"], s["benefit_amount"]) == (400.0, 75.0)
+    assert coupons.schedule_dates(s["schedule"]) == ("2026-11-05", "2026-11-12")
+    ar = parse_promotion_page(fixture_text("amazon_promo_dates_ar.html.gz"))
+    assert coupons.schedule_dates(ar["schedule"]) == ("2026-11-05", "2026-11-12") and ar["min_quantity"] == 2
+    bank = parse_promotion_page(fixture_text("amazon_promo_bank.html.gz"))
+    assert coupons.schedule_dates(bank["schedule"]) == (None, "2026-11-30")
+    assert parse_promotion_page("<html><title>Page not found</title></html>") is None
+
+
+def test_promotions_are_asked_for_one_at_a_time_up_to_the_hours_limit(conn):
+    now = utcnow()
+    for i in range(coupon_messages.READS_PER_HOUR + 3):
+        db.record(conn, amazon(sku=f"S{i}", coupon=replace(PROMO, code=f"PROMO{i}")), grp="g", now=now)
+    asked = [coupon_messages.next_promotion(conn, "amazon_eg", now) for _ in range(coupon_messages.READS_PER_HOUR + 1)]
+    assert asked[0] == {"site": "amazon_eg", "code": "PROMO0", "url": PROMO.group_url}
+    assert asked[-1] is None and len({a["code"] for a in asked[:-1]}) == coupon_messages.READS_PER_HOUR
+    assert coupon_messages.next_promotion(conn, "noon_eg", now) is None
+    # Unanswered (refused, or the worker went away): asked again hours later.
+    later = now + coupon_messages.READ_AGAIN + timedelta(minutes=1)
+    assert coupon_messages.next_promotion(conn, "amazon_eg", later)["code"] == "PROMO0"
+    coupon_messages.record_promotion(conn, {"site": "amazon_eg", "code": "PROMO0", "status": "failed", "reason": "x"}, later)
+    assert state(conn, "PROMO0")["read_at"] is None
+
+
+def test_read_facts_stay_on_the_product_through_later_crawls_and_can_alert(conn, on):
+    now = utcnow()
+    pid = db.record(conn, amazon(price=50_000), grp="g", now=now - timedelta(days=20)).product_id
+    assert coupons.after(db.product(conn, pid)) is None
+    assert check_product(conn, on, pid, bootstrap=False, now=now) is None  # not read: words only
+    coupon_messages.record_promotion(conn, facts(), now)
+    assert db.record(conn, amazon(price=50_000), grp="g", now=now).coupon_new  # now it takes 75 off 500
+    p = db.product(conn, pid)
+    assert (p["coupon_kind"], p["coupon_amount"], p["coupon_min_order"], p["coupon_typed"]) == ("code", 7_500, 40_000, 0)
+    assert coupons.after(p) == 42_500
+    assert not db.record(conn, amazon(price=50_000), grp="g", now=now).coupon_new  # and does not flip back
+    assert check_product(conn, on, pid, bootstrap=False, now=now) is None  # 15% is under the 20% rule
+
+
+def test_a_promotion_with_a_bank_title_stays_a_bank_offer(conn, cfg):
+    now = utcnow()
+    bank = replace(PROMO, code="A10EJ9XHRVH2JC", title="20% off NBE Visa Signature Credit Cards")
+    pid = db.record(conn, amazon(coupon=bank), grp="g", now=now).product_id
+    coupon_messages.record_promotion(conn, facts(bank.code, "amazon_promo_bank.html.gz"), now)
+    assert state(conn, bank.code)["state"] == "bank"
+    assert not db.record(conn, amazon(coupon=bank), grp="g", now=now).coupon_new
+    p = db.product(conn, pid)
+    assert p["coupon_kind"] == "bank" and coupons.after(p) is None
+    assert "بكارت البنك" in coupons.line(coupons.from_row(p), p["price"])
+
+
+def test_an_ended_page_ends_the_promotion(conn):
+    now = utcnow()
+    db.record(conn, amazon(), grp="g", now=now)
+    coupon_messages.record_promotion(conn, {"site": "amazon_eg", "code": PROMO.code, "status": "gone"}, now)
+    assert state(conn, PROMO.code)["state"] == "ended"
+
+
+def promoted(conn, page="amazon_promo_spend.html.gz", price=15_000, n=6, code=PROMO.code):
+    """Products at a steady price, in a promotion that has been read."""
+    now = utcnow()
+    start = now - timedelta(hours=2)
+    coupon = replace(PROMO, code=code, title="")
+    for i in range(n):
+        db.record(conn, amazon(price=price, sku=f"T{i}", coupon=None), grp="g", now=now - timedelta(days=20))
+        db.record(conn, amazon(price=price, sku=f"T{i}", coupon=coupon), grp="g", now=start)
+    coupon_messages.record_promotion(conn, facts(code, page), start)
+    conn.execute("UPDATE coupons SET ends_at = '2099-11-12' WHERE ends_at IS NOT NULL")  # the saved page's date, in any year
+    for i in range(n):
+        db.record(conn, amazon(price=price, sku=f"T{i}", coupon=coupon), grp="g", now=start)
+    return now
+
+
+def test_a_promotion_post_is_one_line_a_date_and_a_screenshot_on_cheap_products_too(review_env, monkeypatch):
+    """Like the posts this was built from: 75 off 400 on products that each cost 150."""
+    cfg, conn, tg = review_env
+    now = promoted(conn)
+    monkeypatch.setattr(coupon_messages, "shotq", shotq_recorder := SimpleNamespace(calls=[], add=lambda *a, **k: shotq_recorder.calls.append(a)))
+    coupon_messages.step(conn, cfg, now)
+    row = conn.execute("SELECT * FROM alerts WHERE kind = 'coupon'").fetchone()
+    assert "وفر 75 جنيه لما تشتري بـ 400 جنيه أو أكتر من TRESemmé" in row["message"]
+    assert "⏳ لحد 12 نوفمبر" in row["message"] and PROMO.code not in row["message"].split("href")[0]
+    assert "• " not in row["message"]
+    assert shotq_recorder.calls[0][3:5] == ("amazon_eg", PROMO.group_url)
+
+
+def test_an_unread_promotion_is_not_posted_and_is_given_up_on(review_env):
+    cfg, conn, tg = review_env
+    now = covered(conn, coupon=replace(PROMO, title="Buy 400 get 75"))
+    coupon_messages.step(conn, cfg, now)
+    assert state(conn, PROMO.code)["state"] == "new"
+    coupon_messages.step(conn, cfg, now + timedelta(hours=49))
+    assert state(conn, PROMO.code)["state"] == "unread"
+    assert conn.execute("SELECT COUNT(*) FROM alerts").fetchone()[0] == 0
+
+
+def test_an_ended_promotion_is_never_posted(review_env):
+    cfg, conn, tg = review_env
+    now = promoted(conn)
+    conn.execute("UPDATE coupons SET ends_at = '2020-01-01'")
+    coupon_messages.step(conn, cfg, now)
+    assert state(conn, PROMO.code)["state"] == "ended" and conn.execute("SELECT COUNT(*) FROM alerts").fetchone()[0] == 0
+
+
+def test_the_promotions_cap_can_put_it_under_the_floor(review_env):
+    """Buy 5, 5% off, at most 50 EGP: on 2,000 EGP products that is half a percent."""
+    cfg, conn, tg = review_env
+    now = promoted(conn, "amazon_promo_quantity.html.gz", price=200_000)
+    coupon_messages.step(conn, cfg, now)
+    assert conn.execute("SELECT COUNT(*) FROM alerts").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("coupon,brand,expected", [
+    (Coupon(kind="code", title="x", amount=5_000, min_order=20_000), "Chew Chew", "وفر 50 جنيه لما تشتري بـ 200 جنيه أو أكتر من Chew Chew"),
+    (Coupon(kind="multibuy", title="Buy 2 get 1 free"), "Braes", "3 بسعر 2 على منتجات Braes"),
+    (Coupon(kind="multibuy", title="احصل على 3 بسعر 2"), "Braes", "3 بسعر 2 على منتجات Braes"),
+    (Coupon(kind="multibuy", title="x", percent=0.05, cap=5_000, min_quantity=5), None, "اشتري 5 ووفر 5%، بحد أقصى 50 جنيه"),
+    (Coupon(kind="multibuy", title="x", percent=0.15, min_quantity=2), None, "اشتري 2 ووفر 15%"),
+    (Coupon(kind="multibuy", title="x", percent=0.5, min_quantity=2), None, "2 بسعر 1"),
+    (Coupon(kind="code", title="x", amount=30_000), None, "خصم 300 جنيه"),
+    (Coupon(kind="code", title="x", percent=0.1, cap=5_000), None, "خصم 10% بحد أقصى 50 جنيه"),
+    (Coupon(kind="code", title="Use code <WF500>", code="WF500"), None, "Use code &lt;WF500&gt;"),
+])
+def test_headlines(coupon, brand, expected):
+    assert coupons.headline(coupon, brand) == expected
+
+
+def test_the_brand_is_named_only_when_most_products_share_it():
+    assert coupon_messages._brand(["TRESemmé A", "tresemmé B", "TRESemmé C", "Other D"]) == "TRESemmé"
+    assert coupon_messages._brand(["Dove A", "Lux B", "Pert C"]) is None
+
+
+def test_a_promotion_id_is_never_shown_as_a_code():
+    line = coupons.line(Coupon(kind="code", title="Buy 400 get 75", code="A1GDS", amount=7_500, min_order=40_000, typed=False), 50_000)
+    assert "A1GDS" not in line and "425" in line
+
+
+def test_the_post_uses_its_screenshot_and_goes_as_text_without_one(review_env):
+    cfg, conn, tg = review_env
+    now = promoted(conn)
+    coupon_messages.step(conn, cfg, now)
+    alert_id = conn.execute("SELECT id FROM alerts WHERE kind = 'coupon'").fetchone()["id"]
+    sender_round(cfg, conn, tg)
+    press(conn, cfg, tg, f"rv_ok:{alert_id}")
+    sender_round(cfg, conn, tg)  # no worker can take one here
+    assert tg.to(CHANNEL)[0]["buttons"][0][0]["url"] == PROMO.group_url and not tg.photos
+    conn.execute("UPDATE reviews SET status = 'approved', attempts = 0 WHERE alert_id = ?", (alert_id,))
+    conn.execute("INSERT OR REPLACE INTO shots (alert_id, site, url, status, created_at, wait_until, file_id) VALUES (?, 'amazon_eg', 'u', 'ok', ?, ?, 'FILE')",
+                 (alert_id, iso(now), iso(now)))
+    sender_round(cfg, conn, tg)
+    assert tg.photos[0]["photo"] == "FILE" and "وفر 75" in tg.photos[0]["caption"]
+
+
+def test_a_worker_is_asked_to_read_only_if_it_says_it_can(cfg):
+    from fastapi.testclient import TestClient
+    from deals.coordinator import create_app
+    with TestClient(create_app(cfg, background=False)) as c:
+        c.conn = c.app.state.conn
+        plan_amazon(c)
+        promo = {"kind": "promo", "title": "", "code": "PROMO1", "typed": False, "group_url": "https://www.amazon.eg/-/ar/promotion/psp/PROMO1"}
+        job = lease(c)
+        old = c.post(f"/api/jobs/{job['id']}/page", headers=W1, json={
+            "lease_token": job["lease_token"], "page": 1, "listings": [listing("A1", coupon=promo)]}).json()
+        assert "promotion" not in old
+        new = c.post(f"/api/jobs/{job['id']}/page", headers=W1, json={
+            "lease_token": job["lease_token"], "page": 2, "listings": [], "reads_promotions": True}).json()
+        assert new["promotion"]["code"] == "PROMO1"
+        r = c.post("/api/coupons/facts", headers=W1, json={
+            "site": "amazon_eg", "code": "PROMO1", "status": "ok", "title": "Buy 400 get 75", "min_amount": 400, "benefit_amount": 75, "benefit_cap": 75})
+        assert r.json()["ok"]
+        row = c.conn.execute("SELECT * FROM coupons WHERE code = 'PROMO1'").fetchone()
+        assert (row["amount"], row["min_order"], row["cap"], row["kind"]) == (7_500, 40_000, None, "code") and row["read_at"]
+
+
+def test_the_worker_reads_a_promotion_and_reports_what_it_found():
+    from deals.worker import Worker
+    calls = []
+    fake = SimpleNamespace(api=SimpleNamespace(call=lambda path, body: calls.append((path, body))),
+                           site=lambda name: SimpleNamespace(fetch_promotion=lambda url: {"title": "t", "schedule": ""}))
+    Worker.read_promotion(fake, {"site": "amazon_eg", "code": "P", "url": "u"})
+    assert calls == [("/api/coupons/facts", {"site": "amazon_eg", "code": "P", "status": "ok", "title": "t", "schedule": ""})]
+    fake.site = lambda name: SimpleNamespace(fetch_promotion=lambda url: None)
+    Worker.read_promotion(fake, {"site": "amazon_eg", "code": "P", "url": "u"})
+    assert calls[-1][1]["status"] == "gone"
+
+
+def test_screenshots_pick_the_right_page_spec():
+    assert shots.spec_for("amazon_eg", PROMO.group_url) is shots.AMAZON_PROMOTION
+    assert shots.spec_for("amazon_eg", "https://www.amazon.eg/-/en/dp/B0") is shots.SPECS["amazon_eg"]
+    assert shots.spec_for("noon_eg", "https://www.noon.com/egypt-en/eg-nov26-mobile-300/") is shots.NOON_COUPON_PAGE
+    assert shots.spec_for("noon_eg", "https://www.noon.com/egypt-en/x/N1/p/") is shots.SPECS["noon_eg"]
 
 
 # --- looking them up

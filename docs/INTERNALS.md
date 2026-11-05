@@ -46,8 +46,8 @@ owns one job.
 | `sites/amazon_now_eg.py` | 35 | Amazon Now: amazon_eg's search pages with the Amazon Now root node `211761638031` in front of every query (without it a node lists the regular offers), product links to the Now offer, no `deals:` feed; 0 results for the whole store raises `Blocked` (delivery location not served) | amazon_eg |
 | `sites/base.py` | 35 | The `Site` interface every shop implements; money and count parsing | models |
 | `planner.py` | 93 | Splitting a root into slices under the shop's limit, by price ranges only | models |
-| `coupons.py` | 122 | Reading a shop's coupon text into a `Coupon`, and the lines that say one in a message; no I/O ([COUPONS.md](COUPONS.md)) | models |
-| `coupon_messages.py` | 137 | One message per coupon covering many products, decided every 5 minutes in the Watchdog | alerts, publish, coupons |
+| `coupons.py` | 212 | Reading a shop's coupon text into a `Coupon`, and the lines that say one in a message; no I/O ([COUPONS.md](COUPONS.md)) | models |
+| `coupon_messages.py` | 213 | One post per coupon covering many products, decided every 5 minutes in the Watchdog; which Amazon promotion to read next and what it said | alerts, publish, coupons, shotq |
 | `db.py` | 349 | Schema and migrations; `record()` (upsert a product, append history on change); backups | models |
 | `scheduler.py` | 331 | The job queue: leases, intervals, blocks, failures, worker bookkeeping, events | db, planner |
 | `shop_rules.py` | 344 | Every shop's known misbehaviour in one list (`RULES`, see [SHOP_RULES.md](SHOP_RULES.md)): `clean()` turns placeholder prices (Jumia's 100,000 and 50,000 EGP) into "no price" for every listing, `stops()` names the deals that must not be sent (a reference that is a placeholder or doubtful, like Jumia's 10,000; any new-listing claim on a `no_claim_alerts` shop, noon), `clean_history()` applies the placeholders to what is stored (at every start), `hit()` and `summary()` count what each rule caught for the web UI | models |
@@ -187,6 +187,7 @@ many have run, and `db.connect()` runs the missing ones in a transaction on star
 | 22 | `reviews` (the admins' decision on each deal and what went to the public channel) |
 | 23 | `shop_settings`, `device_shops` (what the admins switched per shop and per device from the web UI) |
 | 24 | `products.coupon_*`, `coupons`, `alerts.coupon_id` (the coupon a product shows now, the codes seen on a shop; [COUPONS.md](COUPONS.md)) |
+| 25 | `coupons.cap`, `min_order`, `min_quantity`, `typed`, `starts_at`, `ends_at`, `read_at`, `read_tried_at`; `products.coupon_min_quantity`, `coupon_typed` (Amazon's promotions) |
 
 **Tables and columns** (prices are integer piastres; times are UTC ISO text, which sorts correctly as text):
 
@@ -266,6 +267,7 @@ without a login; changes still need an admin.
 | `POST /api/settings/shops/{site}/devices/{worker}` | admin | `{on}` | `{ok}`; 404 unknown device, 409 the shop isn't in that device's `DEALS_SITES` (add it on the device first), 422 unknown shop |
 | `POST /api/subscribers/{chat_id}/{action}` | admin | | `approve`, `reject`, `remove`, `promote`, `demote` (as the bot's buttons; tells the person on Telegram). 403 for other tokens, 409 if already decided |
 | `GET /api/coupons?site=&code=&limit=` | viewer | | codes seen on the shops; with `site` and `code`, also that code's in-stock products |
+| `POST /api/coupons/facts` | worker | `{site, code, status, title, schedule, min_quantity, min_amount, benefit_amount, benefit_percent, benefit_cap, reason}` | what a worker read from a promotion's page. A page upload with `reads_promotions` can get `promotion: {site, code, url}` back |
 | `GET /api/products/{id}/alert?note=`, `POST /api/products/{id}/alert` | admin | `{note}` | an alert by hand (alerts.manual_alert): the preview (`price`, `reference`, `drop`, `saving`, `basis` = history, shop_claim or none, stats, `confidence`, `rules` = what the automatic rules would send, `stopped_by`, `repeat`, `past_alerts`, `last_alert`, `seen_hours`, `recipients`, `message`); the POST sends it and adds `alert_id`. 404 unknown product, 409 sold out, no price, or a manual alert for it in the last 10 minutes |
 | `POST /api/report` | admin | | queue the daily report to the admins now |
 | `GET /api/uptime?days=&kind=&name=&limit=` | admin | | `{status: [...], outages: [...], changes: [...]}` (uptime.py) |

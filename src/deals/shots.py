@@ -30,6 +30,9 @@ class Spec:
     settle: float = 0  # seconds more for a page that redraws itself after that (Etisal's Angular hydration)
     locale: str = "ar-EG"
     arabic: tuple[str, str] | None = None  # (English part, Arabic part) of the URL, replaced once
+    # A coupon's page rather than a product: no red boxes, just this many CSS pixels of the page from the first box down.
+    plain_height: float = 0
+    plain_above: float = 0  # ... and this much above it
 
     def page_url(self, url: str) -> str:
         return url.replace(*self.arabic, 1) if self.arabic else url
@@ -199,6 +202,22 @@ IDLE_CLOSE = 300  # seconds without a screenshot before the browser is closed (m
 Rect = tuple[float, float, float, float]  # x, y, width, height in CSS pixels of the page
 
 
+# A coupon's page of products (coupon_messages.py): its banner and the first row. The products load by script.
+AMAZON_PROMOTION = Spec(boxes=(("#topBannerContainer", "#promotionTitle"),), hide=("#sp-cc",), ready="#productInfoList [data-asin]", settle=3,
+                        plain_height=MAX_HEIGHT)
+NOON_COUPON_PAGE = Spec(boxes=(('a[href*="/p/"]',),), ready='a[href*="/p/"]', settle=10, plain_height=MAX_HEIGHT, plain_above=130,
+                        arabic=("/egypt-en/", "/egypt-ar/"))
+
+
+def spec_for(site: str, url: str) -> Spec | None:
+    """How to photograph this page: a shop's product pages have a spec, its coupon pages another."""
+    if site in ("amazon_eg", "amazon_now_eg") and "/promotion/psp/" in url:
+        return AMAZON_PROMOTION
+    if site == "noon_eg" and not url.rstrip("/").endswith("/p"):
+        return NOON_COUPON_PAGE
+    return SPECS.get(site)
+
+
 def union(rects: list[Rect]) -> Rect:
     x0, y0 = min(r[0] for r in rects), min(r[1] for r in rects)
     x1, y1 = max(r[0] + r[2] for r in rects), max(r[1] + r[3] for r in rects)
@@ -274,6 +293,11 @@ def annotate(page, spec: Spec) -> bytes | None:
     found =[_rect(page, alternatives) for alternatives in spec.boxes]
     if found[0] is None:
         return None
+    if spec.plain_height:
+        y = max(0.0, found[0][1] - spec.plain_above)
+        width = page.evaluate("document.documentElement.scrollWidth")
+        return page.screenshot(type="jpeg", quality=QUALITY, full_page=True,
+                               clip={"x": 0, "y": round(y), "width": width, "height": spec.plain_height})
     boxes = [r for r in found if r is not None]
     framed = [(x - PAD, y - PAD, w + 2 * PAD, h + 2 * PAD) for x, y, w, h in boxes]
     page.evaluate(_DRAW, [list(r) for r in framed])
@@ -323,7 +347,7 @@ class Shooter(threading.Thread):
             self._close()
 
     def _take(self, shot: dict) -> None:
-        spec = SPECS.get(shot["site"])
+        spec = spec_for(shot["site"], shot["url"])
         if spec is None:
             self.report(shot["alert_id"], None, f"no screenshot spec for {shot['site']}")
             return

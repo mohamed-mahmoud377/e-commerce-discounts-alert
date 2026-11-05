@@ -60,6 +60,7 @@ Facts that shaped the crawler:
   would record junk. The parser now flags a page with cards but no result bar (`PageResult.decoy`) and
   the site raises `Blocked`, which pauses that IP on Amazon like a challenge. Lesson: don't run ad-hoc
   Amazon fetches from a machine that runs a worker.
+- **Promotions.** Search cards name the promotion they are in, and `/-/ar/promotion/psp/<id>` shows it: docs/COUPONS.md.
 - **Deals refinement (fast lane, 27 Oct 2026).** The search sidebar's "Deals & Discounts" facet is
   `p_n_deal_type` (facet id 26901034031): `26901036031` = All discounts, `26901035031` = Today's / limited-time
   deals (tiny: 1 phone, 3 overall when checked). Any extra refinement can be written straight into the

@@ -348,7 +348,7 @@ def cmd_coupons(args) -> None:
     conn = db.connect(_config(args).db_path)
     if args.find:
         rows = conn.execute("""SELECT site, sku, title, price, coupon_kind, coupon_code, coupon_title, coupon_amount, coupon_percent,
-                                      coupon_cap, coupon_min_order, coupon_detail, coupon_url FROM products
+                                      coupon_cap, coupon_min_order, coupon_detail, coupon_url, coupon_min_quantity, coupon_typed FROM products
                                WHERE coupon_kind IS NOT NULL AND (sku = ? OR title LIKE ?) ORDER BY site, price LIMIT ?""",
                             (args.find, f"%{args.find}%", args.limit)).fetchall()
         for r in rows:

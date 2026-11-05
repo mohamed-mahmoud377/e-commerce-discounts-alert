@@ -583,6 +583,19 @@ MIGRATIONS = [
     CREATE INDEX coupons_state ON coupons (state, first_seen_at);
     ALTER TABLE alerts ADD COLUMN coupon_id INTEGER REFERENCES coupons(id);
     """,
+    # Amazon's promotions: no code to type, and their numbers come from reading each one's page once.
+    """
+    ALTER TABLE products ADD COLUMN coupon_min_quantity INTEGER;
+    ALTER TABLE products ADD COLUMN coupon_typed INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE coupons ADD COLUMN cap INTEGER;
+    ALTER TABLE coupons ADD COLUMN min_order INTEGER;
+    ALTER TABLE coupons ADD COLUMN min_quantity INTEGER;
+    ALTER TABLE coupons ADD COLUMN typed INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE coupons ADD COLUMN starts_at TEXT;       -- YYYY-MM-DD, as the page gives them
+    ALTER TABLE coupons ADD COLUMN ends_at TEXT;
+    ALTER TABLE coupons ADD COLUMN read_at TEXT;         -- its page was read
+    ALTER TABLE coupons ADD COLUMN read_tried_at TEXT;   -- a worker was last asked to read it
+    """,
 ]
 
 # Price moves smaller than this are noise (amazon.eg prices creep by a piastre per
@@ -647,7 +660,8 @@ def record(conn: sqlite3.Connection, listing: Listing, grp: str | None = None,
     now_s = iso(now or utcnow())
     row = conn.execute(
         """SELECT id, price, list_price, in_stock, grp, coupon_kind, coupon_code, coupon_title, coupon_detail, coupon_amount,
-                  coupon_percent, coupon_cap, coupon_min_order, coupon_url FROM products WHERE site = ? AND sku = ?""",
+                  coupon_percent, coupon_cap, coupon_min_order, coupon_url, coupon_min_quantity, coupon_typed
+           FROM products WHERE site = ? AND sku = ?""",
         (listing.site, listing.sku),
     ).fetchone()
     details = (listing.title, listing.url, listing.price, listing.list_price, listing.in_stock,
@@ -700,18 +714,20 @@ def _record_coupon(conn: sqlite3.Connection, listing: Listing, product_id: int, 
     Never lets an error reach the caller: a coupon must not cost a price update."""
     if listing.coupon_unknown:  # an older worker can't read coupons: its silence means nothing
         return False
-    new = listing.coupon
     old = coupons.from_row(row) if row is not None else None
     try:
         conn.execute("SAVEPOINT coupon")
+        seen = listing.coupon
+        new = _read_promotion(conn, listing.site, seen)
         if new != old:
             values = (new.kind, new.code, new.title, new.detail, new.amount, new.percent, new.cap, new.min_order,
-                      new.group_url, now_s) if new else (None,) * 10
+                      new.group_url, new.min_quantity, int(new.typed), now_s) if new else (None,) * 9 + (None, 1, None)
             conn.execute("""UPDATE products SET coupon_kind = ?, coupon_code = ?, coupon_title = ?, coupon_detail = ?,
                                                 coupon_amount = ?, coupon_percent = ?, coupon_cap = ?, coupon_min_order = ?,
-                                                coupon_url = ?, coupon_seen_at = ? WHERE id = ?""", (*values, product_id))
-        if new and new.code and new.kind in ("code", "multibuy"):
-            _note_code(conn, listing.site, new, now_s)
+                                                coupon_url = ?, coupon_min_quantity = ?, coupon_typed = ?, coupon_seen_at = ?
+                            WHERE id = ?""", (*values, product_id))
+        if seen and seen.code and seen.kind in ("code", "multibuy", "promo"):
+            _note_code(conn, listing.site, seen, now_s)
         conn.execute("RELEASE coupon")
     except sqlite3.Error:
         conn.execute("ROLLBACK TO coupon")
@@ -722,20 +738,33 @@ def _record_coupon(conn: sqlite3.Connection, listing: Listing, product_id: int, 
     return bool(off) and off > (old.saving(listing.price) or 0 if old else 0)
 
 
+def _read_promotion(conn: sqlite3.Connection, site: str, c: Coupon | None) -> Coupon | None:
+    """An Amazon promotion as its page said, once read; a card alone only knows its id (coupon_messages.record_promotion)."""
+    if c is None or c.kind != "promo":
+        return c
+    r = conn.execute("SELECT * FROM coupons WHERE site = ? AND code = ? AND read_at IS NOT NULL", (site, c.code)).fetchone()
+    if r is None or r["kind"] == "promo":
+        return c
+    return Coupon(kind=r["kind"], title=r["title"], code=c.code, amount=r["amount"], percent=r["percent"], cap=r["cap"],
+                  min_order=r["min_order"], group_url=c.group_url, min_quantity=r["min_quantity"], typed=False)
+
+
 def _note_code(conn: sqlite3.Connection, site: str, c: Coupon, now_s: str) -> None:
-    """One row per code on a shop. A code back after COUPON_GONE_DAYS, or now worth more, is news again."""
+    """One row per code on a shop. A code back after COUPON_GONE_DAYS, or now worth more, is news again:
+    an Amazon promotion is then read again too, since all a card shows is its id."""
     row = conn.execute("SELECT id, amount, percent, last_seen_at FROM coupons WHERE site = ? AND code = ?",
                        (site, c.code)).fetchone()
     if row is None:
-        conn.execute("""INSERT INTO coupons (site, code, kind, title, amount, percent, group_url, first_seen_at, last_seen_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                     (site, c.code, c.kind, c.title, c.amount, c.percent, c.group_url, now_s, now_s))
+        conn.execute("""INSERT INTO coupons (site, code, kind, title, amount, percent, group_url, first_seen_at, last_seen_at, typed)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                     (site, c.code, c.kind, c.title, c.amount, c.percent, c.group_url, now_s, now_s, int(c.typed)))
         return
     came_back = parse_iso(row["last_seen_at"]) < parse_iso(now_s) - timedelta(days=COUPON_GONE_DAYS)
-    grew = (c.amount or 0) > (row["amount"] or 0) or (c.percent or 0) > (row["percent"] or 0)
+    grew = c.kind != "promo" and ((c.amount or 0) > (row["amount"] or 0) or (c.percent or 0) > (row["percent"] or 0))
     if came_back or grew:
         conn.execute("""UPDATE coupons SET kind = ?, title = ?, amount = ?, percent = ?, group_url = ?, first_seen_at = ?,
-                                           last_seen_at = ?, state = 'new', decided_at = NULL WHERE id = ?""",
+                                           last_seen_at = ?, state = 'new', decided_at = NULL, read_at = NULL,
+                                           read_tried_at = NULL WHERE id = ?""",
                      (c.kind, c.title, c.amount, c.percent, c.group_url, now_s, now_s, row["id"]))
     else:
         conn.execute("UPDATE coupons SET last_seen_at = ? WHERE id = ?", (now_s, row["id"]))

@@ -865,6 +865,8 @@ seller on noon, the confidence and the score. Product names stay as the shop wri
 
 ### Alert screenshots
 
+A coupon post (docs/COUPONS.md) has one too, of the shop's page of the coupon's products: no red boxes, just the banner and the first row (`shots.spec_for`).
+
 Under review nothing waits for the screenshot and it is kept on disk until the deal is decided
 ([PUBLISHING.md](PUBLISHING.md), "The screenshot"). The rest of this section holds for both.
 

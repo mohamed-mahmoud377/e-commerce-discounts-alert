@@ -193,5 +193,5 @@ review all of them to start: `review.min_score` is the floor if that gets too mu
 ## Coupons
 
 A product alert shows its coupon on the card and in the post. Two more kinds of message can come through this same review, both off until
-switched on: `coupon_drop`, posted at the price after the coupon, and `coupon`, one message about a code with no single product (its
-card is the message itself; a button links to all its products). Approve checks the coupon is still there. See [COUPONS.md](COUPONS.md).
+switched on: `coupon_drop`, posted at the price after the coupon, and `coupon`, one post about a code with no single product: a screenshot of the shop's page of its
+products, one line and a button to that page (its card is the post's text). Approve checks the coupon has not ended and products still show it. See [COUPONS.md](COUPONS.md).
