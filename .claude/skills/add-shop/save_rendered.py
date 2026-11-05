@@ -18,7 +18,10 @@ def main() -> None:
     spec = shots.SPECS[site]
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True, channel="chromium")  # as shots.Shooter does
-        page = browser.new_context(locale=spec.locale, viewport=shots.VIEWPORT).new_page()
+        probe = browser.new_page()  # also its user agent: Cloudflare and noon's wall refuse "HeadlessChrome"
+        agent = probe.evaluate("navigator.userAgent").replace("HeadlessChrome", "Chrome")
+        probe.close()
+        page = browser.new_context(locale=spec.locale, viewport=shots.VIEWPORT, user_agent=agent).new_page()
         page.goto(spec.page_url(url), wait_until="commit", timeout=30000)
         page.wait_for_selector(spec.ready, state="visible", timeout=30000)
         page.wait_for_timeout(3000)  # hydration brings the Arabic labels and the images

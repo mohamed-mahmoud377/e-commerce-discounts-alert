@@ -123,6 +123,15 @@ SPECS: dict[str, Spec] = {
     "orange_eg": Spec(boxes=(("div:has(> div > span.product-price-current)", "span.product-price-current"),),
                       context=("h1", ".gallery-slide img"),
                       ready="span.product-price-current", arabic=("/en/", "/ar/")),
+    # React. Arabic has no prefix, and the English slug redirects to the Arabic one. The price block is the crossed-out
+    # price, "-25%" and the sale price, which the shop words as "price in cart".
+    "lcwaikiki_eg": Spec(boxes=(("div.product-detail__price",),),
+                         context=("h1.product-detail__title", "img.main-image"),
+                         ready="div.product-detail__price", arabic=("lcwaikiki.eg/en/", "lcwaikiki.eg/")),
+    # Server-rendered. Arabic has no prefix. Product cards further down use other classes for their prices.
+    "defacto_eg": Spec(boxes=(("div.product-detail__price",),),
+                       context=("h1.product-detail__info-header-title", "div.product-first-media img"),
+                       ready="div.product-detail__price", arabic=("defacto.com.eg/en-eg/", "defacto.com.eg/")),
 }
 
 VIEWPORT = {"width": 1280, "height": 1000}  # the desktop layout, like the shop's own page on a computer

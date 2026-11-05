@@ -135,6 +135,14 @@ max_delay = 4.0
 min_delay = 2.0
 max_delay = 4.0
 
+[sites.lcwaikiki_eg]  # catalogue JSON in its category pages (100 products, ~2 MB a page); home connections only (Cloudflare)
+min_delay = 3.0
+max_delay = 5.0
+
+[sites.defacto_eg]  # catalogue JSON on the product cards (24 a page, ~300 KB); Chrome's fingerprint passes Akamai, droplet too
+min_delay = 2.0
+max_delay = 4.0
+
 # ---------------------------------------------------------------------------
 # What to track. Each [[watch]] is a product group with one root per site:
 #   amazon_eg = "category:<browse node id>"
@@ -150,7 +158,9 @@ max_delay = 4.0
 #   vodafone_eg = "category:<url name>"  (e.g. smart-phones, tv; docs/VODAFONE.md)
 #   dokkantech_eg = "category:<handle>"  (the Shopify collection handle, e.g. mouse; docs/DOKKANTECH.md)
 #   etisal_eg = "category:<id>" or "category:s<sub-category id>"  (e.g. 1081, s1382; docs/ETISAL.md)
-#   orange_eg = "category:<url name>"  (e.g. smart-phones, headphones-earbuds; docs/ORANGE.md)
+#   orange_eg = "category:<url name>"  (e.g. smart-tvs, headphones-earbuds; docs/ORANGE.md)
+#   lcwaikiki_eg = "category:<page name>"  (e.g. women-clothing-t-10; Mac only; docs/LCWAIKIKI.md)
+#   defacto_eg = "category:<page name>"  (e.g. woman-discount; docs/DEFACTO.md)
 #   hardwaremarket_eg = "category:<id>"  (WooCommerce id or slug, e.g. 39 = Headsets; "deals:<id>" = its 50 most
 #                       recently modified products, a fast lane; Mac only; docs/HARDWAREMARKET.md)
 #   amazon_now_eg = "category:<browse node id>"  (amazon.eg node; the Amazon Now root 211761638031 is added to every
@@ -848,3 +858,15 @@ interval_minutes = 30
 max_interval_minutes = 60
 min_price = 50
 amazon_now_eg = "category:211761638031"
+
+# Clothes (from 5 Nov 2026). Whole seasons go on sale at once, so this group asks for a bigger drop, and its crawl is
+# slower: nothing here sells out in minutes. docs/LCWAIKIKI.md, docs/DEFACTO.md.
+[[watch]]
+name = "Fashion"
+label = "ملابس وأزياء"
+interval_minutes = 120
+max_interval_minutes = 180
+min_price = 500
+min_drop = 0.35
+lcwaikiki_eg = ["category:women-clothing-t-10", "category:men-clothing-t-9", "category:girls-clothing-t-100046", "category:boys-clothing-t-200046", "category:femei-incaltaminte-t-33"]
+defacto_eg = ["category:woman-discount", "category:woman-new-season", "category:man-discount", "category:man-new-season", "category:kids-discount"]

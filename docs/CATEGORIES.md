@@ -336,6 +336,14 @@ From `/api/customer/home/categories`: Mobiles & Tablets `1081`, Mobile Accessori
 
 From `/en/sitemap.xml`, with ids from `GetCategoryDetails`: `smart-phones` 1033, `accessories` 1034 (`chargers-cables` 1058, `power-banks` 1062, `headphones-earbuds` 1059, `speakers` 1063, `wearables` 1065, `gaming-accessories` 1066), `home-appliances` 1042 (`small-appliances` 1075, `large-appliances` 1076), `smart-tvs` 1039, `laptops` 1038, `tablets` 1037, `gaming-world` 1041 (`consoles` 1073, `games` 1074), `computer-supplies` 1035 (`monitors` 1069, `mouse` 1077, `printers` 1070), `special-offers` 1086 (really air conditioners), `renewed-devices` 1036, `black-friday` 1085. Details: [ORANGE.md](ORANGE.md).
 
+## lcwaikiki.eg category names
+
+The URL's last part, keeping its `-t-<id>`: `women-clothing-t-10`, `men-clothing-t-9`, `girls-clothing-t-100046`, `boys-clothing-t-200046`, `baby-girls-clothing-t-100045`, `baby-boys-clothing-t-200045`, `femei-incaltaminte-t-33` (women's shoes), `women-accessories-t-26`, `men-accessories-t-25`, `women-dresses-t-149`. Every one: `GET /en/ajax/Home/GetMenuData?platformId=1`. Details: [LCWAIKIKI.md](LCWAIKIKI.md).
+
+## defacto.com.eg category names
+
+Collections: `woman-discount`, `woman-new-season`, `woman-modest`, `man-discount`, `man-new-season`, `kids-discount`. Leaves: `woman-dress`, `man-t-shirt`, `boys-teens-jacket`...: `/sharedxml/en-eg/category.xml` lists 168, with a Chrome fingerprint. Details: [DEFACTO.md](DEFACTO.md).
+
 ## Amazon Now browse nodes
 
 The Amazon Now root is `211761638031`; the adapter puts it in front of every query, so the children are ordinary

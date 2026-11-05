@@ -186,7 +186,7 @@ def test_noon_new_listings_never_alert_from_the_sellers_claim(cfg, conn):
 
 
 def test_raya_and_etisal_claims_and_stock_counts_prove_nothing():
-    for site in ("raya_eg", "etisal_eg"):
+    for site in ("raya_eg", "etisal_eg", "lcwaikiki_eg", "defacto_eg"):
         assert shop_rules.rules_for(site, "no_claim_alerts"), site
         assert shop_rules.low_stock_is_noise(site), site
     assert not shop_rules.rules_for("orange_eg", "no_claim_alerts")  # 17% crossed out: nothing to distrust yet

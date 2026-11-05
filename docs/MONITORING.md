@@ -167,6 +167,10 @@ Lines worth reacting to:
 | `etisal_eg: no guest token` | `home/initialize` changed | [ETISAL.md](ETISAL.md) |
 | `blocked: orange_eg: HTTP ... asking for a guest token` | `Auth/token` refused | [ORANGE.md](ORANGE.md); check with plain curl from the same machine |
 | `Connection closed abruptly` on `orange_eg` | The adapter must use urllib | [ORANGE.md](ORANGE.md) |
+| `blocked: lcwaikiki_eg: HTTP 403` | Cloudflare: expected on any cloud IP | Keep it off cloud workers; [LCWAIKIKI.md](LCWAIKIKI.md) |
+| `lcwaikiki_eg: no catalogModel in the page` | Layout changed | Save a new page; [LCWAIKIKI.md](LCWAIKIKI.md) |
+| `blocked: defacto_eg: HTTP 403` | Akamai | Pauses by itself; slow it down if it repeats; [DEFACTO.md](DEFACTO.md) |
+| `defacto_eg: no product cards and no count` | Layout changed | Save a new page; [DEFACTO.md](DEFACTO.md) |
 | `lease lost` | The device was too slow (over 5 min between pages) and the job went to another device | Fine occasionally |
 
 ## Telegram warnings

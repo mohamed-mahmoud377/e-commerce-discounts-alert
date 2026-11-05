@@ -1049,3 +1049,81 @@ def test_orange_empty_unknown_and_block(monkeypatch):
     monkeypatch.setattr(site, "_http", lambda *a, **k: (200, {"Data": {}}))
     with pytest.raises(Blocked):  # no token: refused
         site.fetch_page(Slice("category", "x"), 1)
+
+
+def test_lcwaikiki_listing():
+    from deals.sites.lcwaikiki_eg import page_url, parse_listing
+    result = parse_listing(fixture_text("lcwaikiki_shoes.html.gz"))
+    assert result.total == 169 and result.has_next and len(result.listings) == 100
+    by_sku = {x.sku: x for x in result.listings}
+    # the sale price is in CampaignBadges, not DiscountedPriceValue (always 0)
+    sale = by_sku["5451025"]
+    assert (sale.title, sale.price, sale.list_price, sale.list_price_kind, sale.in_stock, sale.brand) == (
+        "Suede Look Women's Sport Shoe", 79900, 99900, "list", True, "LCW STEPS")
+    assert sale.url == "https://www.lcwaikiki.eg/en/suede-look-womens-sport-shoe-white-o-5451025"
+    assert (by_sku["5206072"].price, by_sku["5206072"].list_price) == (249900, None)
+    assert page_url(Slice("category", "women-clothing-t-10", 500, 900), 3) == (
+        "https://www.lcwaikiki.eg/en/women-clothing-t-10?MinPrice=500&PageIndex=3")  # MaxPrice doesn't hold
+
+
+def test_lcwaikiki_empty_result_is_not_its_52_filler_products():
+    from deals.sites.lcwaikiki_eg import parse_listing
+    result = parse_listing(fixture_text("lcwaikiki_empty.html.gz"))
+    assert (result.total, result.listings, result.has_next) == (0, [], False)
+    with pytest.raises(ValueError, match="layout changed"):
+        parse_listing("<html>a challenge page</html>")
+
+
+def test_lcwaikiki_unknown_and_block(monkeypatch):
+    from deals.models import Blocked, UnknownTarget
+    from deals.sites.lcwaikiki_eg import LcWaikikiEG
+    site = LcWaikikiEG()
+    answers = [_response(404, {}), _response(403, {})]
+    monkeypatch.setattr(site._session, "get", lambda *a, **k: answers.pop(0))
+    with pytest.raises(UnknownTarget):
+        site.fetch_page(Slice("category", "nope-t-1"), 1)
+    with pytest.raises(Blocked):
+        site.fetch_page(Slice("category", "women-clothing-t-10"), 1)
+    with pytest.raises(UnknownTarget):
+        site.fetch_page(Slice("search", "dress"), 1)
+
+
+def test_defacto_listing():
+    from deals.sites.defacto_eg import page_url, parse_listing
+    result = parse_listing(fixture_text("defacto_woman_discount.html.gz"))
+    assert result.total == 5328 and result.has_next and len(result.listings) == 23  # 24 cards, one a promotion
+    by_sku = {x.sku: x for x in result.listings}
+    assert "9000213" not in by_sku  # "kargobedava", free shipping: no price
+    cardigan = by_sku["3566797"]  # 999, "November - Net %20 Discount" 799.20
+    assert (cardigan.title, cardigan.price, cardigan.list_price, cardigan.list_price_kind, cardigan.in_stock) == (
+        "Slim Fit V-Neck Knitwear Cardigan", 79920, 99900, "list", True)
+    assert cardigan.url == "https://www.defacto.com.eg/en-eg/fitted-v-yaka-triko-hirka-3566797"
+    belts = parse_listing(fixture_text("defacto_man_belts.html.gz"))
+    assert belts.total == 44
+    assert (lambda x: (x.price, x.list_price, x.stock_left))({b.sku: b for b in belts.listings}["3559868"]) == (39900, None, 3)
+    # the filter needs both ends, and page=1 next to it finds nothing
+    assert page_url(Slice("category", "woman-dress", 500, None), 1) == (
+        "https://www.defacto.com.eg/en-eg/woman-dress?filter=price:500-99999")
+    assert page_url(Slice("category", "woman-dress", 500, 900), 2).endswith("?filter=price:500-900&page=2")
+    assert page_url(Slice("category", "woman-dress"), 3).endswith("/woman-dress?page=3")
+
+
+def test_defacto_paging_ends_and_refusals(monkeypatch):
+    from deals.models import Blocked, UnknownTarget
+    from deals.sites.defacto_eg import DeFactoEG, parse_listing
+    # a page past the end: no cards, no count; an empty range: count 0
+    past = parse_listing("<div class=catalog-products></div>")
+    assert (past.listings, past.has_next, past.total) == ([], False, None)
+    empty = parse_listing("<input id=totalCount type=hidden value=0><div class=catalog-products></div>")
+    assert (empty.listings, empty.has_next, empty.total) == ([], False, 0)
+    with pytest.raises(ValueError, match="layout changed"):
+        parse_listing("<html>nothing</html>")
+    site = DeFactoEG()
+    answers = [_response(404, {}), _response(403, {})]
+    monkeypatch.setattr(site._session, "get", lambda *a, **k: answers.pop(0))
+    with pytest.raises(UnknownTarget):
+        site.fetch_page(Slice("category", "nope"), 1)
+    with pytest.raises(Blocked):
+        site.fetch_page(Slice("category", "woman-dress"), 1)
+    with pytest.raises(UnknownTarget):
+        site.fetch_page(Slice("search", "dress"), 1)

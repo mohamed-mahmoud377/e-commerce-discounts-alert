@@ -7,7 +7,7 @@ everything else it needs (adapter, screenshot spec, parser fixture, doc, config 
 from dataclasses import dataclass
 
 # Kinds, in the order the web UI groups shops.
-KINDS = {"marketplace": "Marketplaces", "electronics": "Electronics shops", "grocery": "Supermarkets"}
+KINDS = {"marketplace": "Marketplaces", "electronics": "Electronics shops", "grocery": "Supermarkets", "fashion": "Fashion"}
 
 
 @dataclass(frozen=True)
@@ -92,6 +92,12 @@ SHOPS: dict[str, Shop] = {s.name: s for s in (
     Shop("orange_eg", "Orange", "أورنج", "OR", "electronics", "https://eshop.orange.eg", False, "ORANGE.md",
          (("Accessories", "accessories"), ("Home Appliances", "home-appliances"), ("Smart TVs", "smart-tvs"),
           ("Computer Supplies", "computer-supplies"), ("Smart Phones (not watched, several prices)", "smart-phones"))),
+    Shop("lcwaikiki_eg", "LC Waikiki", "إل سي وايكيكي", "LCW", "fashion", "https://www.lcwaikiki.eg", True, "LCWAIKIKI.md",
+         (("Women", "women-clothing-t-10"), ("Men", "men-clothing-t-9"), ("Girls", "girls-clothing-t-100046"),
+          ("Boys", "boys-clothing-t-200046"), ("Women's shoes", "femei-incaltaminte-t-33"))),
+    Shop("defacto_eg", "DeFacto", "ديفاكتو", "DF", "fashion", "https://www.defacto.com.eg", False, "DEFACTO.md",
+         (("Women on sale", "woman-discount"), ("Women new season", "woman-new-season"), ("Men on sale", "man-discount"),
+          ("Kids on sale", "kids-discount"), ("Women's dresses", "woman-dress"))),
 )}
 
 

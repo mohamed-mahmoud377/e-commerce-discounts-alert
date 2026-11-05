@@ -7,7 +7,7 @@ description: The complete walkthrough for adding a new shop or store to the deal
 
 Adding a shop is one adapter, one table row, one config block and one doc. **Core code does not change.** The
 real work is learning how the shop behaves, because a wrong assumption about it means false alerts or a blocked
-home IP. Eleven shops were added this way. Their docs in `docs/` are worked examples.
+home IP. Eighteen shops were added this way. Their docs in `docs/` are worked examples.
 
 Work through the stages in order. Each ends in a gate: don't start the next stage until it holds. Everything
 below was checked against the code on 5 Nov 2026 by rehearsing a fake shop. If the code disagrees, trust the code
@@ -191,7 +191,7 @@ values of 2 or 3 real products, the URL builder with its price filter, `Blocked`
 
 Add a row to `SAVED` in `tests/test_shots.py` with text its price box must hold, and the seller's name or `None`. Delete `shot.jpg`
 after looking. A worker with `DEALS_SCREENSHOTS=1` that also crawls the shop takes these (`mac` and `abdelrahman-mac` both do).
-Noon-style bot walls also need `shots.Shooter`'s user agent: `save_rendered.py` doesn't set it.
+`save_rendered.py` uses `shots.Shooter`'s browser and user agent, so a bot wall treats it alike.
 
 **Shop rules.** Use `measure_shop.py`'s numbers from at least 2 categories, and walk a whole slice. Most false alerts have come
 from here (Jumia's placeholders caused 25). Any quirk found becomes a `ShopRule` in `shop_rules.RULES` with real products, the date
@@ -256,16 +256,16 @@ To find every list that must grow:
 
 ```bash
 grep -rnE "Hardware ?Market|hardwaremarket" README.md CLAUDE.md docs .claude/skills/work-on-deals --include='*.md' | grep -v '^docs/HARDWAREMARKET'
-grep -rnE "\b(eleven|11) shops|all eleven" README.md CLAUDE.md docs src
+grep -rnE "\b(eighteen|18) shops|all eighteen" README.md CLAUDE.md docs src
 ```
 
 | File | What |
 |---|---|
 | `docs/<SHOP>.md` | Every scaffold section, with dates and measured numbers |
-| `CLAUDE.md` | The opening list, the doc link, what the droplet crawls if not home-only, "all eleven shops" |
+| `CLAUDE.md` | The opening list, the doc link, what the droplet crawls if not home-only, "all eighteen shops" |
 | `README.md` | Opening list, the diagram's shop lists, the code tree |
 | `docs/GUIDE.md` | Opening list, adapters row, diagram, a paragraph on the shop, the access and signal tables, fast lanes table, screenshot list and table |
-| `docs/INTERNALS.md` | Code map row, worker thread list, delays row, watch keys row, the dates in "Add a shop", "all eleven" on `shots.py` |
+| `docs/INTERNALS.md` | Code map row, worker thread list, delays row, watch keys row, the dates in "Add a shop", "all eighteen" on `shots.py` |
 | `docs/MONITORING.md` | One row per new log line: what it means, what to do |
 | `docs/PRODUCT_FLOW.md` | Step 1's list of card readers |
 | `docs/CATEGORIES.md` | A section with its category ids |
@@ -297,6 +297,7 @@ which stops the whole system. A worker on old code **refuses to start** with an 
    ssh root@207.154.206.127 "/opt/deals/.venv/bin/python -c \"from pathlib import Path; from deals.config import load; print(len(load(Path('/etc/deals/config.toml')).watches), 'watches ok')\""
    ssh root@207.154.206.127 systemctl restart deals-coordinator
    ```
+   **Then check it really started, about 15 s later:** `systemctl is-active deals-coordinator` must say `active` (`activating` means a crash loop) and `curl -fsS http://127.0.0.1:8787/health` must answer. `/etc/deals/config.toml` is `root:deals 640`: the coordinator runs as `deals`, so edit it in place. Never copy its owner from a `cp` backup, which is `root:root`: that took the whole system down for 2 minutes on 5 Nov 2026, and the validation above runs as root, so it doesn't notice.
    At start, `sync_watches` creates a plan job per root. `make health` shows `crawl <shop>` as FAIL until the first slice finishes: expected for
    minutes, a problem if it lasts.
 
@@ -364,4 +365,10 @@ Lessons from Raya, Vodafone, Dokkan Tech, Etisal and Orange (5 Nov 2026), each o
 - **SPA with a hidden API:** load the listing once in Playwright and log `xhr`/`fetch` responses; the request's headers show what the API wants. With introspection off, a Magento API names its fields in its errors ("Cannot query field").
 - **Guest tokens can create a customer at the shop:** look in the JWT (`sub`, `CustomerId`), keep it for the session, and say so in the doc.
 - **Screenshots: look at several, not one.** Etisal failed on 3 of 6 and passed on the others: `Spec.settle` waits out a page that redraws itself after hydration. A frame drawn in the wrong place while the rectangles are right means CSS `zoom` on `<html>` (Vodafone 0.82); `_DRAW` handles it now. Measure repeatedly through `Shooter.shoot`: image sizes that differ between runs of one page show the problem without opening them.
-- **Before asking the user, finish what doesn't depend on the answer.** Fashion shops (no group, `robots.txt` forbids their listing pages) went into `docs/research/fashion-shops.md`, and the other five shipped.
+- **Before asking the user, finish what doesn't depend on the answer.** The two fashion shops needed a `robots.txt` decision and a new group; the other five were ready by then, and the question could go with the request to commit.
+- **Test what an empty answer really is, and what a page past the end is.** LC Waikiki fills an empty result with 52 unrelated products and answers page 1 past its end: without `ProductFound` and `PageCount` these become false products or an endless loop.
+- **A filter can hold at one end only.** LC Waikiki's `MaxPrice` doesn't: check prices in the result, not just the count, at both ends.
+- **Query strings interact.** DeFacto's `filter=...&page=1` finds nothing while `filter=...` and `filter=...&page=2` work. Test page 1 with the exact URL the adapter builds.
+- **The price field may not be the price.** LC Waikiki's sale price is in `CampaignBadges`; `DiscountedPriceValue` is always 0. Always check a product on sale against its page.
+- **`robots.txt` can disallow a path the shop doesn't use.** DeFacto's `/app/` holds few products; its categories are elsewhere. Read the sitemap before reporting what is forbidden.
+- **Clothes go on sale by the thousand.** The Fashion group uses `min_drop` 0.35, a slow schedule and `no_claim_alerts`. Watch the review group when a season's sale starts.

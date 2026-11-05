@@ -137,6 +137,38 @@ RULES: tuple[ShopRule, ...] = (
         "2027-12-31 or 2026-12-30",
         "5 Nov 2026"),
     ShopRule(
+        "lcwaikiki-no-new-listing-alerts", "lcwaikiki_eg", "no_claim_alerts",
+        "Half the catalogue is 'Sale Items', discounts of 15% to 65% that change with the season",
+        "No new-listing alerts from the crossed-out price; its products alert only from our own history",
+        "5 Nov 2026: a crossed-out price on 215 of 486 dresses and 119 of 300 men's clothes, median 31% to 36%",
+        "5 Nov 2026"),
+    ShopRule(
+        "defacto-no-new-listing-alerts", "defacto_eg", "no_claim_alerts",
+        "Most of the catalogue is discounted, by campaigns named after the month",
+        "No new-listing alerts from the crossed-out price; its products alert only from our own history",
+        "5 Nov 2026: a crossed-out price on 293 of 373 dresses (median 41%) and 96 of 96 from the men's sale page "
+        "(median 20%); 'November - Net %20 Discount' runs to 31 Dec. woman-discount alone holds 5,328 products",
+        "5 Nov 2026"),
+    ShopRule(
+        "lcwaikiki-empty-is-not-empty", "lcwaikiki_eg", "note",
+        "An empty category or price range fills the page with 52 unrelated products, and asking past the last page "
+        "answers page 1",
+        "The adapter reads ProductFound and stops on PageCount",
+        "5 Nov 2026: MinPrice=99999 lists 52 products from 249 EGP; PageIndex=67 of 66 answers page 1",
+        "5 Nov 2026", where="sites/lcwaikiki_eg.py"),
+    ShopRule(
+        "lcwaikiki-maxprice-ignored", "lcwaikiki_eg", "note",
+        "MaxPrice doesn't hold: asking for 300 to 500 EGP returns products at 1,299",
+        "The adapter sends MinPrice only and the planner never splits this shop",
+        "5 Nov 2026: 860 products 'between 300 and 500', priced 349 to 1,699",
+        "5 Nov 2026", where="sites/lcwaikiki_eg.py"),
+    ShopRule(
+        "defacto-promo-cards", "defacto_eg", "note",
+        "A few product cards are promotions: 'kargobedava' (free shipping), with no price",
+        "The adapter skips cards with no price or link name",
+        "5 Nov 2026: the first card of woman-discount is index 9000213, 'kargobedava'",
+        "5 Nov 2026", where="sites/defacto_eg.py"),
+    ShopRule(
         "raya-prebooking-deposits", "raya_eg", "note",
         "'Pre Booking' products are priced at the deposit: 10,000 EGP for a Galaxy Z Fold8 Ultra",
         "The adapter skips them: a deposit is not a price, and the real listing replacing it would look like a change",
@@ -171,7 +203,9 @@ RULES: tuple[ShopRule, ...] = (
           ("2b_eg", "27 Oct 2026: 'only N left' on 57% of its TVs", "27 Oct 2026"),
           ("carrefour_eg", "28 Oct 2026: low stock of 1 to 3 on 42% of its TVs", "28 Oct 2026"),
           ("raya_eg", "5 Nov 2026: 'only 3 or fewer left' on 64% of its TVs, 29% of its phones", "5 Nov 2026"),
-          ("etisal_eg", "5 Nov 2026: 3 or fewer left on 57% of its phones, 37% of its accessories", "5 Nov 2026"))),
+          ("etisal_eg", "5 Nov 2026: 3 or fewer left on 57% of its phones, 37% of its accessories", "5 Nov 2026"),
+          ("lcwaikiki_eg", "5 Nov 2026: 3 or fewer left on 44% of its dresses", "5 Nov 2026"),
+          ("defacto_eg", "5 Nov 2026: 3 or fewer left on 28% of its dresses, and a count on every card", "5 Nov 2026"))),
 )
 
 BY_ID = {r.id: r for r in RULES}
