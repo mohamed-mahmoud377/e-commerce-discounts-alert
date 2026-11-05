@@ -61,7 +61,9 @@ Whole walks, 5 Nov 2026: perfume-for-men 560 of 560 in the default order and by 
 
 ## Catalogue and categories
 
-The site's menu links are on any page; `input.category-id` on a category page gives its id, which here equals the slug. `/en/hair-care` and `/en/men` are 404: the ids are `hair` and `men-products`. docs/CATEGORIES.md has the roots.
+The site's menu links are on any page. **A category's id isn't always its URL:** `input.category-id` on its page is the truth, and the grid answers nothing for a wrong one. 14 of the menu's 227 differ: `men-beauty-products-1` is `men-beauty-products` (472 products), `new-perfumes-1` is `new-beauty-products-perfume`, `eau-de-cologne` is `cologne`, `spray-mouse` is `spray-mousse`. 6 more show no grid at all (`local-perfumes`, `perfume-oil`, `skincare-sets`, `face-massagers-rollers` and two others). `/en/hair-care` and `/en/men` are 404. docs/CATEGORIES.md has the roots.
+
+**A parent doesn't hold all its children, and the sale page holds products in no main category.** The Rhea shampoo is in `shampoos` but not `hair`; the Sauvage deodorant is in `deodorant-antiperspirant` but not `body`. And a product page can exist with no listing anywhere the shop shows it: Valentino Born in Roma Donna Green Stravaganza isn't among the 746 of its own `perfume-for-women`.
 
 ## How we crawl it
 
@@ -80,7 +82,21 @@ Group **Beauty** (from 300 EGP, every 120 minutes, at most 180), shared with Maz
 
 **89 pages a pass.** The adapter reads every page and the coordinator applies the 300 EGP minimum to new products, since a filter can't. At Pace 2x, 4 to 8 s plus about 1 s a page, a pass takes **about 11 minutes**, well inside the cap. Fast lane: `deals:extra-sale`, the sale's first 48, at most every 10 minutes. Together **about 50 pages an hour, about 43 MB**, from the Mac and the droplet, with no block history. Whatever overlaps is in one group, so no label flips.
 
-Whether these roots cover the whole shop isn't proved yet: compare the sitemap's product ids with what the first pass read.
+### Coverage, measured 5 Nov 2026
+
+The first pass, 9 slices across the Mac and the droplet, took about 5 minutes: 0 failures, no blocks, 3,357 products stored. Then the droplet walked all 227 menu categories once, about 540 pages at 4 to 8 s, with no refusal. **167 products in stock at 300 EGP or more are in categories our roots don't read: 95.3% covered.** Categories in the sitemap but not in the menu weren't walked.
+
+| Add | Pages a pass | Products it adds | Covered |
+| --- | --- | --- | --- |
+| `extra-sale` in full | 12 | 64 | 97.1% |
+| `new-beauty-products-haircare` | 3 | 25 | 97.8% |
+| `shop-local` | 13 | 36 | 98.8% |
+| `dior-skincare`, `anti-frizz` | 2 | 6 | 99.0% |
+| The rest | about 60 | 36 | about 100% |
+
+**Not added yet: the user's decision.** The first four rows would make 119 pages a pass and about 66 pages an hour instead of 51. Note the fast lane reads only the sale's first 48 of 554, so 64 sale products are read by nothing today.
+
+A product first seen sold out isn't stored, since it has no price to pass the group's minimum. It starts being tracked once it has a price.
 
 ## Running and checking it
 

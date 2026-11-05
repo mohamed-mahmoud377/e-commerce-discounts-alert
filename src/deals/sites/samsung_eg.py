@@ -6,7 +6,8 @@ the catalogue is small, so a slice is always a whole category. An unknown type i
 empty category, so a type that isn't 8 digits is refused here. Past the end: no products.
 
 **Most models have no price** (`learnMore`, no stock word), and many categories have none at all (5 Nov 2026: 96 of 179
-phone models, 0 of 32 tablets). They stay listed as sold out, so one is noticed the day it gets a price.
+phone models, 0 of 32 tablets). They are handed over with no price, which the coordinator doesn't store as a new product, so one
+appears the day it gets a price.
 
 The price is `promotionPrice` when there is one, and then `price` is the crossed-out one (`priceDisplay` always shows what
 you pay). Colours fold into one listing at the cheapest in stock: an `SM-` code ends in two letters of colour, one of

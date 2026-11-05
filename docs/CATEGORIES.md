@@ -407,7 +407,7 @@ Magento ids (`deals categories` isn't wired for it; `categories(filters:{parent_
 
 ## faces.eg category ids
 
-The id is the page's slug (`input.category-id` on the page confirms it). Roots: `perfume`, `makeup`, `skincare`, `hair`, `body`, `gifts`, `men-products`, `home-fragrance`. Sale feed: `deals:extra-sale`. docs/FACES.md.
+The id is usually the page's slug, but 14 of the menu's 227 differ: read `input.category-id` on the page. Roots: `perfume`, `makeup`, `skincare`, `hair`, `body`, `gifts`, `men-products`, `home-fragrance`. Sale feed: `deals:extra-sale`. docs/FACES.md.
 
 ## aghezty.com categories
 

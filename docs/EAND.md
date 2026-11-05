@@ -22,7 +22,7 @@ Added 5 November 2026. The adapter is `src/deals/sites/eand_eg.py` (site name `e
 ## Client traps
 
 - **Without `Accept: application/json` it answers XML** (`application/xhtml+xml`, HTTP 200, `<CommonResponseDto>`), since `curl_cffi` as Chrome sends a browser's `Accept`. Hence the header. That XML reads as a `Blocked` here, so losing the header would look like a block.
-- **The firewall blocks a browser whose user agent says `HeadlessChrome`.** On 5 Nov 2026 five page loads of `/eshop2/` in a default Playwright got "Web Page Blocked! ... Attack ID: 20000051" from the Mac, while the droplet's API answered at the same moment. `shots.Shooter` uses a normal Chrome's agent. Don't test its pages with a default Playwright.
+- **The firewall blocks a browser whose user agent says `HeadlessChrome`.** On 5 Nov 2026 page loads of `/eshop2/` in a default Playwright got "Web Page Blocked! ... Attack ID: 20000051" from the Mac, while the droplet's API answered at the same moment. 15 minutes later the Mac's API and pages answered normally, so it wasn't a ban on the IP. `shots.Shooter` uses a normal Chrome's agent. Don't test its pages with a default Playwright.
 
 ## The listing
 
@@ -46,7 +46,7 @@ Added 5 November 2026. The adapter is `src/deals/sites/eand_eg.py` (site name `e
 - **Promo codes aren't in the price:** "Mobile Deals (Use code: MOBILE25)" holds 91 of 318 Devices. We track the price without a code (`eand-promo-codes-not-read`).
 - **Crossed-out prices:** 134 of 260 Devices in stock (median 27%), 160 of 333 chargers (median 22%, 3 at 60%+), all 43 tablets, all 58 home appliances. So rule `eand-no-new-listing-alerts`.
 - A marketplace, like Raya and Jumia. The alerts' "not the shop itself, check the seller" warning is noon's only, as it is for those.
-- Compared with its page, the S26+ matched (53,333, crossed out 67,800). **The rest of that check was cut short by the firewall, above.** Prices come straight from the API the page itself calls.
+- Compared with the page in a browser, 6 of 6 prices and crossed-out prices matched (5 Nov 2026), through a normal Chrome agent, 45 s apart.
 
 ## Catalogue and categories
 
@@ -95,7 +95,7 @@ So `last_count` stays under `expected_total` on 2, 27, 30, 4 and 18: that is thi
 
 ## Re-checking
 
-The other four price comparisons of the 5 Nov check, through `deals shot` a minute apart, not a default Playwright. Whether `quantity <= 5` is still where "Only N left" starts.
+Whether `quantity <= 5` is still where "Only N left" starts.
 
 ## Alert screenshots
 

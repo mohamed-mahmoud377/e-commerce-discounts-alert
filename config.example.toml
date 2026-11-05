@@ -713,7 +713,7 @@ label = "أجهزة مطبخ"
 interval_minutes = 60
 max_interval_minutes = 120  # quiet slices never back off past this (was 3x180 = 9 h)
 min_price = 2000
-aghezty_eg = ["category:MICROWAVE", "category:Ovens", "category:Grill", "category:Rice-Cooker", "category:Food-Steamer", "category:Portable-hot-plate", "category:Breakfast-Appliances", "category:Specialized-Appliances"]
+aghezty_eg = ["category:MICROWAVE", "category:Ovens", "category:Grill", "category:Rice-Cooker", "category:Food-Steamer", "category:Portable-hot-plate", "category:Electric-kettle", "category:Sandwich-Maker", "category:Coffee-Grinder", "category:Toaster", "category:Egg-Cooker", "category:Specialized-Appliances"]
 amazon_eg = [
     "category:21863959031",  # bread makers & baking
     "category:21863960031",  # hot plates & electric pans

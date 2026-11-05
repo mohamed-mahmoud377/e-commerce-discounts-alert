@@ -41,7 +41,7 @@ So: 10.5 to 13 s between pages (`[sites.raneen_eg]`), and **no `?price=`, `?prod
 | An unknown category | HTTP 404, 537 KB |
 | `/en/raneen-offers` | HTTP 200, no cards: a landing page |
 
-**Whole walks, 5 Nov 2026:** laptops-notebooks 8 pages, 147 of 148. air-conditioners 26 pages, 498 of 502, 1 repeated. There's no stable sort to ask for, so a few are missed in a pass and picked up in another.
+**Whole walks, 5 Nov 2026:** laptops-notebooks 8 pages, 147 of 148. air-conditioners 26 pages, 498 of 502, 1 repeated. First live pass: refrigerators 548 of 562, washers 357 of 368, TVs 448 of 455, phones 614 of 621. There's no stable sort to ask for, so about 1 to 3% are missed in a pass.
 
 ## Prices and stock
 
@@ -65,7 +65,7 @@ So: 10.5 to 13 s between pages (`[sites.raneen_eg]`), and **no `?price=`, `?prod
 | Laptops | `electronics/computers/laptops-notebooks` | 148 | 8 |
 | Home & more | `appliances/large-appliances/washers-and-dryers` | 368 | 19 |
 
-**Sums: 157 pages, about 3,000 products. At about 13 s a page, a pass takes 34 minutes on one IP.** With no filter or sort allowed, that is the time to notice a drop on Raneen, **whatever the group's cap says** (15 minutes for air conditioners and phones, 30 for TVs). A second home worker (`abdelrahman-mac`) would halve it. Adds at most 280 pages an hour, 330 MB, from the Mac; no block history.
+**Sums: 157 pages, about 3,000 products. At about 13 s a page, a pass takes 34 minutes on one IP.** With no filter or sort allowed, that is the time to notice a drop on Raneen, **whatever the group's cap says** (15 minutes for air conditioners and phones, 30 for TVs). **Measured on the first pass: all 8 roots done in 53 minutes** (20:55 to 21:48, 5 Nov 2026), longer than the sum because the 15-minute groups come round again in that time. A second home worker (`abdelrahman-mac`) would halve it. Adds at most 280 pages an hour, 330 MB, from the Mac; no block history.
 
 Left out for that reason: `kitchen` (18,816), `home` (4,705), `electronics/computers` beyond laptops (1,716), `electronics/game-gate` (520), `mobiles/accessories` (1,502), `mobiles/wearable` (476), `appliances/small-appliances` (1,372), `appliances/kitchen-appliances` (2,556), `built-in-appliances` (647), `water-heaters` (240). Each would add to every drop's wait.
 

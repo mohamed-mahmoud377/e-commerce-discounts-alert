@@ -32,7 +32,7 @@ Types, 5 Nov 2026 (families, models with a price): phones `01010000` (25, 96), t
 
 ## Prices and stock
 
-- **Most models have no price** (`ctaType: learnMore`, no `stockStatusText`). They stay as sold-out listings with no price, so one getting a price is seen. 17 of 53 phone listings, 41 of 78 TVs.
+- **Most models have no price** (`ctaType: learnMore`, no `stockStatusText`). The adapter hands them over with no price, and the coordinator doesn't store a new product without one, so one appears the day it gets a price, as a new product. 17 of 53 phone listings, 41 of 78 TVs: 88 products were stored on the first pass.
 - `promotionPrice`, when set, is what you pay, and `price` is then the crossed-out one. `priceDisplay` always shows what you pay. `formattedPriceSave` says the same in words.
 - **`ctaType: whereToBuy` doesn't mean elsewhere:** its page says "اشتري الآن" and has a cart, with `stockStatusText: inStock`. In stock means `inStock`, which pre-orders have too (Fold8, firm prices).
 - **Crossed-out prices:** 35 of 37 TVs in stock, median 15%, round numbers (109,999 from 164,999). None of the 34 phones in stock. So rule `samsung-no-new-listing-alerts`.

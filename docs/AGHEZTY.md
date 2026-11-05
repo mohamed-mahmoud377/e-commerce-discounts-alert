@@ -47,7 +47,7 @@ Added 5 November 2026. The adapter is `src/deals/sites/aghezty_eg.py` (site name
 
 ## Catalogue and categories
 
-`sitemap-categories.xml` lists them all. Each product names one leaf (`category`), and a parent adds up its children, so the roots are leaves, kept apart by group. `Built-In` is the exception: read whole, 1,357 products.
+`sitemap-categories.xml` lists them all. Each product names one leaf (`category`), and a parent adds up its children, so the roots are leaves, kept apart by group. `Built-In` is the exception: read whole, 1,357 products. **A name doesn't show which is a parent:** `Breakfast-Appliances` (268) went live as a root and is the sum of `Coffee-Espresso-Makers` (140) and five others, which put 140 coffee machines in two groups. What showed it: the group stored 326 products where its roots counted 459. The sitemap lists a parent straight before its children.
 
 Counts on 5 Nov 2026: Large-Appliances 2,074 (Refrigerator 617, washing-machines 538, Freezers 233, cookers 209, Dish-washer 127, Refrigerator-Mini-Bar 52, Dryers 28, Air-Conditioner 270), Small-Appliances 2,089, Built-In 1,357, TV 561 (TVs 433, Sound-system 92, Projector 20).
 
@@ -61,13 +61,13 @@ Counts on 5 Nov 2026: Large-Appliances 2,074 (Refrigerator 617, washing-machines
 | Refrigerators | `Refrigerator`, `Freezers`, `Refrigerator-Mini-Bar` | 896 | 75 | 30 |
 | Air conditioners | `Air-Conditioner` | 246 | 21 | 15 |
 | Kitchen machines | `Air-Fryer`, `Coffee-Espresso-Makers`, `Mixing-Blending`, `Grinding-Chopping`, `Pressure-Cooker` | 593 | 50 | 30 base |
-| Kitchen appliances | `MICROWAVE`, `Ovens`, `Grill`, `Rice-Cooker`, `Food-Steamer`, `Portable-hot-plate`, `Breakfast-Appliances`, `Specialized-Appliances` | 459 | 39 | 120 |
+| Kitchen appliances | `MICROWAVE`, `Ovens`, `Grill`, `Rice-Cooker`, `Food-Steamer`, `Portable-hot-plate`, `Electric-kettle`, `Sandwich-Maker`, `Coffee-Grinder`, `Toaster`, `Egg-Cooker`, `Specialized-Appliances` | 326 | 28 | 120 |
 | Cooking & dishwashers | `cookers`, `Dish-washer`, `Built-In` | 1,655 | 138 | 90 |
 | Home & more | `washing-machines`, `Dryers`, `Vacuum-Steam-Cleaners`, `iron`, `Water-Dispenser`, `Water-Heater`, `Heaters`, `Fan`, `Ventilating-Fans`, `Air-purifier`, `Sound-system`, `Bluetooth-Speakers`, `personal-care` | 1,890 | 158 | 180 |
 
 The price filter narrows the roots at the source: `|price:<group's minimum>-` goes in the URL. **Fast lane:** `deals:flash-sale`, the offers' one page of 28, every 10 minutes, under Home & more (those 28 take that group's label when it reads them last).
 
-**Sums:** 514 pages, about 6,200 products. At 2 to 4 s between pages and about 1.5 s each, one pass of everything takes 39 minutes on one IP, 19 minutes on the droplet and the Mac together. On their base schedules the groups ask for about 820 pages an hour, inside what the two can read (about 1,600), and less as quiet slices back off to their caps. So about 400 pages, 120 MB, an hour from each IP. A drop is noticed within the group's cap, or the fast lane's 10 minutes for offers. No block history.
+**Sums:** 503 pages, about 6,000 products. At 2 to 4 s between pages and about 1.5 s each, one pass of everything takes 38 minutes on one IP, 19 minutes on the droplet and the Mac together. On their base schedules the groups ask for about 810 pages an hour, inside what the two can read (about 1,600), and less as quiet slices back off to their caps. So about 400 pages, 120 MB, an hour from each IP. A drop is noticed within the group's cap, or the fast lane's 10 minutes for offers. No block history.
 
 ## Running and checking it
 
