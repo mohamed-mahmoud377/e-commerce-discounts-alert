@@ -502,7 +502,7 @@ name = "PC components"
 label = "مكونات كمبيوتر"
 interval_minutes = 60
 min_price = 1500
-sigma_eg = ["category:9f5039af-f5d2-4396-9ba2-8ac40277c373", "category:9f5039ed-8dd4-4a9b-a8ce-caf20ed29436"]
+sigma_eg = ["category:9f503b04-6f11-402e-864c-9a3286af46ba", "category:9f503b67-b433-4434-8879-ebd003dce713", "category:9f503b76-e257-48d8-be01-c3e7154eab03", "category:9f503b88-167a-4e18-bdf0-5bb94c7bcdd0", "category:9f503b96-3738-4a0b-9038-4dc7298f9c97", "category:9f503ba3-42e3-449f-bdb8-0e687118860d", "category:9f503bb0-e2e2-482c-9a6a-ac15542abcb1", "category:9f5039ed-8dd4-4a9b-a8ce-caf20ed29436"]
 elnekhely_eg = ["category:graphics-card", "category:processors", "category:motherboards", "category:ram", "category:ssd", "category:cases", "category:power-supply", "category:fans-coolers"]
 amazon_eg = [
     "category:21832913031",
@@ -929,7 +929,7 @@ label = "ملابس وأزياء"
 interval_minutes = 120
 max_interval_minutes = 180
 min_price = 500
-wayup_eg = "category:all-sale"  # all-new-in too, once memory allows: docs/WAYUP.md
+wayup_eg = ["category:all-sale", "category:all-new-in"]
 min_drop = 0.35
 lcwaikiki_eg = ["category:women-clothing-t-10", "category:men-clothing-t-9", "category:girls-clothing-t-100046", "category:boys-clothing-t-200046", "category:femei-incaltaminte-t-33"]
 defacto_eg = ["category:woman-discount", "category:woman-new-season", "category:man-discount", "category:man-new-season", "category:kids-discount"]

@@ -34,7 +34,7 @@ owns one job.
 | `sites/shopify.py` | 69 | What the newer Shopify shops share: `ShopifyShop` (collection JSON, `category:all` = `/products.json`, stops at page 100, always gives the planner a number); Dream 2000's parser | models, dream2000_eg |
 | `sites/wayup_eg.py`, `gcshop_eg.py`, `azzam_eg.py` | 17 each | Their base URL and which options fold (WayUp: size; GC Shop: size, band colour; Azzam: none) | shopify, dream2000_eg |
 | `sites/miami_eg.py` | 121 | Miami Center's WooCommerce Store API, in **whole pounds** (scaled by `currency_minor_unit`); category ids checked; pre-orders skipped | models |
-| `sites/sigma_eg.py` | 115 | Sigma's search pages (RSC payload, 16 a page, always `sortBy=createdAt`); category ids checked against its API | models |
+| `sites/sigma_eg.py` | 125 | Sigma's search pages (RSC payload, 16 a page, always `sortBy=createdAt`); category ids checked against its API | models |
 | `sites/elnekhely_eg.py` | 82 | Elnekhely's OpenCart HTML cards (100 a page, "Showing ... of N"); home connections only | models, base |
 | `sites/mazaya_eg.py` | 127 | Mazaya's Magento GraphQL over GET (100 a page, by name, inclusive price filter); each size its own listing, shades when they cost differently; an empty answer is checked against the category | models |
 | `sites/amazon_now_eg.py` | 35 | Amazon Now: amazon_eg's search pages with the Amazon Now root node `211761638031` in front of every query (without it a node lists the regular offers), product links to the Now offer, no `deals:` feed; 0 results for the whole store raises `Blocked` (delivery location not served) | amazon_eg |

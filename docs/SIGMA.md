@@ -24,6 +24,7 @@ Cloudflare in front, 200 from both. `www.sigma-computer.com/robots.txt` allows e
 ## Traps
 
 - **`sortBy=createdAt` is not optional.** The default order repeats products between pages: 498 different ones in 587 reads, **15% missed with no error anywhere**. `sortBy=price` works too (highest first), but `createdAt` only shifts when a product is added: 587 of 587.
+- **A listing ends at 1,000 products, whatever its count says.** Hardware Components counts 1,876; page 63 holds the last 8 of 1,000, page 64 none, and nothing else shows it. Found live on 5 Nov 2026 by comparing `last_count` with `expected_total`: 876 parts had gone unread for 15 minutes. Its 7 sub-categories sum to 1,875, so they are the roots. The adapter logs a warning for any root over the cap.
 - **Any category id answers 200 with no products**, so ids are checked against the category list, once a session. A page past the end looks the same.
 - The payload holds other `products` arrays' text; the listing's is the first after `initialFilters`.
 - **Price `base` against `current`:** crossed-out on 9 of 172 in stock (5%), median 6%, one at 60%+. Kind `list`, no rule. Brand on 485 of 487.
@@ -34,7 +35,7 @@ Cloudflare in front, 200 from both. `www.sigma-computer.com/robots.txt` allows e
 | --- | --- | --- | --- |
 | Laptops | Laptops | 587 | 37 |
 | Monitors | Monitor | 238 | 15 |
-| PC components | Hardware Components, Storage | 2,127 | 133 |
+| PC components | Motherboard 249, CPU 120, RAM 191, Graphic Card 238, Cooling 541, Case 382, Power Supply 154, Storage 251 | 2,126 | 138 |
 | Desktops | Desktop, Bundles | 84 | 6 |
 | Headphones | Headphone | see the config | |
 | Gaming peripherals | Mouse, Keyboard, Mouse pad, Game pad | see the config | |
@@ -43,7 +44,7 @@ Cloudflare in front, 200 from both. `www.sigma-computer.com/robots.txt` allows e
 
 Left out: Network (10), Other (12), Sigma Merch (4), Batteries (3), Combos (83), and small accessories (cables, bags, stands). Gaming Console is empty today.
 
-The longest pass is Hardware Components, 117 pages, about 7 minutes at 2 to 4 s, well inside its group's cap; Laptops, about 2 minutes against a 30-minute cap. **About 290 pages an hour at most**, shared by the droplet and the Mac. No block history; this is the busiest of this batch because of its 16 a page, so slow it first (Pace) if it complains.
+The longest pass is Cooling, 34 pages, about 2 minutes at 2 to 4 s, well inside its group's cap; Laptops, about 2 minutes against a 30-minute cap. **About 290 pages an hour at most**, shared by the droplet and the Mac. No block history; this is the busiest of this batch because of its 16 a page, so slow it first (Pace) if it complains.
 
 ## Running and checking it
 

@@ -177,8 +177,8 @@ RULES: tuple[ShopRule, ...] = (
     ShopRule(
         "wayup-listing-cap", "wayup_eg", "note",
         "A Shopify listing ends at page 100, 25,000 products; page 101 answers HTTP 400",
-        "The adapter stops at page 100, and the watched root (all-sale) is under the cap. Products not on sale are "
-        "not read: the shop's whole catalogue is about 35,000",
+        "The adapter stops at page 100, and the watched roots (all-sale, all-new-in) are under the cap. Products in "
+        "neither are not read: the shop's whole catalogue is about 35,000",
         "5 Nov 2026: /products.json answers 400 at page 101; the sitemap lists 69,512 links, two locales each",
         "5 Nov 2026", where="sites/shopify.py"),
     ShopRule(
@@ -200,6 +200,12 @@ RULES: tuple[ShopRule, ...] = (
         "Products whose name starts with 'Pre Order' are skipped",
         "5 Nov 2026: 18 such, like Samsung Galaxy Z Fold8 Ultra at 156,999 'estimated'",
         "5 Nov 2026", where="sites/miami_eg.py"),
+    ShopRule(
+        "sigma-listing-cap", "sigma_eg", "note",
+        "A listing ends at 1,000 products, whatever its count says",
+        "Its one bigger category, Hardware Components, is read through its 7 sub-categories; a root over the cap logs a warning",
+        "5 Nov 2026: Hardware Components counts 1,876; page 63 holds the last 8 of 1,000 and page 64 none. Its children sum to 1,875",
+        "5 Nov 2026", where="sites/sigma_eg.py and config.example.toml"),
     ShopRule(
         "sigma-default-order-repeats", "sigma_eg", "note",
         "Its default order repeats products between pages and misses others",

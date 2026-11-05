@@ -8,11 +8,15 @@ products. No usable price filter, so a slice is always a whole category and the 
 **`sortBy=createdAt` is not optional.** Its default order repeats products between pages: 498 different ones in 587 reads, 15%
 missed, on the laptops of 5 Nov 2026. By creation date it read 587 of 587.
 
+**A listing ends at 1,000 products,** whatever its count says: Hardware Components counts 1,876, and page 63 holds the last 8
+of 1,000. Nothing else shows it, so a root over the cap logs a warning: watch its sub-categories instead.
+
 Any category id gives an empty 200, so ids are checked against the category list, once. The products endpoint on the API host
 answers 403; the category list is open, and that host's robots.txt allows everything. docs/SIGMA.md.
 """
 
 import json
+import logging
 import re
 from urllib.parse import quote
 
@@ -20,9 +24,12 @@ from curl_cffi import requests
 
 from deals.models import Blocked, Category, Listing, PageResult, Slice, UnknownTarget
 
+log = logging.getLogger(__name__)
+
 BASE = "https://www.sigma-computer.com"
 CATEGORIES = "https://api.sigma-computer.com/api/stores/v1/categories"
 PER_PAGE = 16
+MAX_RESULTS = 1000  # the most a listing shows, whatever it counts
 IMPERSONATE = "chrome"
 _PUSH = re.compile(r'self\.__next_f\.push\(\[1,"(.*?)"\]\)</script>', re.S)
 _STOCK = re.compile(r'"is_stock":\{([^}]*)\}')
@@ -45,6 +52,9 @@ class SigmaEG:
             raise Blocked(f"{self.name}: HTTP {r.status_code} from {r.url}")
         r.raise_for_status()
         result = parse_listing(r.text, page)
+        if page == 1 and (result.total or 0) > MAX_RESULTS:
+            log.warning("%s: category %s holds %d products and a listing shows %d: watch its sub-categories",
+                        self.name, slice.value, result.total, MAX_RESULTS)
         if page == 1:
             result.subcategories.extend(Category(c["id"], c.get("name") or "") for c in category.get("subcategories") or [])
         return result

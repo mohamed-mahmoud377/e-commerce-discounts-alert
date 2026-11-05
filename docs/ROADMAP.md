@@ -66,7 +66,7 @@ learned from the admins' decisions (until then, publishing waits for a person, w
     the internet) or Caddy + a domain for automatic HTTPS.
 12. **Web dashboard**: product page with a price chart, search, freshness per group, alert history.
     The data is all in SQLite already; FastAPI can serve it next to the API.
-13. **More shops**: WayUp's `all-new-in` waits on memory (docs/WAYUP.md). Orange's phones, tablets and laptops wait on reading each size (about 730 requests an hour, docs/ORANGE.md). (B.TECH, 2B, Dream 2000 done 27 October 2026, Carrefour 28 October, Dubai Phone and Hardware Market 30 October, Amazon Now 3 November, Raya, Vodafone, Dokkan Tech, Etisal, Orange, LC Waikiki, DeFacto and El Araby 5 November). Each needs one `sites/<shop>.py` (`fetch_page` +
+13. **More shops**: Orange's phones, tablets and laptops wait on reading each size (about 730 requests an hour, docs/ORANGE.md). (B.TECH, 2B, Dream 2000 done 27 October 2026, Carrefour 28 October, Dubai Phone and Hardware Market 30 October, Amazon Now 3 November, Raya, Vodafone, Dokkan Tech, Etisal, Orange, LC Waikiki, DeFacto and El Araby 5 November). Each needs one `sites/<shop>.py` (`fetch_page` +
     parser) and a saved-page test; everything else (planner, scheduling, alerts) is shared. *Ready for 20+
     shops since 4 Nov 2026*: one table of shops (`deals/shops.py`), `make new-shop` for the skeletons and
     `tests/test_shops.py`, which fails until a new shop has everything (adapter, screenshot spec, a saved page

@@ -38,11 +38,11 @@ Cloudflare in front; 200 from both, no refusal in about 250 requests at one ever
 | Group | Handles | Products | Pages a pass |
 | --- | --- | --- | --- |
 | Fashion (minimum 500 EGP, `min_drop` 35%) | `all-sale` | 12,434 | 50 |
-| Fashion, **once memory allows** (below) | `all-new-in` | 15,614 | 63 |
+| Fashion | `all-new-in` | 15,614 | 63 |
 
-`all-sale` alone is one pass of about 3 minutes at 2 to 4 s (page 0.5 s + 3 s), against the group's 180-minute cap: **about 25 pages an hour**, shared by the droplet and the Mac; about 55 with `all-new-in`. No block history. No fast lane: Shopify has no feed by date, and the sale collection is too big to read every 10 minutes.
+One pass is about 7 minutes at 2 to 4 s (page 0.5 s + 3 s), against the group's 180-minute cap: **about 55 pages an hour**, shared by the droplet and the Mac. No block history. No fast lane: Shopify has no feed by date, and the sale collection is too big to read every 10 minutes.
 
-**Why these two and not everything.** The whole shop can't be read from one root (the 25,000 cap), and 35,000 products is a quarter of the current database on a coordinator that already peaked at 244 of its 300 MB (5 Nov 2026). Same choice as DeFacto: the sale section, and new arrivals so that a product has a history before it goes on sale. **Without `all-new-in` a product is first seen already on sale**, so it alerts only when it falls further. Add `all-new-in` after a matching pass with `all-sale` shows the memory: `systemctl show deals-coordinator -p MemoryPeak`.
+**Why these two and not everything.** The whole shop can't be read from one root (the 25,000 cap). Same choice as DeFacto: the sale section, and new arrivals so that a product has a history before it goes on sale. Rolled out one at a time for memory: with `all-sale` in, a matching pass peaked at 154 of 300 MB on 190,000 products (5 Nov 2026), so `all-new-in` followed the same evening. `systemctl show deals-coordinator -p MemoryPeak` shows it, though that number counts page cache too.
 
 ## Running and checking it
 

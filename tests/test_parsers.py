@@ -1428,3 +1428,15 @@ def test_shopify_empty_last_page_doesnt_say_the_root_emptied():
     site._session = _Session(_Answer(data={"products": []}))  # 8,500 products: page 34 is full, page 35 empty
     result = site.fetch_page(S.from_key("category:all"), 35)
     assert result.total is None and not result.has_next and result.listings == []
+
+
+def test_sigma_warns_about_a_root_over_its_hidden_cap(caplog):
+    from deals.models import Slice as S
+    from deals.sites.sigma_eg import SigmaEG
+    page = fixture_text("sigma_laptops.html.gz")
+    site = SigmaEG()
+    site._categories = [{"id": "big"}, {"id": "small"}]
+    site._session = _Session(_Answer(text=page, ctype="text/html"))
+    assert site.fetch_page(S.from_key("category:small"), 1).total == 587 and "sub-categories" not in caplog.text
+    site._session = _Session(_Answer(text=page.replace('\\"false\\":393', '\\"false\\":1682'), ctype="text/html"))
+    assert site.fetch_page(S.from_key("category:big"), 1).total == 1876 and "watch its sub-categories" in caplog.text
