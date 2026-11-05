@@ -87,6 +87,7 @@ On the server (`make ssh` first):
 | Ready-made queries | open `docs/queries.sql` in IntelliJ, cursor in a query, Cmd+Enter |
 | One product's history | `make ssh`, then `runuser -u deals -- /opt/deals/.venv/bin/deals product amazon_eg B0CYZK7PVC --config /etc/deals/config.toml` |
 | Biggest price moves | `make movers` |
+| Coupons on the shops | `make coupons`; one code: `make coupons CODE=MOBILE200`; a product: `make coupons FIND=<sku or title words>`; a code's whole catalogue from noon, on the Mac: `make coupon-group URL=/eg-nov26-mobile-200` |
 | Same product on other shops (matching coverage) | `make models`; one model: `make models FIND=AH-XP12BME` (or title words); random ones to check: `make models SAMPLE=10`; in the web UI: a product's page, or Queries → Matching |
 | Switch a shop off, or off on one device; alerts off or kept but not sent; screenshots, product pages, pace, alert floors (stays until changed) | web UI → Shop settings, or the Settings card on a shop's page |
 | Pause crawling (a device, a shop, or both; ends by itself) | web UI → Devices → "Paused crawling" (admin); or `make pause DEVICE=mac SITE=jumia_eg HOURS=3` (all optional; `PAGES=1` also stops product-page reading); `make resume` (`DEVICE=`/`SITE=` to pick), `make pauses` to list |

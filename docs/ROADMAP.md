@@ -44,8 +44,10 @@ learned from the admins' decisions (until then, publishing waits for a person, w
 8. **Telegram buttons and commands**: 👍/👎 on each alert (feedback to tune rules), `/track <url> <price>`
    for a personal target price on one product, `/mute <sku>`, `/status`, `/top` (best deals today), and
    a **daily digest** (top 10 deals, system health).
-9. **Effective price**: parse coupons ("Save 10% with coupon") and bank offers; alert on the price
-   you'd actually pay.
+9. **Effective price**: *Started 5 Nov 2026* ([COUPONS.md](COUPONS.md)): coupons on noon, Raneen, Carrefour and B.TECH are
+   recorded and shown in alerts; alerts on the price after a coupon and one message per coupon are built but switched off until
+   a few days of data set their floors. Still open: Amazon and Amazon Now (product pages only), e& (code in the category name),
+   Dubai Phone (`couponBadge`).
 10. **Fast lane for hot items.** *Half done 27 Oct 2026:* the shops' own deal feeds are crawled as extra
     roots of each priority group (Amazon `p_n_deal_type`, noon `min_offer_price=7_days`, Jumia
     `/flash-sales/`), and priority groups cap their backoff (`max_interval_minutes`). Still open: re-check

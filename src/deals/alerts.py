@@ -11,12 +11,13 @@ import logging
 import sqlite3
 import threading
 import time
+from dataclasses import replace
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from curl_cffi import CurlMime, requests
 
-from deals import db, matching, publish, shop_rules, shop_settings, shotq
+from deals import coupons, db, matching, publish, shop_rules, shop_settings, shotq
 from deals.config import Config
 from deals.db import iso, parse_iso, utcnow
 from deals.pricing import LOW_STOCK_EVERYWHERE, Deal, Point, PriceStats, ProductView, compute_stats, evaluate, manual_deal
@@ -33,6 +34,8 @@ KIND_TITLE = {
     "early_drop": "⏳ انخفاض مبكر في السعر",
     "new_product": "🆕 منتج جديد بخصم كبير",
     "manual": "📣 عرض مختار",
+    "coupon_drop": "🎟 خصم حقيقي بالكوبون",
+    "coupon": "🎟 رسالة كوبون",  # about a code, not one product (coupon_messages.py)
 }
 SITE_NAME = {s.name: s.arabic for s in SHOPS.values()}  # the names live in deals/shops.py
 CONFIDENCE = {"high": "عالية", "medium": "متوسطة", "low": "منخفضة"}
@@ -51,15 +54,31 @@ SIGNAL_TEXT = {
 WENT_OUT = "(error IS NULL OR (error NOT LIKE 'cancelled%' AND error NOT LIKE 'silent%'))"
 
 
-def product_stats(conn: sqlite3.Connection, product_id: int, now: datetime) -> PriceStats:
+def product_stats(conn: sqlite3.Connection, product_id: int, now: datetime, at_price: int | None = None) -> PriceStats:
     points = [Point(parse_iso(r["observed_at"]), r["price"], bool(r["in_stock"]))
               for r in db.history(conn, product_id)]
-    return compute_stats(points, now)
+    return compute_stats(points, now, at_price)
+
+
+def _coupon_deal(conn, cfg: Config, p: sqlite3.Row, view: ProductView, watch, now: datetime) -> tuple[Deal, PriceStats] | None:
+    """The same rules on the price after the product's coupon. Only against its own history: a shop's claim or a
+    day or two of prices is too little to call a coupon a real discount. History stays the shelf price, so a
+    seller who raises the price and then adds a coupon gets nowhere."""
+    price = coupons.after(p)
+    if price is None:
+        return None
+    stats = product_stats(conn, p["id"], now, at_price=price)
+    deal = evaluate(replace(view, price=price), stats, cfg.alerts,
+                    min_price=watch.min_price if watch else None,
+                    min_drop=watch.min_drop if watch else None)
+    if deal is None or deal.kind in ("new_product", "early_drop"):
+        return None
+    return replace(deal, kind="coupon_drop"), stats
 
 
 def check_product(conn: sqlite3.Connection, cfg: Config, product_id: int, *, bootstrap: bool,
                   now: datetime) -> Deal | None:
-    """Evaluate a product whose price just changed (or that just appeared); queue an alert if it's a deal."""
+    """Evaluate a product whose price just changed, that just appeared, or that just got a coupon; queue an alert if it's a deal."""
     p = db.product(conn, product_id)
     switches = shop_settings.get(conn, p["site"])
     if switches.alerts == "off":
@@ -70,6 +89,8 @@ def check_product(conn: sqlite3.Connection, cfg: Config, product_id: int, *, boo
     deal = evaluate(view, stats, cfg.alerts, bootstrap=bootstrap,
                     min_price=watch.min_price if watch else None,
                     min_drop=watch.min_drop if watch else None)
+    if deal is None and cfg.alerts.coupon_alerts and (found := _coupon_deal(conn, cfg, p, view, watch, now)):
+        deal, stats = found
     if deal is None:
         return None
     if rule := shop_rules.stops(p["site"], deal):
@@ -319,6 +340,9 @@ def format_deal(p: sqlite3.Row, stats: PriceStats, deal: Deal, group: str = "", 
         lines.append(f"💰 السعر الآن: <b>{_egp(deal.price)}</b>")
     elif deal.kind == "manual" and deal.drop < 0.005 and not claim:
         lines.append(f"💰 السعر الآن: <b>{_egp(deal.price)}</b> · سعره المعتاد {_egp(deal.reference)}")
+    elif deal.kind == "coupon_drop":
+        lines.append(f"💰 السعر بالكوبون: <b>{_egp(deal.price)}</b> · سعره المعتاد {_egp(deal.reference)} · توفّر {_egp(deal.reference - deal.price)}")
+        lines.append(f"🏷 السعر قبل الكوبون: {_egp(p['price'])}")
     elif claim:
         label = "سعره الأخير على الموقع" if deal.list_price_kind == "was" else "السعر المشطوب على الموقع"
         lines.append(f"💰 السعر الآن: <b>{_egp(deal.price)}</b> ({label} {_egp(deal.reference)})")
@@ -334,6 +358,9 @@ def format_deal(p: sqlite3.Row, stats: PriceStats, deal: Deal, group: str = "", 
         claimed = (" (تجاهله، التفاصيل تحت)" if deal.inflated_list_price
                    else f" (خصم معلن {1 - deal.price / p['list_price']:.0%})" if p["list_price"] > deal.price else "")
         lines.append(f"🏷 السعر المشطوب على الموقع: {_egp(p['list_price'])}{claimed}")
+
+    if coupon := coupons.from_row(p):
+        lines.append(coupons.line(coupon, p["price"]))
 
     # --- why we think it's real
     if deal.kind == "manual":
@@ -372,6 +399,8 @@ def format_deal(p: sqlite3.Row, stats: PriceStats, deal: Deal, group: str = "", 
         lines += ["", "🧠 <b>ليه ده عرض حقيقي؟</b>"]
         lines.append(f"• أقل من سعره المعتاد بنسبة {deal.drop:.0%} (السعر المعتاد = السعر الذي ثبت عليه أغلب الوقت خلال آخر {_days(deal.reference_days)}، "
                      "وليس السعر المشطوب)")
+        if deal.kind == "coupon_drop":
+            lines.append("• السعر ده بعد الكوبون، والكوبون ممكن ينتهي في أي وقت")
         if deal.kind == "early_drop":
             lines.append(f"• سجلنا قصير ({_days(stats.history_days)} فقط): انخفض تحت كل ما رصدناه، لكن تأكد قبل الشراء")
         if deal.all_time_low:

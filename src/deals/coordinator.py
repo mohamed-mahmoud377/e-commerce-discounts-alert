@@ -29,21 +29,33 @@ from datetime import datetime, timedelta
 from importlib.metadata import version as pkg_version
 from typing import Literal
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
-from deals import alerts, audit, auth, bot, db, detailq, health, matching, monitor, scheduler, shop_rules, shop_settings, shotq, uptime, webui
+from deals import alerts, audit, auth, bot, coupon_messages, db, detailq, health, matching, monitor, scheduler, shop_rules, shop_settings, shotq, uptime, webui
 from deals.config import Config
 from deals.db import iso, utcnow
-from deals.models import Listing, Slice
+from deals.models import Coupon, Listing, Slice
 from deals.planner import PlannedSlice
 from deals.shops import SHOPS
 
 log = logging.getLogger(__name__)
 VERSION = pkg_version("deals")
+
+
+class CouponIn(BaseModel):
+    kind: str
+    title: str
+    code: str | None = None
+    detail: str | None = None
+    amount: int | None = None
+    percent: float | None = None
+    cap: int | None = None
+    min_order: int | None = None
+    group_url: str | None = None
 
 
 class ListingIn(BaseModel):
@@ -64,9 +76,12 @@ class ListingIn(BaseModel):
     badges: list[str] = []
     seller: str | None = None
     gtins: list[str] = []  # optional: older workers don't send it
+    coupon: CouponIn | None = None  # null: no coupon on it; not sent at all: an older worker, so we can't tell
 
     def to_listing(self) -> Listing:
-        return Listing(**{**self.model_dump(), "badges": tuple(self.badges), "gtins": tuple(self.gtins)})
+        return Listing(**{**self.model_dump(), "badges": tuple(self.badges), "gtins": tuple(self.gtins),
+                          "coupon": Coupon(**self.coupon.model_dump()) if self.coupon else None,
+                          "coupon_unknown": "coupon" not in self.model_fields_set})
 
 
 class LeaseIn(BaseModel):
@@ -352,7 +367,8 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
                             rec.old_price is None or not rec.old_in_stock
                             or listing.price <= rec.old_price * (1 - scheduler.DROP_SPEEDUP)))):
                     drops += 1
-                if rec.price_moved and dropped and listing.in_stock:
+                coupon_news = rec.coupon_new and rec.status != "new" and cfg.alerts.coupon_alerts
+                if ((rec.price_moved and dropped) or coupon_news) and listing.in_stock:
                     deal = alerts.check_product(conn, cfg, rec.product_id, bootstrap=bootstrap, now=now)
                     deals += deal is not None
             if unpriced_page(body.listings):
@@ -578,6 +594,13 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
         if found is None:
             raise HTTPException(404, "no such product")
         return {**found, "admin": is_admin(request)}
+
+    @app.get("/api/coupons", dependencies=[Depends(viewer)])
+    def coupons_api(site: str | None = None, code: str | None = None, limit: int = Query(200, ge=1, le=1000)):
+        with closing(read_conn()) as rc:
+            codes = webui.coupon_codes(rc, site, code, limit)
+            products = webui.coupon_products(rc, site, code, limit) if site and code else None
+        return {"coupons": codes, "products": products}
 
     @app.get("/api/subscribers", dependencies=[Depends(viewer)])
     def subscribers_api(request: Request):
@@ -842,14 +865,16 @@ def _site(name: str) -> str:
 class Watchdog(threading.Thread):
     """Notices problems nobody reports (stalled shops, silent devices, low disk) and when they
     are over (uptime.py), sends the admin's daily report, does daily maintenance (compressed
-    backup, planner stats), and matches products across shops every hour."""
+    backup, planner stats), matches products across shops every hour, and decides about new coupons."""
 
     MATCH_EVERY = timedelta(hours=1)
+    COUPONS_EVERY = timedelta(minutes=5)
 
     def __init__(self, cfg: Config, stop: threading.Event, interval: float = 60):
         super().__init__(name="watchdog", daemon=True)
         self.cfg, self.stop_event, self.interval = cfg, stop, interval
         self.next_match: datetime | None = None  # first run on the first round after a start
+        self.next_coupons: datetime | None = None
         self.started = utcnow()
 
     def run(self) -> None:
@@ -859,6 +884,13 @@ class Watchdog(threading.Thread):
                 self.check(conn, utcnow())
             except Exception:
                 log.exception("watchdog check failed")
+            try:  # on its own, like matching below
+                now = utcnow()
+                if self.next_coupons is None or now >= self.next_coupons:
+                    self.next_coupons = now + self.COUPONS_EVERY
+                    coupon_messages.step(conn, self.cfg, now)
+            except Exception:
+                log.exception("coupon messages failed")
             try:  # on its own: a matching bug must not stop the checks above
                 self.match(conn, utcnow())
             except matching.Interrupted as e:

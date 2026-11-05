@@ -14,7 +14,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from deals.models import Listing, valid_gtin
+from deals import coupons
+from deals.models import Coupon, Listing, valid_gtin
 
 log = logging.getLogger(__name__)
 
@@ -548,11 +549,46 @@ MIGRATIONS = [
         PRIMARY KEY (worker, site)
     );
     """,
+    # The coupon a product shows now, the codes seen on a shop, and which code a coupon message is about
+    # (docs/COUPONS.md). A coupon is never written to price_history: the usual price stays the shelf price.
+    """
+    ALTER TABLE products ADD COLUMN coupon_kind TEXT;
+    ALTER TABLE products ADD COLUMN coupon_code TEXT;
+    ALTER TABLE products ADD COLUMN coupon_title TEXT;
+    ALTER TABLE products ADD COLUMN coupon_detail TEXT;
+    ALTER TABLE products ADD COLUMN coupon_amount INTEGER;
+    ALTER TABLE products ADD COLUMN coupon_percent REAL;
+    ALTER TABLE products ADD COLUMN coupon_cap INTEGER;
+    ALTER TABLE products ADD COLUMN coupon_min_order INTEGER;
+    ALTER TABLE products ADD COLUMN coupon_url TEXT;
+    ALTER TABLE products ADD COLUMN coupon_seen_at TEXT;  -- since when it has shown this coupon
+    CREATE INDEX products_coupon ON products (site, coupon_code) WHERE coupon_code IS NOT NULL;
+    CREATE TABLE coupons (
+        id            INTEGER PRIMARY KEY,
+        site          TEXT NOT NULL,
+        code          TEXT NOT NULL,
+        kind          TEXT NOT NULL,
+        title         TEXT NOT NULL,
+        amount        INTEGER,
+        percent       REAL,
+        group_url     TEXT,
+        first_seen_at TEXT NOT NULL,   -- reset when a code comes back or grows: it is news again
+        last_seen_at  TEXT NOT NULL,
+        state         TEXT NOT NULL DEFAULT 'new',  -- new | sent | would_send | below_floor | over_limit
+        decided_at    TEXT,
+        best_discount REAL,            -- what it was worth when decided, for tuning the floor
+        products      INTEGER,
+        UNIQUE (site, code)
+    );
+    CREATE INDEX coupons_state ON coupons (state, first_seen_at);
+    ALTER TABLE alerts ADD COLUMN coupon_id INTEGER REFERENCES coupons(id);
+    """,
 ]
 
 # Price moves smaller than this are noise (amazon.eg prices creep by a piastre per
 # crawl on FX-linked listings) and neither make history nor count as changes.
 PRICE_NOISE = 0.01
+COUPON_GONE_DAYS = 7  # a code not seen for this long has ended; seeing it again is news
 
 
 def connect(path: Path) -> sqlite3.Connection:
@@ -592,6 +628,7 @@ class Recorded:
     status: str  # 'new', 'changed' or 'same'
     old_price: int | None
     old_in_stock: bool | None
+    coupon_new: bool = False  # it now has a coupon, or a bigger one, that takes a known amount off
 
     @property
     def price_moved(self) -> bool:
@@ -609,7 +646,8 @@ def record(conn: sqlite3.Connection, listing: Listing, grp: str | None = None,
     """
     now_s = iso(now or utcnow())
     row = conn.execute(
-        "SELECT id, price, list_price, in_stock, grp FROM products WHERE site = ? AND sku = ?",
+        """SELECT id, price, list_price, in_stock, grp, coupon_kind, coupon_code, coupon_title, coupon_detail, coupon_amount,
+                  coupon_percent, coupon_cap, coupon_min_order, coupon_url FROM products WHERE site = ? AND sku = ?""",
         (listing.site, listing.sku),
     ).fetchone()
     details = (listing.title, listing.url, listing.price, listing.list_price, listing.in_stock,
@@ -624,7 +662,7 @@ def record(conn: sqlite3.Connection, listing: Listing, grp: str | None = None,
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (*details, listing.site, listing.sku, listing.currency, grp, now_s, now_s, now_s),
         ).lastrowid
-        result = Recorded(product_id, "new", None, None)
+        result = Recorded(product_id, "new", None, None, _record_coupon(conn, listing, product_id, None, now_s))
     else:
         product_id = row["id"]
         price_changed = bool(row["in_stock"]) != listing.in_stock or moved(row["price"], listing.price)
@@ -642,10 +680,11 @@ def record(conn: sqlite3.Connection, listing: Listing, grp: str | None = None,
             (listing.title, listing.url, price, list_price, *details[4:], grp, now_s,
              *([now_s] if price_changed else []), product_id),
         )
+        coupon_new = _record_coupon(conn, listing, product_id, row, now_s)
         if not changed:
-            return Recorded(product_id, "same", row["price"], bool(row["in_stock"]))
+            return Recorded(product_id, "same", row["price"], bool(row["in_stock"]), coupon_new)
         result = Recorded(product_id, "changed" if price_changed else "same",
-                          row["price"], bool(row["in_stock"]))
+                          row["price"], bool(row["in_stock"]), coupon_new)
 
     stored = (listing.price, listing.list_price) if row is None else (price, list_price)
     conn.execute(
@@ -654,6 +693,52 @@ def record(conn: sqlite3.Connection, listing: Listing, grp: str | None = None,
         (product_id, *stored, listing.in_stock, now_s),
     )
     return result
+
+
+def _record_coupon(conn: sqlite3.Connection, listing: Listing, product_id: int, row: sqlite3.Row | None, now_s: str) -> bool:
+    """Keep the coupon a product shows now and note its code; True if that is news for the product's price.
+    Never lets an error reach the caller: a coupon must not cost a price update."""
+    if listing.coupon_unknown:  # an older worker can't read coupons: its silence means nothing
+        return False
+    new = listing.coupon
+    old = coupons.from_row(row) if row is not None else None
+    try:
+        conn.execute("SAVEPOINT coupon")
+        if new != old:
+            values = (new.kind, new.code, new.title, new.detail, new.amount, new.percent, new.cap, new.min_order,
+                      new.group_url, now_s) if new else (None,) * 10
+            conn.execute("""UPDATE products SET coupon_kind = ?, coupon_code = ?, coupon_title = ?, coupon_detail = ?,
+                                                coupon_amount = ?, coupon_percent = ?, coupon_cap = ?, coupon_min_order = ?,
+                                                coupon_url = ?, coupon_seen_at = ? WHERE id = ?""", (*values, product_id))
+        if new and new.code and new.kind in ("code", "multibuy"):
+            _note_code(conn, listing.site, new, now_s)
+        conn.execute("RELEASE coupon")
+    except sqlite3.Error:
+        conn.execute("ROLLBACK TO coupon")
+        conn.execute("RELEASE coupon")
+        log.exception("coupon of product %s", product_id)
+        return False
+    off = new.saving(listing.price) if new else None
+    return bool(off) and off > (old.saving(listing.price) or 0 if old else 0)
+
+
+def _note_code(conn: sqlite3.Connection, site: str, c: Coupon, now_s: str) -> None:
+    """One row per code on a shop. A code back after COUPON_GONE_DAYS, or now worth more, is news again."""
+    row = conn.execute("SELECT id, amount, percent, last_seen_at FROM coupons WHERE site = ? AND code = ?",
+                       (site, c.code)).fetchone()
+    if row is None:
+        conn.execute("""INSERT INTO coupons (site, code, kind, title, amount, percent, group_url, first_seen_at, last_seen_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                     (site, c.code, c.kind, c.title, c.amount, c.percent, c.group_url, now_s, now_s))
+        return
+    came_back = parse_iso(row["last_seen_at"]) < parse_iso(now_s) - timedelta(days=COUPON_GONE_DAYS)
+    grew = (c.amount or 0) > (row["amount"] or 0) or (c.percent or 0) > (row["percent"] or 0)
+    if came_back or grew:
+        conn.execute("""UPDATE coupons SET kind = ?, title = ?, amount = ?, percent = ?, group_url = ?, first_seen_at = ?,
+                                           last_seen_at = ?, state = 'new', decided_at = NULL WHERE id = ?""",
+                     (c.kind, c.title, c.amount, c.percent, c.group_url, now_s, now_s, row["id"]))
+    else:
+        conn.execute("UPDATE coupons SET last_seen_at = ? WHERE id = ?", (now_s, row["id"]))
 
 
 def record_barcodes(conn: sqlite3.Connection, product_id: int, gtins, source: str, now: datetime) -> None:

@@ -46,6 +46,8 @@ owns one job.
 | `sites/amazon_now_eg.py` | 35 | Amazon Now: amazon_eg's search pages with the Amazon Now root node `211761638031` in front of every query (without it a node lists the regular offers), product links to the Now offer, no `deals:` feed; 0 results for the whole store raises `Blocked` (delivery location not served) | amazon_eg |
 | `sites/base.py` | 35 | The `Site` interface every shop implements; money and count parsing | models |
 | `planner.py` | 93 | Splitting a root into slices under the shop's limit, by price ranges only | models |
+| `coupons.py` | 122 | Reading a shop's coupon text into a `Coupon`, and the lines that say one in a message; no I/O ([COUPONS.md](COUPONS.md)) | models |
+| `coupon_messages.py` | 137 | One message per coupon covering many products, decided every 5 minutes in the Watchdog | alerts, publish, coupons |
 | `db.py` | 349 | Schema and migrations; `record()` (upsert a product, append history on change); backups | models |
 | `scheduler.py` | 331 | The job queue: leases, intervals, blocks, failures, worker bookkeeping, events | db, planner |
 | `shop_rules.py` | 344 | Every shop's known misbehaviour in one list (`RULES`, see [SHOP_RULES.md](SHOP_RULES.md)): `clean()` turns placeholder prices (Jumia's 100,000 and 50,000 EGP) into "no price" for every listing, `stops()` names the deals that must not be sent (a reference that is a placeholder or doubtful, like Jumia's 10,000; any new-listing claim on a `no_claim_alerts` shop, noon), `clean_history()` applies the placeholders to what is stored (at every start), `hit()` and `summary()` count what each rule caught for the web UI | models |
@@ -184,6 +186,7 @@ many have run, and `db.connect()` runs the missing ones in a transaction on star
 | 21 | `shop_rule_hits` (what each shop rule caught, by rule, site and SKU) |
 | 22 | `reviews` (the admins' decision on each deal and what went to the public channel) |
 | 23 | `shop_settings`, `device_shops` (what the admins switched per shop and per device from the web UI) |
+| 24 | `products.coupon_*`, `coupons`, `alerts.coupon_id` (the coupon a product shows now, the codes seen on a shop; [COUPONS.md](COUPONS.md)) |
 
 **Tables and columns** (prices are integer piastres; times are UTC ISO text, which sorts correctly as text):
 
@@ -262,6 +265,7 @@ without a login; changes still need an admin.
 | `POST /api/settings/shops/{site}` | admin | any of `crawl`, `alerts`, `screenshots`, `pages`, `pace`, `min_drop`, `min_price`, `note` (`null` clears a floor) | `{ok}`; only what is sent changes. `site` `*` = every shop (not for a note). 422 unknown shop or bad value |
 | `POST /api/settings/shops/{site}/devices/{worker}` | admin | `{on}` | `{ok}`; 404 unknown device, 409 the shop isn't in that device's `DEALS_SITES` (add it on the device first), 422 unknown shop |
 | `POST /api/subscribers/{chat_id}/{action}` | admin | | `approve`, `reject`, `remove`, `promote`, `demote` (as the bot's buttons; tells the person on Telegram). 403 for other tokens, 409 if already decided |
+| `GET /api/coupons?site=&code=&limit=` | viewer | | codes seen on the shops; with `site` and `code`, also that code's in-stock products |
 | `GET /api/products/{id}/alert?note=`, `POST /api/products/{id}/alert` | admin | `{note}` | an alert by hand (alerts.manual_alert): the preview (`price`, `reference`, `drop`, `saving`, `basis` = history, shop_claim or none, stats, `confidence`, `rules` = what the automatic rules would send, `stopped_by`, `repeat`, `past_alerts`, `last_alert`, `seen_hours`, `recipients`, `message`); the POST sends it and adds `alert_id`. 404 unknown product, 409 sold out, no price, or a manual alert for it in the last 10 minutes |
 | `POST /api/report` | admin | | queue the daily report to the admins now |
 | `GET /api/uptime?days=&kind=&name=&limit=` | admin | | `{status: [...], outages: [...], changes: [...]}` (uptime.py) |
@@ -361,6 +365,12 @@ commented template.
 | `[alerts] max_share_at_or_below` | 0.15 | No alert when the product was at or below this price more than 15% of the time |
 | `[alerts] new_product_min_drop` | 0.30 | Claimed discount needed for new listings |
 | `[alerts] list_max_claimed_drop` | 0.60 | A bigger claim against an RRP ("list") price is rejected |
+| `[alerts] coupon_alerts` | false | Alert when the price after a coupon passes the rules ([COUPONS.md](COUPONS.md)) |
+| `[alerts] coupon_messages` | false | One message per coupon covering many products; off: the decision is only stored in `coupons.state` |
+| `[alerts] coupon_message_min_products` | 5 | In-stock watched products a code must cover |
+| `[alerts] coupon_message_min_discount` | 0.05 | Its best product, against that product's usual price |
+| `[alerts] coupon_message_wait_minutes` | 60 | After first sighting: a crawl finds a code's products gradually |
+| `[alerts] coupon_messages_per_day` | 5 | Per shop, best value first |
 | `[alerts] confirm_low_confidence` | true | Hold low-confidence alerts until the product is seen again at that price. The live config sets it to `false` since 27 Oct 2026 (0 of 105 held alerts were cancelled; the hold cost 14 min on average) |
 | `[alerts] confirm_early_drops` | false | Also hold early drops (by default they are sent at once; only new listings wait) |
 | `[alerts] confirm_minutes` | 90 | ...but send anyway after this long if nobody rechecked it (the hold is at least 3x the group's interval + 10 min, so a slow group can actually be rechecked) |

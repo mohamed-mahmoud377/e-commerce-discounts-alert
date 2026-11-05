@@ -16,6 +16,7 @@ import sqlite3
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from deals import coupons
 from deals.config import Config, ReviewRules
 from deals.db import PRICE_NOISE, iso, parse_iso
 from deals.pricing import LOW_STOCK_EVERYWHERE, Deal, PriceStats
@@ -39,6 +40,7 @@ REASONS = {
     "gone": "Price already gone",
     "other": "Other",
 }
+COUPON_LINK = "\n\n🛒 "  # where a coupon message's link to all its products starts; a post has a button instead
 TIER_ICON = {"crazy": "🔴", "strong": "🟠", "good": "🟡"}
 
 # The first line of a public post. Each pool's hooks must be true of every deal that can reach the pool:
@@ -198,6 +200,8 @@ def format_card(alert_id: int, p: sqlite3.Row, stats: PriceStats, deal: Deal, le
                "Signals: " + ", ".join(code for code, _ in deal.signals) if deal.signals else ""]
     if any(product):
         lines += ["", *(x for x in product if x)]
+    if coupon := coupons.from_row(p):
+        lines += ["", coupons.card_line(coupon, p["price"])]
     if note:
         lines += ["", f"📝 {e(note)}"]
     lines += ["", f"Past alerts: {past} · found {now.astimezone(CAIRO):%H:%M} Cairo · public tone: {level}"]
@@ -233,7 +237,7 @@ def _pool(kind: str, level: str, all_time_low: bool) -> str:
 
 
 def render_post(*, kind: str, tier: str, basis: str, all_time_low: bool, title: str, site: str, group: str | None,
-                note: str | None, price: int, reference: int, index: int) -> tuple[str, str]:
+                note: str | None, price: int, reference: int, index: int, coupon: str | None = None) -> tuple[str, str]:
     """The Arabic post and which hook it used. Fits a photo's caption (1,024 characters)."""
     pool = _pool(kind, tier, all_time_low)
     hook_at = index % len(HOOKS[pool])
@@ -250,6 +254,8 @@ def render_post(*, kind: str, tier: str, basis: str, all_time_low: bool, title: 
             lines.append(why[index % len(why)])
     else:
         lines.append(f"💰 <b>{price / 100:,.0f} جنيه</b>")
+    if coupon:
+        lines.append(coupon)
     if RENEWED.search(title):
         lines.append("♻️ المنتج متجدد أو مستعمل، مش جديد")
     if kind == "price_error":
@@ -273,18 +279,41 @@ def _chat(value: str) -> int | str:
     return int(value) if value.lstrip("-").isdigit() else value
 
 
-def _facts(conn, alert_id: int) -> sqlite3.Row | None:
-    return conn.execute(
-        """SELECT r.*, a.kind, a.price AS alert_price, a.reference_price AS reference,
-                  p.title, p.url, p.site, p.price AS now_price, p.in_stock
-           FROM reviews r JOIN alerts a ON a.id = r.alert_id JOIN products p ON p.id = a.product_id
+def _facts(conn, alert_id: int) -> dict | None:
+    row = conn.execute(
+        """SELECT r.*, a.kind, a.price AS alert_price, a.reference_price AS reference, a.message,
+                  p.title, p.url, p.site, p.price AS now_price, p.in_stock, p.coupon_kind, p.coupon_code, p.coupon_title,
+                  p.coupon_detail, p.coupon_amount, p.coupon_percent, p.coupon_cap, p.coupon_min_order, p.coupon_url,
+                  c.site AS code_site, c.code AS code, c.group_url AS code_url
+           FROM reviews r JOIN alerts a ON a.id = r.alert_id LEFT JOIN products p ON p.id = a.product_id
+           LEFT JOIN coupons c ON c.id = a.coupon_id
            WHERE r.alert_id = ?""", (alert_id,)).fetchone()
+    if row is None:
+        return None
+    f = dict(row)
+    f["coupon_gone"] = False
+    if f["kind"] == "coupon_drop" and f["now_price"] is not None:
+        # What counts is the price after the coupon. With the coupon gone that is the shelf price: "it rose".
+        coupon = coupons.from_row(f)
+        off = coupon.saving(f["now_price"]) if coupon else None
+        f["coupon_gone"] = not off
+        f["now_price"] -= off or 0
+    elif f["kind"] == "coupon":
+        # A coupon message has no one product: it is still good while products show the code.
+        left = conn.execute("SELECT COUNT(*) FROM products WHERE site = ? AND coupon_code = ? AND in_stock = 1",
+                            (f["code_site"], f["code"])).fetchone()[0]
+        f.update(in_stock=left > 0, now_price=0, alert_price=0, reference=0, coupon_gone=not left)
+    return f
 
 
 def _post(conn, f: sqlite3.Row) -> tuple[str, str, list[list[dict]]]:
     """The post for this deal at the product's price right now: (text, hook, buy button). A price that rose
     since the alert has lost what made it loud. The hook is the next unused one of its pool, so a preview and
     the post that follows it are the same."""
+    if f["kind"] == "coupon":  # written when it was queued (coupon_messages.py)
+        url = f["code_url"]
+        text = f["message"].rsplit(COUPON_LINK, 1)[0] if url else f["message"]
+        return text, "coupon:0", [[{"text": "🛒 كل المنتجات", "url": url}]] if url else []
     price = f["now_price"]
     rose = price > f["alert_price"] * (1 + PRICE_NOISE)
     kind = "price_drop" if rose and f["kind"] == "price_error" else f["kind"]
@@ -294,13 +323,17 @@ def _post(conn, f: sqlite3.Row) -> tuple[str, str, list[list[dict]]]:
                         "ORDER BY published_at DESC, alert_id DESC LIMIT 1", (f"{pool}:%",)).fetchone()
     index = int(last["hook"].split(":")[1]) + 1 if last else 0
     text, hook = render_post(kind=kind, tier=level, basis=f["basis"], all_time_low=low, title=f["title"], site=f["site"],
-                             group=f["grp"], note=f["note"], price=price, reference=f["reference"], index=index)
+                             group=f["grp"], note=f["note"], price=price, reference=f["reference"], index=index,
+                             coupon=None if f["coupon_gone"] or not (c := coupons.from_row(f))
+                             else coupons.line(c, f["now_price"] if f["kind"] != "coupon_drop" else None))
     shop = SHOPS[f["site"]].arabic.split("(")[0].strip() if f["site"] in SHOPS else f["site"]
     return text, hook, [[{"text": f"🛒 شوف العرض على {shop}", "url": f["url"]}]]
 
 
 def _photo(conn, cfg: Config, f: sqlite3.Row) -> bytes | str | None:
     """The deal's screenshot, unless the price has moved away from what it shows."""
+    if f["kind"] == "coupon":
+        return None
     if abs(f["now_price"] - f["alert_price"]) > f["alert_price"] * PRICE_NOISE:
         return None
     shot = conn.execute("SELECT status, file_id FROM shots WHERE alert_id = ?", (f["alert_id"],)).fetchone()
@@ -406,7 +439,7 @@ def _publish(conn, cfg: Config, tg, f: sqlite3.Row, now: datetime) -> None:
     card_chat = _chat(cfg.telegram_review_chat_id)
     who = html.escape(f["decided_by_name"] or str(f["decided_by"]), quote=False)
     if f["now_price"] is None or not f["in_stock"]:
-        _failed(conn, tg, card_chat, f, "sold out since it was approved")
+        _failed(conn, tg, card_chat, f, "the coupon's products are gone" if f["kind"] == "coupon" else "sold out since it was approved")
         return
     text, hook, buttons = _post(conn, f)
     try:
@@ -421,7 +454,7 @@ def _publish(conn, cfg: Config, tg, f: sqlite3.Row, now: datetime) -> None:
         return
     with conn:
         conn.execute("UPDATE reviews SET status = 'published', price = ?, hook = ?, public_message_id = ?, published_at = ?, "
-                     "error = NULL WHERE alert_id = ?", (f["now_price"], hook, sent["message_id"], iso(now), f["alert_id"]))
+                     "error = NULL WHERE alert_id = ?", (f["now_price"] or None, hook, sent["message_id"], iso(now), f["alert_id"]))
     username = (sent.get("chat") or {}).get("username")
     link = f" → <a href=\"https://t.me/{username}/{sent['message_id']}\">the post</a>" if username else ""
     _edit(tg, card_chat, f["message_id"], f"{f['card']}\n\n✅ <b>Approved by {who}</b>{link}")
@@ -541,15 +574,19 @@ def on_button(conn: sqlite3.Connection, cfg: Config, tg, cq: dict, allowed: bool
 
 def _moved(f: sqlite3.Row) -> str | None:
     """Why the deal is not what the card says any more; a price that fell further is still fine."""
+    if f["kind"] == "coupon":
+        return "No product shows this coupon any more." if f["coupon_gone"] else None
     if not f["in_stock"] or f["now_price"] is None:
         return "It is sold out now."
+    if f["coupon_gone"]:
+        return f"The coupon is gone: the price is {f['now_price'] / 100:,.0f} EGP (it was {f['alert_price'] / 100:,.0f} EGP with it)."
     if f["now_price"] > f["alert_price"] * (1 + PRICE_NOISE):
         return f"The price rose to {f['now_price'] / 100:,.0f} EGP (it was {f['alert_price'] / 100:,.0f} EGP)."
     return None
 
 
 def _can_force(f: sqlite3.Row) -> bool:
-    return bool(f["in_stock"]) and f["now_price"] is not None and f["now_price"] < f["reference"]
+    return f["kind"] != "coupon" and bool(f["in_stock"]) and f["now_price"] is not None and f["now_price"] < f["reference"]
 
 
 def _moved_buttons(f: sqlite3.Row) -> list[list[dict]]:

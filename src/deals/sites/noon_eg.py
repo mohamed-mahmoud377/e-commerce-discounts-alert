@@ -12,11 +12,13 @@ from urllib.parse import parse_qsl, urlencode
 
 from curl_cffi import requests
 
-from deals.models import (BESTSELLER, LIMITED_DEAL, LOWEST_30D, LOWEST_365D, MEGA_DEAL, SELLING_FAST,
+from deals import coupons
+from deals.models import (BESTSELLER, Coupon, LIMITED_DEAL, LOWEST_30D, LOWEST_365D, MEGA_DEAL, SELLING_FAST,
                           Blocked, Category, Listing, PageResult, Slice, UnknownTarget)
 
 API = "https://www.noon.com/_svc/catalog/api/v3/u/egypt-en"
-PRODUCT_URL = "https://www.noon.com/egypt-en/{slug}/{sku}/p/"
+SITE_URL = "https://www.noon.com/egypt-en"
+PRODUCT_URL = SITE_URL + "/{slug}/{sku}/p/"
 STOCK_LEFT = re.compile(r"Only (\d+) left")
 RECENT_SALES = re.compile(r"(\d[\d,]*)\+? sold recently")
 LOWEST_DAYS = re.compile(r"Lowest price in (\d+) days")
@@ -46,6 +48,17 @@ class NoonEG:
                 raise UnknownTarget(f"{self.name}: unknown category {path!r} (site returned {found!r})")
             current = path
         return parse_catalog(data, page, current)
+
+
+def coupon_page(session, path: str, page: int) -> PageResult:
+    """One page of the products a coupon covers (`discount_canonical_url`, e.g. /eg-nov26-mobile-200): a normal
+    catalogue with no category of its own. By hand only (`make coupon-group`): crawls never ask for this."""
+    r = session.get(f"{API}/{path.strip('/')}/?{urlencode({'page': page})}", timeout=30,
+                    headers={"x-locale": "en-eg", "x-mp": "noon"})
+    if r.status_code in (403, 429) or "json" not in r.headers.get("content-type", ""):
+        raise Blocked(f"noon_eg: HTTP {r.status_code}, {r.headers.get('content-type')}")
+    r.raise_for_status()
+    return parse_catalog(r.json(), page)
 
 
 def request_for(slice: Slice, page: int) -> tuple[str, dict[str, str | int]]:
@@ -79,6 +92,17 @@ def parse_catalog(data: dict, page: int, current_category: str | None = None) ->
         total=data.get("nbHits"),
         subcategories=_child_categories(data, current_category) if current_category else [],
     )
+
+
+def _coupon(hit: dict) -> Coupon | None:
+    """noon's coupon on a product: its code, its words and the page of every product it covers."""
+    code = hit.get("discount_tag_code")
+    if not code:
+        return None
+    path = hit.get("discount_canonical_url") or ""
+    return coupons.parse(title=hit.get("discount_tag_title"), code=code, detail=hit.get("discount_tag_detail"),
+                         terms=hit.get("discount_tag_terms") or (), url=path,
+                         group_url=f"{SITE_URL}/{path.strip('/')}/" if path else None)
 
 
 def _parse_hit(hit: dict) -> Listing:
@@ -133,6 +157,7 @@ def _parse_hit(hit: dict) -> Listing:
         reviews=rating.get("count"),
         badges=tuple(badges),
         seller=seller,
+        coupon=_coupon(hit),
     )
 
 

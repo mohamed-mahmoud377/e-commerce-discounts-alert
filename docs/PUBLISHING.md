@@ -189,3 +189,9 @@ review all of them to start: `review.min_score` is the floor if that gets too mu
 - Reject reasons by shop and kind, in the web UI.
 - Deals that can skip review, learned from the decisions (e.g. a kind and score that was approved 95% of the time).
 - Affiliate links.
+
+## Coupons
+
+A product alert shows its coupon on the card and in the post. Two more kinds of message can come through this same review, both off until
+switched on: `coupon_drop`, posted at the price after the coupon, and `coupon`, one message about a code with no single product (its
+card is the message itself; a button links to all its products). Approve checks the coupon is still there. See [COUPONS.md](COUPONS.md).

@@ -103,7 +103,8 @@ filtered one would be (see GUIDE, Algorithm 3).
 **Prices and claims.** On the TVs (28 October), 32 of 168 had a crossed-out price, 30 of them with a timed
 discount ("Ends in N hrs"). Carrefour's own `markedPrice` is therefore its everyday shelf price, which is why it
 is treated as a recent ("was") price, like B.TECH's own offers; a marketplace seller's is a claim (`list`).
-A coupon ("Extra 500EGP Off") is not in the price: what we record is the shelf price before coupons.
+A coupon ("Extra 500EGP Off") is not in the price: what we record is the shelf price before coupons, and the coupon
+is stored beside it as kind `badge` (docs/COUPONS.md; 6 of about 60 cards on the saved page, 5 Nov 2026).
 
 **Stock.** Out-of-stock products are not listed (none on any page), so a product that sells out disappears
 from its category until it is back, like Jumia, 2B and B.TECH. "Only N left" on a card is min(stock, order

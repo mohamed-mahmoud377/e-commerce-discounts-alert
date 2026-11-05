@@ -35,6 +35,13 @@ class AlertRules:
     # worker started with DEALS_SCREENSHOTS=1. The alert waits for it this long at most, then goes as text.
     screenshots: bool = True
     screenshot_wait_seconds: int = 30
+    # Coupons (docs/COUPONS.md). They are always recorded and shown; these two switches let them cause a message.
+    coupon_alerts: bool = False  # alert when the price after a coupon passes the rules above
+    coupon_messages: bool = False  # one message per coupon covering many products; off: only the decision is stored
+    coupon_message_min_products: int = 5
+    coupon_message_min_discount: float = 0.05  # on its best product, against that product's usual price
+    coupon_message_wait_minutes: int = 60  # a crawl finds a code's products gradually
+    coupon_messages_per_day: int = 5  # per shop, best value first
 
 
 @dataclass(frozen=True)

@@ -89,3 +89,8 @@ Whether `robots.txt` still says what's quoted above: if it starts allowing the p
 ## Alert screenshots
 
 `.rn-price` (`.price-container` is `display: contents`, so has no box of its own), and the seller's card `div:has(> .rn-seller__chips)`. Arabic at `/ar/`. About 3 s. Marketplace: the seller's name shows, the alert's warning is noon's only.
+
+## Coupons
+
+Every card on the saved page (21 of 21, 5 Nov 2026) shows "USE Code WF500" in `.rn-card__coupon`. The card does not say what the
+code takes off, so it is stored as words only and never changes a price we show (docs/COUPONS.md).

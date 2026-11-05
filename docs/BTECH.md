@@ -93,6 +93,9 @@ URL parameter the page honours.
 | **`price.base_price`** | 4499.0 | crossed-out price, kind `was` for B.TECH's own offers, `list` for third-party sellers |
 | `price.discounts` | `[{"name": "promotion", "value": {"type": "amount", "value": 250}}]` or `item_coupon` | not used (the kind of discount) |
 | `price.final_without_coupon` | differs from `final_price` on 7% of TVs | not used |
+
+An `item_coupon` in `price.discounts` is stored as a coupon of kind `auto` (13 of 100 on the saved page, 5 Nov 2026): it is
+already in `final_price`, so it is shown as such and never taken off again (docs/COUPONS.md).
 | **`seller_name`** / `store_name` | "B.TECH" or a marketplace seller ("Mohamed Mohy", "storeleek") | `Listing.seller` when not B.TECH (shown in alerts) |
 | **`is_in_stock`** | true | in stock |
 | **`is_best_seller`** | true on about half the TVs | badge `bestseller` |

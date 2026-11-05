@@ -11,6 +11,35 @@ BESTSELLER = "bestseller"
 
 
 @dataclass(frozen=True)
+class Coupon:
+    """An offer the shop shows next to a product, on top of its price (docs/COUPONS.md). Money is in piastres."""
+
+    kind: str  # code, multibuy (needs several items), bank (needs a bank's card), badge (no code), auto (in the price)
+    title: str  # as the shop writes it
+    code: str | None = None
+    detail: str | None = None
+    amount: int | None = None  # a fixed amount off
+    percent: float | None = None  # 0.10 for 10% off
+    cap: int | None = None  # the most a percentage can take off
+    min_order: int | None = None  # the order must reach this
+    group_url: str | None = None  # the shop's page of every product the coupon covers
+
+    def saving(self, price: int | None) -> int | None:
+        """What it takes off one item at this price; None when that is not a price anyone can simply get:
+        a bank's card or several items needed, already in the price, or an order too small for it."""
+        if self.kind not in ("code", "badge") or not price or (self.min_order and price < self.min_order):
+            return None
+        if self.amount is not None:
+            off = self.amount
+        elif self.percent is not None:
+            off = round(price * self.percent)
+            off = min(off, self.cap) if self.cap else off
+        else:
+            return None
+        return off if 0 < off < price else None
+
+
+@dataclass(frozen=True)
 class Listing:
     """One product as seen on a listing page at a point in time.
 
@@ -34,6 +63,8 @@ class Listing:
     badges: tuple[str, ...] = ()
     seller: str | None = None  # noon: one product can have several sellers at very different prices
     gtins: tuple[str, ...] = ()  # barcodes the shop's data gives (GTIN-13, checksum verified): Dream 2000's variant SKUs
+    coupon: Coupon | None = None
+    coupon_unknown: bool = False  # from a worker too old to read coupons: says nothing about the stored one
 
 
 def valid_gtin(value) -> str:

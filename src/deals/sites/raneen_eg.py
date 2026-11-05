@@ -15,7 +15,7 @@ import re
 from curl_cffi import requests
 from selectolax.lexbor import LexborHTMLParser
 
-from deals.models import Blocked, Listing, PageResult, Slice, UnknownTarget
+from deals.models import Blocked, Coupon, Listing, PageResult, Slice, UnknownTarget
 
 BASE = "https://www.raneen.com"
 IMPERSONATE = "chrome"
@@ -87,7 +87,15 @@ def _listing(card) -> Listing:
         list_price_kind="list" if claim else None,
         brand=brand.text(strip=True) if brand else None,
         stock_left=int(left.attributes["data-rn-stock-left"]) if left else None,
+        coupon=_coupon(card),
     )
+
+
+def _coupon(card) -> Coupon | None:
+    """A card's "USE Code WF500". It says nothing of what the code takes off, so it stays words."""
+    node = card.css_first(".rn-card__coupon code")
+    code = node.text(strip=True) if node else ""
+    return Coupon(kind="code", title=f"Use code {code}", code=code) if code else None
 
 
 def _amount(card, kind: str) -> int | None:

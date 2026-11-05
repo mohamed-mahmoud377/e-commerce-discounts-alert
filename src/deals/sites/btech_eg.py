@@ -23,7 +23,7 @@ from urllib.parse import unquote
 
 from curl_cffi import requests
 
-from deals.models import BESTSELLER, Blocked, Category, Listing, PageResult, Slice, UnknownTarget
+from deals.models import BESTSELLER, Blocked, Category, Coupon, Listing, PageResult, Slice, UnknownTarget
 
 SITE = "https://btech.com"
 TREE_PAGE = f"{SITE}/en/c/tvs-projectors"  # any category page carries the whole tree
@@ -176,7 +176,18 @@ def _parse_item(p: dict) -> Listing:
         brand=(p.get("brand") or "").strip() or None,
         badges=(BESTSELLER,) if p.get("is_best_seller") else (),
         seller=None if first_party else seller,
+        coupon=_coupon(prices),
     )
+
+
+def _coupon(prices: dict) -> Coupon | None:
+    """B.TECH's `item_coupon`: applied by itself and already in `final_price`, so never taken off again."""
+    found = next((d for d in prices.get("discounts") or [] if d.get("name") == "item_coupon"), None)
+    if found is None:
+        return None
+    value = found.get("value") or {}
+    amount = _minor(value.get("value")) if value.get("type") == "amount" else None
+    return Coupon(kind="auto", title="B.TECH coupon, already in the price", amount=amount)
 
 
 def _minor(value) -> int | None:

@@ -54,7 +54,10 @@ class PriceStats:
     share_at_or_below: float | None = None
 
 
-def compute_stats(points: Sequence[Point], now: datetime) -> PriceStats:
+def compute_stats(points: Sequence[Point], now: datetime, at_price: int | None = None) -> PriceStats:
+    """`at_price` is a price the product is not on the shelf at: the price after a coupon. How often it was this
+    cheap is then asked at that price, and today's shelf price counts as history like any other: a product that
+    never changed price has no stretch before the current one, and it is exactly what a coupon can undercut."""
     if not points:
         return PriceStats(None, None, None, None, None, None, None, None, 0, 0, 0, None, None)
     pts = sorted(points, key=lambda p: p.at)
@@ -63,6 +66,8 @@ def compute_stats(points: Sequence[Point], now: datetime) -> PriceStats:
 
     # (price, start, end) for every in-stock stretch before the current one
     prior = [(p.price, p.at, nxt.at) for p, nxt in zip(pts, pts[1:]) if p.in_stock and p.price is not None]
+    if at_price is not None and current is not None:
+        prior.append((current, last.at, now))
     prices = [p for p, _, _ in prior]
 
     w90 = _clip(prior, now - timedelta(days=90))
@@ -70,7 +75,7 @@ def compute_stats(points: Sequence[Point], now: datetime) -> PriceStats:
     total90 = sum(w for _, w in w90)
     share = None
     if current is not None and total90 > 0:
-        share = sum(w for p, w in w90 if p <= current) / total90
+        share = sum(w for p, w in w90 if p <= (at_price or current)) / total90
     return PriceStats(
         current=current,
         previous=prior[-1][0] if prior else None,
@@ -130,7 +135,7 @@ class ProductView:
 class Deal:
     """Why a price is a deal, as facts; alerts.py turns them into a message."""
 
-    kind: str  # price_drop | all_time_low | price_error | early_drop | new_product | manual (sent by an admin)
+    kind: str  # price_drop | all_time_low | price_error | early_drop | new_product | manual (sent by an admin) | coupon_drop
     price: int
     reference: int  # what the drop is measured against
     drop: float  # 0.42 = 42% below reference

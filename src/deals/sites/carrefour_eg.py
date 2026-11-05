@@ -24,6 +24,7 @@ from urllib.parse import urlencode
 
 from curl_cffi import requests
 
+from deals import coupons
 from deals.models import Blocked, Category, LIMITED_DEAL, Listing, PageResult, Slice, UnknownTarget
 from deals.sites.btech_eg import _balanced, _rsc_payload
 
@@ -134,8 +135,10 @@ def _parse_card(card: dict) -> Listing | None:
     first_party = not seller or seller == FIRST_PARTY
     stock = attrs.get("stock") or {}
     status = stock.get("stockLevelStatus") or "inStock"
-    badges = [b.get("type") for c in card.get("productCardComponents") or []
-              for b in (c.get("componentDTO") or {}).get("badges") or []]
+    all_badges = [b for c in card.get("productCardComponents") or []
+                  for b in (c.get("componentDTO") or {}).get("badges") or []]
+    badges = [b.get("type") for b in all_badges]
+    coupon = next((b.get("primaryText") for b in all_badges if b.get("type") == "DiscountCoupon"), None)
     rating = next((c["componentDTO"].get("rating") for c in card.get("productCardComponents") or []
                    if c.get("uid") == "product-rating" and c.get("componentDTO")), None) or {}
     reviews = re.sub(r"\D", "", str(rating.get("count") or ""))
@@ -161,6 +164,8 @@ def _parse_card(card: dict) -> Listing | None:
         reviews=int(reviews) if reviews else None,
         badges=(LIMITED_DEAL,) if "TimedDiscount" in badges else (),  # "Ends in 13 hrs"
         seller=None if first_party else seller,
+        # "Extra 500EGP Off": an amount with no code on the card, not in the price (docs/CARREFOUR.md).
+        coupon=coupons.parse(title=coupon, kind="badge") if coupon else None,
     )
 
 

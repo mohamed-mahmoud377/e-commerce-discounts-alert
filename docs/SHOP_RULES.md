@@ -8,6 +8,8 @@ a rule for its evidence and the products it caught), and this document explains 
 
 Started 4 November 2026 with Jumia's placeholder prices, which had already caused 25 false alerts (22 against 100,000 or 50,000, 3 against 10,000).
 
+Coupons are a different matter (a shop's real offer, not bad data): see [COUPONS.md](COUPONS.md).
+
 ## The kinds of rule
 
 | Kind | What the tracker does | Where |

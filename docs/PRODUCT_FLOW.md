@@ -108,6 +108,9 @@ Only when one of these is true *and* it is in stock:
 Rises, unchanged prices and out-of-stock sightings are only stored. That is why the SSD above never
 produced a check on 26 October: both moves were rises.
 
+Coupons are recorded here too, beside the price and never in the history. With `[alerts] coupon_alerts` on, a new or bigger coupon
+with a known value is judged even though the price did not move: [COUPONS.md](COUPONS.md).
+
 ## 5. Statistics from the product's own history
 
 `compute_stats()` turns the history *before the current price* into numbers. Two rules make them hard to

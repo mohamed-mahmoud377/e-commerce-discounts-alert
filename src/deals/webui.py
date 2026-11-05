@@ -17,7 +17,7 @@ import re
 import sqlite3
 from datetime import datetime, timedelta
 
-from deals import audit, db, health, matching, monitor, scheduler, shop_rules, shop_settings, shops, uptime
+from deals import audit, coupons, db, health, matching, monitor, scheduler, shop_rules, shop_settings, shops, uptime
 from deals.alerts import product_stats
 from deals.config import Config
 from deals.db import iso
@@ -153,6 +153,22 @@ def groups(conn: sqlite3.Connection) -> list[str]:
     return [r[0] for r in conn.execute("SELECT DISTINCT grp FROM products WHERE grp IS NOT NULL ORDER BY grp")]
 
 
+def coupon_codes(conn: sqlite3.Connection, site: str | None = None, code: str | None = None, limit: int = 200) -> list[dict]:
+    """The codes seen on the shops, newest first, with how many in-stock products show each now."""
+    return [dict(r) for r in conn.execute(
+        """SELECT c.*, (SELECT COUNT(*) FROM products p WHERE p.site = c.site AND p.coupon_code = c.code AND p.in_stock = 1) in_stock
+           FROM coupons c WHERE (? IS NULL OR c.site = ?) AND (? IS NULL OR c.code = ?)
+           ORDER BY c.last_seen_at DESC, c.id DESC LIMIT ?""", (site, site, code, code, limit))]
+
+
+def coupon_products(conn: sqlite3.Connection, site: str, code: str, limit: int = 100, exclude: int | None = None) -> list[dict]:
+    """In-stock products showing a code, cheapest first."""
+    return [dict(r) for r in conn.execute(
+        """SELECT id, title, url, price, seller FROM products
+           WHERE site = ? AND coupon_code = ? AND in_stock = 1 AND id IS NOT ? ORDER BY price LIMIT ?""",
+        (site, code, exclude, limit))]
+
+
 def product(conn: sqlite3.Connection, product_id: int, now: datetime) -> dict | None:
     row = conn.execute("SELECT * FROM products WHERE id = ?", (product_id,)).fetchone()
     if row is None:
@@ -173,6 +189,8 @@ def product(conn: sqlite3.Connection, product_id: int, now: datetime) -> dict | 
             """SELECT id, created_at, kind, price, reference_price, drop_pct, score, error, confirm_until
                FROM alerts WHERE product_id = ? ORDER BY created_at DESC LIMIT 20""", (product_id,))],
         "other_sellers": [dict(o) for o in db.sibling_offers(conn, row["site"], row["sku"], now)],
+        "coupon_after": coupons.after(row),
+        "coupon_products": coupon_products(conn, row["site"], row["coupon_code"], 10, product_id) if row["coupon_code"] else [],
         "same_model": same,
         "compare": _compare(conn, row, same, history[0]["observed_at"] if history else iso(now)),
     }
@@ -476,7 +494,7 @@ const TABS = ['Overview', 'Deals', 'Products', 'Shops', 'Devices', 'Uptime', 'Er
 const LABEL = {Rules: 'Rules & watches', Settings: 'Shop settings'};
 // Every shop from deals/shops.py (name, label, badge, kind, kind_label, url, home_only, doc), in its order.
 const SHOPS = __SHOPS__, SHOP_KINDS = [...new Set(SHOPS.map(s => s.kind))];
-const KINDS = {price_drop: ['Price drop', 'info'], all_time_low: ['All-time low', 'ok'], early_drop: ['Early drop', 'idle'],
+const KINDS = {coupon_drop: ['Coupon', 'ok'], coupon: ['Coupon message', 'new'], price_drop: ['Price drop', 'info'], all_time_low: ['All-time low', 'ok'], early_drop: ['Early drop', 'idle'],
   new_product: ['New product', 'new'], price_error: ['Price error', 'fail'], manual: ['Sent by hand', 'new'], system: ['System', 'warn']};
 let tab = 'Overview', timer = null, ov = null, toastTimer = null;
 const $ = s => document.querySelector(s);
@@ -1100,6 +1118,12 @@ async function productPage(id) {
           ${inflated ? `<span class='muted'> We never saw it above ${money(s.high)}, so the crossed-out price is ignored.</span>` : ''}</div>` : ''}
       </div></header>
     <section id='alertbox' class='card' hidden style='padding:18px;display:flex;flex-direction:column;gap:14px'></section>
+    ${p.coupon_kind ? `<section class='card' style='padding:16px 18px;display:flex;flex-direction:column;gap:8px'>
+      <div class='row' style='gap:8px'><strong>Coupon</strong>${pill('idle', p.coupon_kind)}${p.coupon_code ? `<code>${esc(p.coupon_code)}</code>` : ''}<span>${esc(p.coupon_title)}</span>
+        ${d.coupon_after ? `<span class='muted'>${money(d.coupon_after)} EGP after it</span>` : ''}${p.coupon_url && /^https:/.test(p.coupon_url) ? `<a href='${esc(p.coupon_url)}' target='_blank' rel='noopener'>All its products ↗</a>` : ''}</div>
+      ${p.coupon_detail ? `<div class='muted' style='font-size:13px'>${esc(p.coupon_detail)}</div>` : ''}
+      ${d.coupon_products.length ? `<div style='font-size:13px'><span class='muted'>Also on:</span> ${d.coupon_products.map(o => `<a href='#' onclick='openProduct(${o.id});return false'>${esc(o.title.slice(0, 40))}</a> (${money(o.price)})`).join(' · ')}</div>` : ''}
+    </section>` : ''}
     <section class='stats' aria-label='Price statistics'>${stat('Typical, 30 days', money(s.typical_30d))}${stat('Typical, 90 days', money(s.typical_90d))}${stat('Lowest seen', money(s.low), 'down')}
       ${stat('Highest seen', money(s.high))}${stat('Tracked for', s.tracked_days + ' days')}${stat('Changes, 90 days', s.changes_90d)}
       ${stat('Time at or below now', s.share_at_or_below == null ? '—' : Math.round(s.share_at_or_below * 100) + '%')}${stat('Last checked', ago(p.last_seen_at))}</section>

@@ -10,12 +10,14 @@ from datetime import timedelta
 from pathlib import Path
 
 from deals import config as config_mod
-from deals import audit, db, matching, planner, uptime
+from curl_cffi import requests as curl_requests
+
+from deals import audit, coupons, db, matching, planner, uptime, webui
 from deals.alerts import Telegram, product_stats
 from deals.db import iso, parse_iso, utcnow
 from deals.models import Slice
 from deals.shops import SHOPS
-from deals.sites import SITES
+from deals.sites import SITES, noon_eg
 
 SPARK = "▁▂▃▄▅▆▇█"
 
@@ -147,6 +149,8 @@ def cmd_alerts(args) -> None:
         sent = "sent" if a["sent_at"] and not a["error"] else (a["error"] or "pending")
         if a["kind"] == "system":
             print(f"{a['created_at'][:16]}  SYSTEM  {a['message']}  [{sent}]")
+        elif a["kind"] == "coupon":
+            print(f"{a['created_at'][:16]}  coupon       best {a['drop_pct']:.0%}  {a['message'].splitlines()[0]}  [{sent}]")
         else:
             print(f"{a['created_at'][:16]}  {a['kind']:<12} -{a['drop_pct']:.0%}  {_egp(a['price']):>12} "
                   f"(ref {_egp(a['reference_price'])})  score {a['score']:>3}  {a['site']}  {a['title'][:60]}  [{sent}]")
@@ -338,6 +342,58 @@ def cmd_models(args) -> None:
                   f"with a model number), {r['queued']:,} queued, last {_ago(r['last'])}{paused}")
     last = q("SELECT MAX(updated_at) FROM product_models")[0][0]
     print(f"last change {_ago(last)}; `deals models --sample 10` to check matches by eye, `deals models <code>` for one")
+
+
+def cmd_coupons(args) -> None:
+    conn = db.connect(_config(args).db_path)
+    if args.find:
+        rows = conn.execute("""SELECT site, sku, title, price, coupon_kind, coupon_code, coupon_title, coupon_amount, coupon_percent,
+                                      coupon_cap, coupon_min_order, coupon_detail, coupon_url FROM products
+                               WHERE coupon_kind IS NOT NULL AND (sku = ? OR title LIKE ?) ORDER BY site, price LIMIT ?""",
+                            (args.find, f"%{args.find}%", args.limit)).fetchall()
+        for r in rows:
+            after = coupons.after(r)
+            print(f"{r['site']:<14} {_egp(r['price']):>12}  {f'-> {_egp(after)}' if after else '':<16} "
+                  f"{r['coupon_kind']:<9} {r['coupon_code'] or '-':<12} {r['coupon_title'][:30]:<30}  {r['title'][:50]}")
+        print(f"{len(rows)} products" if rows else f"no product matching {args.find!r} has a coupon")
+        return
+    if args.code:
+        codes = [c for c in webui.coupon_codes(conn, args.site, args.code, args.limit)]
+        if not codes:
+            sys.exit(f"no code {args.code} seen")
+        for c in codes:
+            print(f"{c['site']} {c['code']}: {c['title']} ({c['kind']}, {c['state']}, first seen {_ago(c['first_seen_at'])}, "
+                  f"last seen {_ago(c['last_seen_at'])}, {c['in_stock']} in stock)")
+            if c["group_url"]:
+                print(f"all its products: {c['group_url']}")
+            for p in webui.coupon_products(conn, c["site"], c["code"], args.limit):
+                print(f"  {_egp(p['price']):>12}  {p['title'][:80]}  {p['url']}")
+        return
+    print("products with a coupon now, by shop and kind:")
+    for r in conn.execute("""SELECT site, coupon_kind k, COUNT(*) n, SUM(in_stock) stocked FROM products
+                             WHERE coupon_kind IS NOT NULL GROUP BY site, k ORDER BY site, n DESC"""):
+        print(f"  {r['site']:<14} {r['k']:<9} {r['n']:>7,} products, {r['stocked']:>7,} in stock")
+    print("\ncodes, newest first (state: what the coupon message rule decided):")
+    for c in webui.coupon_codes(conn, args.site, None, args.limit):
+        best = f"best {c['best_discount']:.0%}" if c["best_discount"] is not None else ""
+        print(f"  {c['site']:<14} {c['code']:<14} {c['state']:<12} {c['in_stock']:>5} in stock  {best:<9} "
+              f"seen {_ago(c['last_seen_at']):<8} {c['title'][:50]}")
+
+
+def cmd_coupon_group(args) -> None:
+    if args.site != "noon_eg":
+        sys.exit("only noon has a page of a coupon's products so far")
+    session = curl_requests.Session(impersonate="chrome")
+    for page in range(1, args.pages + 1):
+        r = noon_eg.coupon_page(session, args.path, page)
+        for x in r.listings:
+            code = x.coupon.code if x.coupon else "-"
+            print(f"{x.sku:<34} {_egp(x.price):>12}  {code:<12} {x.title[:70]}")
+        if page == 1:
+            print(f"# {r.total} products in all", file=sys.stderr)
+        if not r.has_next:
+            break
+        time.sleep(3)
 
 
 def cmd_pause(args) -> None:
@@ -594,6 +650,15 @@ def main() -> None:
             p.add_argument("--level", help="info (default), warning or error")
             p.add_argument("--limit", type=int, default=50)
             p.add_argument("-f", "--follow", action="store_true", help="keep printing new lines")
+    p = add("coupons", cmd_coupons, "coupons seen on the shops; --code for one code's products, --find for a product's coupon")
+    p.add_argument("--site")
+    p.add_argument("--code")
+    p.add_argument("--find", help="a sku or words of the title")
+    p.add_argument("--limit", type=int, default=100)
+    p = add("coupon-group", cmd_coupon_group, "fetch every product a coupon covers from the shop (run where the shop answers: the Mac)", config=False)
+    p.add_argument("site")
+    p.add_argument("path", help="the code's page, e.g. /eg-nov26-mobile-200")
+    p.add_argument("--pages", type=int, default=5)
     p = add("report", cmd_report, "the daily report (Arabic); --send to send it to the admin now")
     p.add_argument("--send", action="store_true")
     p = add("alerts", cmd_alerts, "recent deal alerts")

@@ -132,7 +132,8 @@ def test_product_page_data_and_filters(client):
     client.get("/ui/login", params={"token": "admin-secret"}, follow_redirects=False)
     pid = client.get("/api/products?q=samsung").json()["products"][0]["id"]
     d = client.get(f"/api/products/{pid}").json()
-    assert set(d) == {"product", "stats", "history", "alerts", "other_sellers", "same_model", "compare", "admin"} and d["admin"]
+    assert set(d) == {"product", "stats", "history", "alerts", "other_sellers", "same_model", "compare", "admin",
+                      "coupon_after", "coupon_products"} and d["admin"]
     assert "share_at_or_below" in d["stats"] and "drop_vs_typical" in d["stats"] and len(d["history"]) == 1
     r = client.get("/api/products?limit=0").json()
     assert r["products"] == [] and r["groups"] == ["TVs"]

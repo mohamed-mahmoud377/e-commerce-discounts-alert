@@ -338,6 +338,7 @@ def _listing_json(listing: Listing) -> dict:
     data = asdict(listing)
     data["badges"] = list(listing.badges)
     data["gtins"] = list(listing.gtins)
+    del data["coupon_unknown"]  # always sent, even when empty: an older worker is one that doesn't send it
     return data
 
 
