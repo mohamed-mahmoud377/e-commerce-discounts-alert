@@ -177,6 +177,64 @@ RULES: tuple[ShopRule, ...] = (
         "Chopard Love's 100ml is on sale at 8,372.50 from 9,850 while its tile shows 6,035 for the 50ml",
         "5 Nov 2026", where="sites/faces_eg.py"),
     ShopRule(
+        "aghezty-no-new-listing-alerts", "aghezty_eg", "no_claim_alerts",
+        "Nearly every product shows a crossed-out price, at much the same 14% or so",
+        "No new-listing alerts from the crossed-out price; its products alert only from our own history",
+        "5 Nov 2026: a crossed-out price on 215 of 215 air conditioners in stock, median 14%, none at 60%+",
+        "5 Nov 2026"),
+    ShopRule(
+        "samsung-no-new-listing-alerts", "samsung_eg", "no_claim_alerts",
+        "Nearly every TV shows a crossed-out price, in round numbers",
+        "No new-listing alerts from the crossed-out price; its products alert only from our own history",
+        "5 Nov 2026: a crossed-out price on 35 of 37 TVs in stock, median 15% (98-inch U9000H at 109,999 from 164,999); "
+        "none of the 34 phones in stock has one",
+        "5 Nov 2026"),
+    ShopRule(
+        "eand-no-new-listing-alerts", "eand_eg", "no_claim_alerts",
+        "Half of what is in stock is discounted, by campaigns that come and go (\"Valu Offer 18 Month\", \"October Offers!\")",
+        "No new-listing alerts from the crossed-out price; its products alert only from our own history",
+        "5 Nov 2026: a crossed-out price on 134 of 260 Devices in stock (median 27%), all 43 tablets, all 58 home appliances",
+        "5 Nov 2026"),
+    ShopRule(
+        "eand-promo-codes-not-read", "eand_eg", "note",
+        "Campaign categories ask for a code at the checkout (\"Use code: MOBILE25\")",
+        "The API's price is the price without a code, and that is what we track and alert on",
+        "5 Nov 2026: 91 of 318 Devices sit under \"Mobile Deals (Use code: MOBILE25)\"",
+        "5 Nov 2026", where="sites/eand_eg.py"),
+    ShopRule(
+        "ravin-no-new-listing-alerts", "ravin_eg", "no_claim_alerts",
+        "Half of what is in stock is discounted, nearly half of that by 60% or more",
+        "No new-listing alerts from the crossed-out price; its products alert only from our own history",
+        "5 Nov 2026: a crossed-out price on 2,368 of 4,360 in stock, median 56%, 60%+ on 1,137 of 2,407",
+        "5 Nov 2026"),
+    ShopRule(
+        "ravin-campaign-price-not-in-the-data", "ravin_eg", "note",
+        "A campaign's discount is put on by the page's own code: the product data keeps the price from before it",
+        "We track the data's price, so a campaign like this one is not seen, and an alert can quote more than the page. "
+        "Its alerts start as 'kept, not sent' in Shop settings until someone has looked at them",
+        "5 Nov 2026, Black November (4 to 7 Nov): 8 of 9 random products show half the data's price (Navy Mesh Camp Collar "
+        "Shirt 1,399.99 in the data, 700 on the page); the ninth is a 174.99 tee tagged offer_140, not offer_no_140",
+        "5 Nov 2026", where="sites/ravin_eg.py"),
+    ShopRule(
+        "raneen-no-new-listing-alerts", "raneen_eg", "no_claim_alerts",
+        "Every product shows a crossed-out price",
+        "No new-listing alerts from the crossed-out price; its products alert only from our own history",
+        "5 Nov 2026: a crossed-out price on 147 of 147 laptops, median 5%; a dishwasher's page says 23% off where another says 8%",
+        "5 Nov 2026"),
+    ShopRule(
+        "raneen-low-stock-is-everywhere", "raneen_eg", "low_stock_noise",
+        "'Only N left' on most cards",
+        "It never counts as evidence for a new listing's discount",
+        "5 Nov 2026: 3 or fewer left on 121 of 147 laptops (82%)",
+        "5 Nov 2026"),
+    ShopRule(
+        "raneen-cheapest-seller-is-the-price", "raneen_eg", "note",
+        "A marketplace: a `-conf` product lists several sellers at different prices, and its card shows the cheapest",
+        "One listing at that price, so when the cheapest seller sells out it looks like a rise, and a drop when they restock",
+        "5 Nov 2026: J300BLK-conf has sellers from 5,949 to 8,159; EL1102828BNS-conf 7 sellers from 3,169 to 4,839; "
+        "RAN-Y7XPWPQ-CONF only one",
+        "5 Nov 2026", where="sites/raneen_eg.py"),
+    ShopRule(
         "wayup-no-new-listing-alerts", "wayup_eg", "no_claim_alerts",
         "Most of what is in stock is discounted, and its sale pages hold over 12,000 products",
         "No new-listing alerts from the crossed-out price; its products alert only from our own history",

@@ -166,6 +166,25 @@ SPECS: dict[str, Spec] = {
     "faces_eg": Spec(boxes=((".js-price-container",),),
                      context=(".product-brand", ".js-name-container", ".product-carousel"),
                      ready=".js-name-container", arabic=("/en/p/", "/ar/p/")),
+    # Server-rendered; its own price card holds the price, the crossed-out price and "you save". Aghezty sells its own stock.
+    "aghezty_eg": Spec(boxes=((".pd-price-card",),), context=("h1.pd-title", ".pd-main-image-box img"),
+                       ready="#pd-price-current", arabic=("aghezty.com/en/", "aghezty.com/ar/")),
+    # AEM. A model's page has its price under the name; a new phone's link goes to a marketing page with no price at all,
+    # so the adapter links its /buy/ page instead, which has a price bar. Samsung sells its own stock, Arabic only.
+    "samsung_eg": Spec(boxes=(("#sgDevPriceAreaBase", ".hubble-price-bar__price"),),
+                       context=("h1.sg-product-display-name",),
+                       ready="#sgDevPriceAreaBase, .hubble-price-bar__price"),
+    # Angular with a hash route: the language goes in the route. The bar below the gallery holds the name and the prices.
+    "eand_eg": Spec(boxes=(("div.product-price div.price",),), context=("div.product-name h2", ".swiper-slide-active img"),
+                    ready="div.product-price div.price b", arabic=("?pid=", "?lang=ar&pid="), settle=2),
+    # Shopify with a generated theme: its class names end in a build hash, so match the stable part. English only.
+    "ravin_eg": Spec(boxes=(('[class*="ai-premium-product__price-wrapper"]',),),
+                     context=("h1.rpa-pdp-product-heading", "img.ravin-deck__image"),
+                     ready='[class*="ai-premium-product__price-wrapper"]'),
+    # Magento (Hyva). `.price-container` is display: contents, so has no box of its own. A marketplace: the seller is in the side column.
+    "raneen_eg": Spec(boxes=((".rn-price",), ("div:has(> .rn-seller__chips)",)),
+                      context=("img.object-scale-down",), ready=".rn-price .final-price",
+                      arabic=("raneen.com/en/", "raneen.com/ar/")),
 }
 
 VIEWPORT = {"width": 1280, "height": 1000}  # the desktop layout, like the shop's own page on a computer

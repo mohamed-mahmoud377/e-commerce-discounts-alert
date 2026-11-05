@@ -46,6 +46,15 @@ even if one were somehow stored.
 | El Araby | `elaraby-manufacturer-is-country` | note | `manufacturer` holds the country of origin | Brand comes from the title | 5 Nov 2026 |
 | Mazaya | `mazaya-no-new-listing-alerts` | no_claim_alerts | 64% of perfumes in stock crossed out, median 15%, by named campaigns | No new-listing alerts | 5 Nov 2026 |
 | Mazaya | `mazaya-sizes-hide-behind-one-price` | note | A listing shows only its cheapest size (132 of 1,513 perfumes differ) | Each size its own listing | 5 Nov 2026 |
+| Aghezty | `aghezty-no-new-listing-alerts` | no_claim_alerts | Crossed out on 215 of 215 air conditioners and 1,310 of 1,310 large appliances in stock, median 14% | No new-listing alerts from the crossed-out price | 5 Nov 2026 |
+| Samsung | `samsung-no-new-listing-alerts` | no_claim_alerts | 35 of 37 TVs in stock crossed out in round numbers, median 15%; none of the 34 phones | No new-listing alerts from the crossed-out price | 5 Nov 2026 |
+| e& | `eand-no-new-listing-alerts` | no_claim_alerts | 134 of 260 Devices (median 27%), all 43 tablets, all 58 home appliances crossed out, by campaigns | No new-listing alerts from the crossed-out price | 5 Nov 2026 |
+| e& | `eand-promo-codes-not-read` | note | 91 of 318 Devices need a code at the checkout ("MOBILE25") | We track the price without a code | 5 Nov 2026 |
+| Ravin | `ravin-no-new-listing-alerts` | no_claim_alerts | 2,368 of 4,360 in stock crossed out, median 56%, 60%+ on 1,137 of 2,407 | No new-listing alerts from the crossed-out price | 5 Nov 2026 |
+| Ravin | `ravin-campaign-price-not-in-the-data` | note | During a campaign the page's own code halves the price: 1,399.99 in the data, 700 on the page (8 of 9 products) | We track the data's price, so a campaign isn't seen and an alert can quote more than the page. Alerts start "Kept, not sent" | 5 Nov 2026 |
+| Raneen | `raneen-no-new-listing-alerts` | no_claim_alerts | 147 of 147 laptops (median 5%), 438 of 484 air conditioners (median 12%) crossed out | No new-listing alerts from the crossed-out price | 5 Nov 2026 |
+| Raneen | `raneen-low-stock-is-everywhere` | low_stock_noise | 3 or fewer left on 121 of 147 laptops (82%), 190 of 484 air conditioners (39%) | Never counts as evidence | 5 Nov 2026 |
+| Raneen | `raneen-cheapest-seller-is-the-price` | note | A `-conf` product has several sellers, and its card shows the cheapest (J300BLK-conf, 5,949 to 8,159) | One listing at that price: it can flip-flop as sellers sell out | 5 Nov 2026 |
 | Faces | `faces-no-new-listing-alerts` | no_claim_alerts | 31% of perfumes and 36% of makeup in stock crossed out, up to 60%+ on 15 makeup products | No new-listing alerts from the crossed-out price | 5 Nov 2026 |
 | Faces | `faces-from-price-is-the-cheapest-size` | note | A tile with sizes at different prices shows only the cheapest (108 of 560 men's perfumes) | One listing at that price, its title says "(cheapest size)" | 5 Nov 2026 |
 | WayUp | `wayup-no-new-listing-alerts` | no_claim_alerts | 86% of in-stock variants crossed out, median 25% | No new-listing alerts | 5 Nov 2026 |

@@ -55,6 +55,11 @@ SAVED = [
     ("azzam_eg", "azzam_product_rendered.html.gz", ("27,995.00",), None),
     ("mazaya_eg", "mazaya_product_rendered.html.gz", ("6,460", "7,600"), None),
     ("faces_eg", "faces_product_rendered.html.gz", ("5015", "5900"), None),
+    ("aghezty_eg", "aghezty_product_rendered.html.gz", ("14,999", "17,441"), None),
+    ("samsung_eg", "samsung_product_rendered.html.gz", ("109,999", "164,999"), None),
+    ("eand_eg", "eand_product_rendered.html.gz", ("53,333", "67,800"), None),
+    ("ravin_eg", "ravin_product_rendered.html.gz", ("999.99",), None),
+    ("raneen_eg", "raneen_product_rendered.html.gz", ("1,009", "1,308"), "elkabeer"),
 ]
 
 

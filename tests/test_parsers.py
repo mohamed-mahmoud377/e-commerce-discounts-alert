@@ -1493,3 +1493,146 @@ def test_faces_urls_feed_and_refusals():
         site.fetch_page(Slice.from_key("category:x"), 1)
     with pytest.raises(UnknownTarget):
         site.fetch_page(Slice.from_key("search:dior"), 1)
+
+
+def test_aghezty_reads_the_json_in_its_page():
+    from deals.sites.aghezty_eg import parse_page
+    result = parse_page(fixture_text("aghezty_fryers.html.gz"), 9)
+    assert result.total == 116 and result.has_next and len(result.listings) == 12
+    tornado = next(x for x in result.listings if x.sku == "4347")
+    assert (tornado.price, tornado.list_price, tornado.list_price_kind, tornado.in_stock) == (599_000, 728_500, "list", True)
+    assert tornado.title == "TORNADO Air Fryer, 1300 Watt With LED Display, Black - THF-133D" and tornado.brand == "Tornado"
+    assert tornado.url.startswith("https://aghezty.com/en/products/Air-Fryer/TORNADO")
+    midea = next(x for x in result.listings if x.sku == "28251")
+    assert midea.price == 346_400 and not midea.in_stock  # sold-out products stay listed, with their price
+
+
+def test_aghezty_urls_empty_filter_feed_and_refusals():
+    from deals.models import Blocked, UnknownTarget
+    from deals.sites.aghezty_eg import AgheztyEG, page_url, parse_page
+    assert page_url(Slice.from_key("category:TVs|price:3000-"), 2) == "https://aghezty.com/en/TVs/?min_price=3000&page=2"
+    assert page_url(Slice.from_key("category:TVs|price:5000-5999"), 1) == "https://aghezty.com/en/TVs/?min_price=5000&max_price=5999"
+    assert page_url(Slice.from_key("deals:flash-sale|price:200-"), 1) == "https://aghezty.com/en/flash-sale/"
+    body = fixture_text("aghezty_fryers.html.gz")
+    assert not parse_page(body, 10).has_next  # past the end the shop repeats its last page: the count ends the walk
+    feed = parse_page(body, 1, feed=True)
+    assert not feed.has_next and feed.total == 12
+    nothing = 'window.AGHEZTY = {"products":[]};</script><span id="catalog-results-count">No results found</span>'
+    assert parse_page(nothing).total == 0
+    with pytest.raises(ValueError, match="layout"):
+        parse_page("<html></html>")
+    assert next(x for x in parse_page('window.AGHEZTY = {"products":[{"id":1,"url":"https://aghezty.com/en/x/","names":{"en":"Ask"},'
+                                      '"prices":{"num":0},"oldPrices":{"num":0},"in_stock":true}]};</script>').listings).price is None
+    site = AgheztyEG()
+    site._session = _Session(_Answer(status=404))
+    with pytest.raises(UnknownTarget):
+        site.fetch_page(Slice.from_key("category:nope"), 1)
+    site._session = _Session(_Answer(status=403))
+    with pytest.raises(Blocked):
+        site.fetch_page(Slice.from_key("category:TVs"), 1)
+    with pytest.raises(UnknownTarget):
+        site.fetch_page(Slice.from_key("search:tv"), 1)
+
+
+def test_samsung_folds_colours_and_keeps_versions_apart():
+    from deals.sites.samsung_eg import parse_products
+    result = parse_products(fixture_json("samsung_phones.json.gz"))
+    assert result.total == 25 and not result.has_next  # counts families, each with several models
+    a18 = {x.sku: x for x in result.listings if x.sku.startswith("SM-A185G")}
+    assert set(a18) == {"SM-A185G-K", "SM-A185G-L", "SM-A185G-N"}  # three colours of each
+    assert (a18["SM-A185G-K"].price, a18["SM-A185G-L"].price, a18["SM-A185G-N"].price) == (1_424_000, 1_647_000, 2_300_000)
+    assert a18["SM-A185G-K"].title == "Samsung Galaxy A18 128GB SM-A185G-K"  # the page calls K and L the same size
+    assert a18["SM-A185G-N"].title == "Samsung Galaxy A18 256 GB SM-A185G"
+    fold = next(x for x in result.listings if x.sku == "SM-F971B-B")
+    assert fold.url == "https://www.samsung.com/eg/smartphones/galaxy-z-fold8/buy/"  # its own link has no price on it
+    unpriced = next(x for x in result.listings if x.sku == "SM-A276B-I")
+    assert unpriced.price is None and not unpriced.in_stock
+
+
+def test_samsung_promotion_price_and_refusals():
+    from deals.models import Blocked, UnknownTarget
+    from deals.sites.samsung_eg import SamsungEG, parse_products
+    tvs = {x.sku: x for x in parse_products(fixture_json("samsung_tvs.json.gz")).listings}
+    big = tvs["UA98U9000HUXEG"]
+    assert (big.price, big.list_price, big.list_price_kind, big.in_stock) == (10_999_900, 16_499_900, "list", True)
+    assert big.title == 'Samsung 98" Crystal UHD U9000H 4K Samsung Vision AI Smart TV (2026) UA98U9000HUXEG'  # no &lrm;, no size twice
+    assert tvs["UA43M60HAUXEG"].price is None
+    site = SamsungEG()
+    with pytest.raises(UnknownTarget):
+        site.fetch_page(Slice.from_key("category:tvs"), 1)  # an unknown type would look like an empty category
+    site._session = _Session(_Answer(status=403))
+    with pytest.raises(Blocked):
+        site.fetch_page(Slice.from_key("category:04010000"), 1)
+    site._session = _Session(_Answer(text="<html>", ctype="text/html"))
+    with pytest.raises(Blocked):
+        site.fetch_page(Slice.from_key("category:04010000"), 1)
+
+
+def test_eand_reads_products_and_sellers():
+    from deals.sites.eand_eg import parse_products
+    result = parse_products(fixture_json("eand_tablets.json.gz"))
+    assert result.total == 43 and not result.has_next and len(result.listings) == 43
+    ipad = next(x for x in result.listings if x.sku == "128883")
+    assert (ipad.price, ipad.list_price, ipad.list_price_kind, ipad.seller, ipad.brand) == (4_099_900, 5_524_900, "list", "2B", "Apple")
+    assert ipad.url.startswith("https://www.eand.com.eg/eshop2/#/product/Apple-iPad-A16") and ipad.url.endswith("?pid=128883")
+    low = next(x for x in result.listings if x.sku == "113905")
+    assert low.stock_left == 1 and low.seller == "Etisalat"
+    assert not next(x for x in result.listings if x.sku == "121032").in_stock  # HMD T21: quantity 0, still listed
+
+
+def test_eand_holds_each_root_to_its_group_and_refuses():
+    from deals.models import Blocked, UnknownTarget
+    from deals.sites.eand_eg import EandEG, parse_products
+    laptops = parse_products(fixture_json("eand_laptops.json.gz"), 1, "27")
+    assert laptops.total == 464 and laptops.has_next and not laptops.listings  # the first 30 by name are accessories
+    assert parse_products(fixture_json("eand_laptops.json.gz")).listings  # no root named: nothing dropped
+    assert not parse_products(fixture_json("eand_tablets.json.gz"), 1, "2").listings  # tablets belong to the Tablets root
+    site = EandEG()
+    unknown = {"response": {"category": {"id": 0}, "productsList": {"products": []}}}
+    site._session = _Session(_Answer(data=unknown))
+    with pytest.raises(UnknownTarget):
+        site.fetch_page(Slice.from_key("category:999999"), 1)
+    site._session = _Session(_Answer(text="<CommonResponseDto/>", ctype="application/xhtml+xml"))
+    with pytest.raises(Blocked):  # the XML it answers without the right Accept header is not a product list
+        site.fetch_page(Slice.from_key("category:2"), 1)
+    with pytest.raises(UnknownTarget):
+        site.fetch_page(Slice.from_key("deals:13"), 1)
+
+
+def test_ravin_is_a_shopify_shop_read_through_its_all_collection():
+    from deals.sites.ravin_eg import RavinEG, parse_products
+    result = parse_products(fixture_json("ravin_products.json.gz"))
+    assert len(result.listings) == 60  # colours and sizes fold into one listing each
+    cardigan = next(x for x in result.listings if x.sku == "8470583410860")
+    assert (cardigan.price, cardigan.list_price, cardigan.list_price_kind, cardigan.in_stock) == (82_999, 139_999, "list", True)
+    assert cardigan.url == "https://shop.iravin.com/products/beige-hooded-tassel-trim-cardigan"
+    site = RavinEG()
+    site._session = _Session(_Answer(data={"collection": {"products_count": 22695}}), _Answer(data={"products": []}))
+    site.fetch_page(Slice.from_key("category:all"), 1)
+    assert site._session.urls[-1].startswith("https://shop.iravin.com/collections/all/products.json?")  # /products.json answers 429
+
+
+def test_raneen_reads_cards_and_keeps_to_robots_txt():
+    from deals.models import Blocked, UnknownTarget
+    from deals.sites.raneen_eg import RaneenEG, page_url, parse_listing
+    result = parse_listing(fixture_text("raneen_dishwashers.html.gz"))
+    assert result.total == 65 and result.has_next and len(result.listings) == 21  # page 1 has a card extra, repeated on page 2
+    beko = next(x for x in result.listings if x.sku == "EL1099590BLK-conf")
+    assert (beko.price, beko.list_price, beko.list_price_kind, beko.brand) == (3_193_000, 3_532_300, "list", "Beko")
+    assert beko.url == "https://www.raneen.com/en/el1099590blk-2"
+    assert not parse_listing(fixture_text("raneen_dishwashers.html.gz"), 4).has_next  # 4 x 20 passes 65
+    # the group's minimum can arrive on any root: robots.txt allows only ?p=N, so the coordinator applies it
+    assert page_url(Slice.from_key("category:a/b|price:3000-"), 2) == "https://www.raneen.com/en/a/b?p=2"
+    assert page_url(Slice.from_key("category:a/b"), 1) == "https://www.raneen.com/en/a/b"
+    with pytest.raises(ValueError, match="layout"):
+        parse_listing("<html></html>")
+    assert parse_listing("<html></html>", 6).has_next is False  # past the end: a 200 with no cards
+    site = RaneenEG()
+    site._session = _Session(_Answer(status=404, ctype="text/html"))
+    with pytest.raises(UnknownTarget):
+        site.fetch_page(Slice.from_key("category:nope"), 1)
+    site._session = _Session(_Answer(status=403, ctype="text/html"))
+    with pytest.raises(Blocked):
+        site.fetch_page(Slice.from_key("category:a"), 1)
+    with pytest.raises(UnknownTarget):
+        site.fetch_page(Slice.from_key("search:tv"), 1)

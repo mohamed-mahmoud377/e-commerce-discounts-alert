@@ -25,6 +25,11 @@ from deals.sites.mazaya_eg import MazayaEG
 from deals.sites.miami_eg import MiamiEG
 from deals.sites.sigma_eg import SigmaEG
 from deals.sites.wayup_eg import WayUpEG
+from deals.sites.aghezty_eg import AgheztyEG
+from deals.sites.samsung_eg import SamsungEG
+from deals.sites.eand_eg import EandEG
+from deals.sites.ravin_eg import RavinEG
+from deals.sites.raneen_eg import RaneenEG
 
 SITES = {
     AmazonEG.name: AmazonEG,
@@ -54,4 +59,9 @@ SITES = {
     AzzamEG.name: AzzamEG,
     MazayaEG.name: MazayaEG,
     FacesEG.name: FacesEG,
+    AgheztyEG.name: AgheztyEG,
+    SamsungEG.name: SamsungEG,
+    EandEG.name: EandEG,
+    RavinEG.name: RavinEG,
+    RaneenEG.name: RaneenEG,
 }

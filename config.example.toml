@@ -180,6 +180,26 @@ min_delay = 2.0
 max_delay = 4.0
 
 # ---------------------------------------------------------------------------
+[sites.aghezty_eg]  # Server-rendered pages with embedded JSON (12 products, about 290 KB); works from anywhere: docs/AGHEZTY.md
+min_delay = 2.0
+max_delay = 4.0
+
+[sites.samsung_eg]  # Search API (48 families a request, about 1.5 MB); works from anywhere: docs/SAMSUNG.md
+min_delay = 2.0
+max_delay = 4.0
+
+[sites.eand_eg]  # JSON API (100 products a request); works from anywhere: docs/EAND.md
+min_delay = 2.0
+max_delay = 4.0
+
+[sites.ravin_eg]  # Shopify collection JSON (250 products a request, about 1.5 MB); works from anywhere: docs/RAVIN.md
+min_delay = 2.0
+max_delay = 4.0
+
+[sites.raneen_eg]  # Category pages (20 products, about 1.2 MB); refuses datacenter IPs; robots.txt asks for Crawl-delay: 10, so never lower this: docs/RANEEN.md
+min_delay = 10.5
+max_delay = 13.0
+
 # What to track. Each [[watch]] is a product group with one root per site:
 #   amazon_eg = "category:<browse node id>"
 #   noon_eg   = "category:<category path>"
@@ -219,13 +239,21 @@ max_delay = 4.0
 # interval_minutes is the starting revisit interval; it adapts per slice.
 # require_words / exclude_words (optional) filter new products by title, for noisy sources.
 # ---------------------------------------------------------------------------
-
+#   aghezty_eg = "category:<path>"  (the URL path under /en/, e.g. TVs; docs/AGHEZTY.md)
+#   samsung_eg = "category:<8-digit type>"  (e.g. 01010000 = phones; docs/SAMSUNG.md)
+#   eand_eg = "category:<id>"  (the cid in the eshop's links, e.g. 2 = Devices; docs/EAND.md)
+#   ravin_eg = "category:all"  (Shopify; docs/RAVIN.md)
+#   raneen_eg = "category:<path>"  (the URL path under /en/; Mac only, robots.txt: 10 s a page; docs/RANEEN.md)
 [[watch]]
 name = "TVs"
 label = "تلفزيونات"
 interval_minutes = 20
 max_interval_minutes = 30   # quiet slices never back off past this: a flash sale is noticed within it
 min_price = 3000
+aghezty_eg = ["category:TVs"]
+samsung_eg = ["category:04010000", "category:04020000", "category:04030000"]
+eand_eg = ["category:29"]
+raneen_eg = ["category:electronics/televisions-accessories"]
 amazon_eg = [
     "category:21832982031",
     "category:21832982031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
@@ -254,6 +282,9 @@ label = "ثلاجات"
 interval_minutes = 20
 max_interval_minutes = 30   # quiet slices never back off past this: a flash sale is noticed within it
 min_price = 5000
+aghezty_eg = ["category:Refrigerator", "category:Freezers", "category:Refrigerator-Mini-Bar"]
+samsung_eg = ["category:08030000"]
+raneen_eg = ["category:appliances/large-appliances/refrigerators-and-freezers"]
 amazon_eg = [
     "category:21863822031",
     "category:21863822031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
@@ -281,6 +312,8 @@ label = "تكييفات"
 interval_minutes = 10
 max_interval_minutes = 15   # quiet slices never back off past this: a flash sale is noticed within it
 min_price = 8000
+aghezty_eg = ["category:Air-Conditioner"]
+raneen_eg = ["category:appliances/large-appliances/air-conditioners"]
 amazon_eg = [
     "category:21863915031",
     "category:21863915031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
@@ -374,6 +407,9 @@ label = "موبايلات"
 interval_minutes = 10
 max_interval_minutes = 15   # quiet slices never back off past this: a flash sale is noticed within it
 min_price = 2500
+samsung_eg = ["category:01010000"]
+eand_eg = ["category:2"]
+raneen_eg = ["category:mobiles/mobiles-tablets"]
 miami_eg = ["category:52", "category:110", "category:91", "category:9326", "category:9327"]
 amazon_eg = [
     "category:21832883031",
@@ -401,6 +437,8 @@ label = "تابلت وآيباد"
 interval_minutes = 10
 max_interval_minutes = 15   # quiet slices never back off past this: a flash sale is noticed within it
 min_price = 5000
+samsung_eg = ["category:01020000"]
+eand_eg = ["category:5"]
 miami_eg = "category:95"
 amazon_eg = [
     "category:21832915031",
@@ -428,6 +466,8 @@ label = "لابتوبات"
 interval_minutes = 20
 max_interval_minutes = 30   # quiet slices never back off past this: a flash sale is noticed within it
 min_price = 8000
+eand_eg = ["category:27"]
+raneen_eg = ["category:electronics/computers/laptops-notebooks"]
 miami_eg = "category:200"
 sigma_eg = "category:9f5039de-5c80-46f3-9fe4-6e8f94189b8c"
 elnekhely_eg = "category:laptop"
@@ -477,6 +517,7 @@ label = "شاشات كمبيوتر"
 interval_minutes = 20
 max_interval_minutes = 30   # quiet slices never back off past this: a flash sale is noticed within it
 min_price = 2500
+samsung_eg = ["category:07010000"]
 sigma_eg = "category:9f503a01-79d7-4a25-b3f3-63b0fd5b3094"
 elnekhely_eg = "category:monitors"
 amazon_eg = [
@@ -536,6 +577,8 @@ name = "Headphones"
 label = "سماعات"
 interval_minutes = 60
 min_price = 800
+samsung_eg = ["category:01040000"]
+eand_eg = ["category:4"]
 miami_eg = "category:166"
 sigma_eg = "category:9f503e54-740f-44fd-b338-99f9adb951e9"
 amazon_eg = [
@@ -577,6 +620,8 @@ name = "Kitchen machines"
 label = "قلايات وماكينات قهوة وأجهزة مطبخ"
 interval_minutes = 30
 min_price = 1500
+aghezty_eg = ["category:Air-Fryer", "category:Coffee-Espresso-Makers", "category:Mixing-Blending", "category:Grinding-Chopping", "category:Pressure-Cooker"]
+samsung_eg = ["category:08110000"]
 amazon_eg = [
     "category:21863949031",  # fryers
     "category:21863949031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
@@ -668,6 +713,7 @@ label = "أجهزة مطبخ"
 interval_minutes = 60
 max_interval_minutes = 120  # quiet slices never back off past this (was 3x180 = 9 h)
 min_price = 2000
+aghezty_eg = ["category:MICROWAVE", "category:Ovens", "category:Grill", "category:Rice-Cooker", "category:Food-Steamer", "category:Portable-hot-plate", "category:Breakfast-Appliances", "category:Specialized-Appliances"]
 amazon_eg = [
     "category:21863959031",  # bread makers & baking
     "category:21863960031",  # hot plates & electric pans
@@ -769,6 +815,8 @@ label = "بوتاجازات وغسالات أطباق"
 interval_minutes = 60
 max_interval_minutes = 90   # quiet slices never back off past this (was 3x120 = 6 h)
 min_price = 5000
+aghezty_eg = ["category:cookers", "category:Dish-washer", "category:Built-In"]
+raneen_eg = ["category:appliances/large-appliances/cookers", "category:appliances/large-appliances/dish-washers"]
 amazon_eg = ["category:21863824031", "category:21863823031"]  # ranges/ovens/cooktops, dishwashers
 noon_eg = [
     "category:home-and-kitchen/home-appliances-31235/large-appliances/ranges",
@@ -814,6 +862,7 @@ elaraby_eg = ["category:89", "category:90", "category:249", "category:91", "cate
 name = "Gaming peripherals"
 label = "ماوس وكيبورد وإكسسوارات جيمنج"
 min_price = 1000
+eand_eg = ["category:30"]
 sigma_eg = ["category:9f503c8c-64f6-4011-b0c5-7c5b5e50a7fc", "category:9f503c98-0894-41f1-9cef-4977cdba8bf6", "category:9f503e63-3465-4e67-ae2f-6797593959b1", "category:9f503e6f-d5c6-4fad-80ce-34e10e030ebe"]
 elnekhely_eg = "category:accessories"
 interval_minutes = 30
@@ -837,6 +886,8 @@ name = "Wearables"
 label = "ساعات ذكية وأساور رياضية"
 interval_minutes = 60
 min_price = 1200        # real smartwatches and bands; straps, chargers and no-name watches are cheaper
+samsung_eg = ["category:01030000"]
+eand_eg = ["category:18"]
 miami_eg = ["category:103", "category:1627", "category:199"]
 amazon_eg = [
     "category:21832958031",  # Smartwatches
@@ -867,6 +918,7 @@ name = "Chargers & power banks"
 label = "شواحن وباور بانك"
 interval_minutes = 60
 min_price = 500         # branded chargers and power banks; no-name chargers and cables are cheaper
+eand_eg = ["category:6"]
 miami_eg = ["category:196", "category:108"]
 sigma_eg = "category:9f503a44-42a6-41ee-8534-2e6aa19399e2"
 amazon_eg = [
@@ -933,6 +985,7 @@ label = "ملابس وأزياء"
 interval_minutes = 120
 max_interval_minutes = 180
 min_price = 500
+ravin_eg = ["category:all"]
 wayup_eg = ["category:all-sale", "category:all-new-in"]
 min_drop = 0.35
 lcwaikiki_eg = ["category:women-clothing-t-10", "category:men-clothing-t-9", "category:girls-clothing-t-100046", "category:boys-clothing-t-200046", "category:femei-incaltaminte-t-33"]
@@ -957,6 +1010,10 @@ label = "أجهزة منزلية وأخرى"
 interval_minutes = 120
 max_interval_minutes = 180
 min_price = 200
+aghezty_eg = ["category:washing-machines", "category:Dryers", "category:Vacuum-Steam-Cleaners", "category:iron", "category:Water-Dispenser", "category:Water-Heater", "category:Heaters", "category:Fan", "category:Ventilating-Fans", "category:Air-purifier", "category:Sound-system", "category:Bluetooth-Speakers", "category:personal-care", "deals:flash-sale"]
+samsung_eg = ["category:08010000", "category:08070000"]
+eand_eg = ["category:10085"]
+raneen_eg = ["category:appliances/large-appliances/washers-and-dryers"]
 miami_eg = ["category:1639", "category:701", "category:2737"]
 sigma_eg = ["category:9f503e88-a70c-45a2-b6b1-4c7a3f7e52f3", "category:9f503e96-65b6-40ff-873f-ea2e2502e931", "category:9f503ea3-06b0-452a-8c04-946b3a206474", "category:9f503a53-6867-4fe3-a6ff-cef657dac290", "category:9f732b3d-d6a4-44d8-9a2b-cdc0e329b3d5"]
 elaraby_eg = ["category:85", "category:233", "category:88", "category:190", "category:191", "category:187", "category:334", "category:1927", "category:93", "category:76", "category:79", "category:210", "category:65", "category:110", "category:107", "category:320", "category:1651", "category:343", "category:63", "category:217", "category:360", "category:1827", "category:1497"]

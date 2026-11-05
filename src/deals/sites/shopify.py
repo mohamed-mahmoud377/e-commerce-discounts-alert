@@ -29,6 +29,7 @@ class ShopifyShop:
     base = ""  # no trailing slash
     ignored = dream2000_eg.IGNORED_OPTIONS  # options folded into one listing: count what each does to the price first
     max_slice_total = 100_000  # bigger than any root: the planner never splits (no price filter)
+    whole = "/products.json"  # what `category:all` reads
 
     def __init__(self, state_dir=None):
         self._session = requests.Session(impersonate=IMPERSONATE)
@@ -45,7 +46,7 @@ class ShopifyShop:
             if meta is None:
                 raise UnknownTarget(f"{self.name}: no collection with handle {handle!r} (HTTP 404)")
             count = (meta.get("collection") or {}).get("products_count") or 0
-        path = "/products.json" if handle == "all" else f"/collections/{handle}/products.json"
+        path = self.whole if handle == "all" else f"/collections/{handle}/products.json"
         data = self._get_json(f"{self.base}{path}?limit={PER_PAGE}&page={page}")
         if data is None:
             raise UnknownTarget(f"{self.name}: no collection with handle {handle!r} (HTTP 404)")

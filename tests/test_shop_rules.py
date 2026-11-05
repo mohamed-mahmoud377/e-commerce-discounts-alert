@@ -194,6 +194,9 @@ def test_raya_and_etisal_claims_and_stock_counts_prove_nothing():
     assert shop_rules.rules_for("wayup_eg", "no_claim_alerts")  # 86% crossed out: nothing but our own history counts
     assert shop_rules.rules_for("mazaya_eg", "no_claim_alerts")  # 64%, by named campaigns
     assert shop_rules.rules_for("faces_eg", "no_claim_alerts")  # a third, with a standing sale
+    for site in ("aghezty_eg", "samsung_eg", "eand_eg", "ravin_eg"):  # 100% of air conditioners, 95% of TVs, half, 54%
+        assert shop_rules.rules_for(site, "no_claim_alerts"), site
+    assert shop_rules.rules_for("raneen_eg", "no_claim_alerts") and shop_rules.low_stock_is_noise("raneen_eg")  # 100%, 82%
     for site in ("raya_eg", "etisal_eg", "lcwaikiki_eg", "defacto_eg"):
         assert shop_rules.rules_for(site, "no_claim_alerts"), site
         assert shop_rules.low_stock_is_noise(site), site

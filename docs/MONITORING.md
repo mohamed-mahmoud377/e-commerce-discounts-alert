@@ -177,6 +177,11 @@ Lines worth reacting to:
 | `blocked: elnekhely_eg: HTTP 403` | Cloudflare: expected from any cloud IP | Pauses by itself; keep `elnekhely_eg` off cloud workers; [ELNEKHELY.md](ELNEKHELY.md) |
 | `blocked: miami_eg: HTTP 403` | Cloudflare refused this connection | Pauses by itself; its pages cost it 5 s to build, so slow it if it repeats; [MIAMI.md](MIAMI.md) |
 | `blocked: mazaya_eg: HTTP 403` or a non-JSON answer | `robots.txt` disallows the API we read, so this may be the shop enforcing it | Pauses by itself; if it repeats, switch it off in Shop settings rather than fight it; [MAZAYA.md](MAZAYA.md) |
+| `blocked: raneen_eg: HTTP 403` | From a home IP, that IP is refused. The droplet is always refused: it should never have Raneen in `DEALS_SITES` | Never lower its delay (`robots.txt` asks for 10 s); pause it; [RANEEN.md](RANEEN.md) |
+| `blocked: eand_eg: HTTP 200` | Its API answered something other than JSON: the `Accept` header was lost (XML), or FortiWeb's "Web Page Blocked" page | The body says which; [EAND.md](EAND.md) |
+| `blocked: ravin_eg: HTTP 429` | `local_rate_limited`, as its `/products.json` did on the first day | Pauses by itself; if it repeats, set Pace 2x in Shop settings; [RAVIN.md](RAVIN.md) |
+| `aghezty_eg: no product data in the page` | `window.AGHEZTY` is gone from the page: a redesign | [AGHEZTY.md](AGHEZTY.md) |
+| `raneen_eg: no product cards in the page` | A landing page in place of a category, or a new theme | [RANEEN.md](RANEEN.md) |
 | `blocked: faces_eg: HTTP 403` | `robots.txt` disallows the address we read, so this may be the shop enforcing it | Pauses by itself; if it repeats, switch it off in Shop settings rather than fight it; [FACES.md](FACES.md) |
 | `faces_eg: no item count in the grid` or HTTP 500 from it | The grid changed, or the request lost its `X-Requested-With` header | [FACES.md](FACES.md) |
 | `mazaya_eg: GraphQL error` | A field changed | [MAZAYA.md](MAZAYA.md) |

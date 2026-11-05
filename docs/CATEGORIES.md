@@ -408,3 +408,23 @@ Magento ids (`deals categories` isn't wired for it; `categories(filters:{parent_
 ## faces.eg category ids
 
 The id is the page's slug (`input.category-id` on the page confirms it). Roots: `perfume`, `makeup`, `skincare`, `hair`, `body`, `gifts`, `men-products`, `home-fragrance`. Sale feed: `deals:extra-sale`. docs/FACES.md.
+
+## aghezty.com categories
+
+The URL path under `/en/`, case-sensitive (`TVs`, `washing-machines`). All of them: `sitemap-categories.xml`. Parents add up their children; every product names one leaf. Roots and counts: docs/AGHEZTY.md.
+
+## samsung.com/eg types
+
+An 8-digit `type` in the page's `finder/global` request: phones `01010000`, tablets `01020000`, watches `01030000`, buds `01040000`, accessories `01050000`, TVs `04010000`, lifestyle TVs `04020000`, The Frame `04030000`, monitors `07010000`, washers `08010000`, refrigerators `08030000`, vacuums `08070000`, microwaves `08110000`. An unknown one answers 0 records, like an empty one. Few have prices: docs/SAMSUNG.md.
+
+## eand.com.eg categories
+
+The `cid` in the eshop's links (`#/category/devices?cid=2`), read as `categoryId`: Devices `2`, Tablets `5`, Best Deals `13`, Laptops `27`, TVs `29`, Gaming `30`, Accessories `35` (parent of Headsets & speakers `4`, Power banks & chargers `6`, Smart watch `18`, Storage `8`, Tech gear `14652`), Internet `36`, 5G `10358`, Home appliances `10085`. 1,760 in all, mostly campaigns that overlap: docs/EAND.md.
+
+## shop.iravin.com collections
+
+Shopify handles; we read `all`. `products_count` is wrong by five times. 172 collections, mostly campaigns (`black-friday-2025-deals`, `offer_no_140`): docs/RAVIN.md.
+
+## raneen.com categories
+
+The URL path under `/en/`: `appliances/large-appliances/air-conditioners`. Links one level deeper are often a seller or brand filter in the path, not a category (`mobiles/mobiles-tablets/dubaiphone`). Sizes, and why only 8 are read: docs/RANEEN.md.

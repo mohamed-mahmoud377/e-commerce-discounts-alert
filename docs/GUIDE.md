@@ -9,7 +9,7 @@ the science behind the rules below).
 
 ## Overview
 
-The system crawls whole categories on amazon.eg, noon.com (Egypt), jumia.com.eg, cairosales.com, 2b.com.eg, btech.com, dream2000.com, carrefouregypt.com, dubaiphone.net, hardwaremarket.net, rayashop.com, eshop.vodafone.com.eg, dokkantech.com, etisalstore.com, eshop.orange.eg, lcwaikiki.eg, defacto.com.eg, elarabygroup.com, miamicenters.com, sigma-computer.com, elnekhelytechnology.com, wayupsports.com, gcshopeg.com, azzamwatches.com, mazaya.eg, faces.eg and Amazon Now (amazon.eg's 20-minute store), stores every product's price
+The system crawls whole categories on amazon.eg, noon.com (Egypt), jumia.com.eg, cairosales.com, 2b.com.eg, btech.com, dream2000.com, carrefouregypt.com, dubaiphone.net, hardwaremarket.net, rayashop.com, eshop.vodafone.com.eg, dokkantech.com, etisalstore.com, eshop.orange.eg, lcwaikiki.eg, defacto.com.eg, elarabygroup.com, miamicenters.com, sigma-computer.com, elnekhelytechnology.com, wayupsports.com, gcshopeg.com, azzamwatches.com, mazaya.eg, faces.eg, aghezty.com, samsung.com/eg, eand.com.eg, shop.iravin.com, raneen.com and Amazon Now (amazon.eg's 20-minute store), stores every product's price
 history, and sends an Arabic Telegram alert when a price is genuinely low compared with that product's
 own history. It tracks about 50,000 products on Amazon and noon plus about 14,000 on Jumia, in 19 groups: TVs, refrigerators, air conditioners, gaming consoles,
 phones, tablets, laptops, desktops, monitors, PC components, headphones, wearables (smartwatches and fitness
@@ -36,7 +36,7 @@ crawling from their own internet connections.
 | --- | --- | --- |
 | Coordinator (`deals serve`) | Droplet 207.154.206.127 | Owns the SQLite database, hands out crawl jobs, stores results, detects deals, runs the Telegram bot, watches for problems, takes daily backups |
 | Worker (`deals worker`) | Your Mac, the droplet, any friend's PC | Asks for a job, downloads the shop pages, sends the products back. Holds no database |
-| Site adapters (`sites/amazon_eg.py`, `sites/noon_eg.py`, `sites/jumia_eg.py`, `sites/cairosales_eg.py`, `sites/twob_eg.py`, `sites/btech_eg.py`, `sites/dream2000_eg.py`, `sites/carrefour_eg.py`, `sites/dubaiphone_eg.py`, `sites/hardwaremarket_eg.py`, `sites/raya_eg.py`, `sites/vodafone_eg.py`, `sites/dokkantech_eg.py`, `sites/etisal_eg.py`, `sites/orange_eg.py`, `sites/lcwaikiki_eg.py`, `sites/defacto_eg.py`, `sites/elaraby_eg.py`, `sites/miami_eg.py`, `sites/sigma_eg.py`, `sites/elnekhely_eg.py`, `sites/shopify.py` with `wayup_eg.py`, `gcshop_eg.py`, `azzam_eg.py`, `sites/mazaya_eg.py`, `sites/faces_eg.py`) | Inside each worker | Know how to fetch and read one listing page of each shop |
+| Site adapters (`sites/amazon_eg.py`, `sites/noon_eg.py`, `sites/jumia_eg.py`, `sites/cairosales_eg.py`, `sites/twob_eg.py`, `sites/btech_eg.py`, `sites/dream2000_eg.py`, `sites/carrefour_eg.py`, `sites/dubaiphone_eg.py`, `sites/hardwaremarket_eg.py`, `sites/raya_eg.py`, `sites/vodafone_eg.py`, `sites/dokkantech_eg.py`, `sites/etisal_eg.py`, `sites/orange_eg.py`, `sites/lcwaikiki_eg.py`, `sites/defacto_eg.py`, `sites/elaraby_eg.py`, `sites/miami_eg.py`, `sites/sigma_eg.py`, `sites/elnekhely_eg.py`, `sites/shopify.py` with `wayup_eg.py`, `gcshop_eg.py`, `azzam_eg.py`, `sites/mazaya_eg.py`, `sites/faces_eg.py`, `sites/aghezty_eg.py`, `sites/samsung_eg.py`, `sites/eand_eg.py`, `sites/ravin_eg.py`, `sites/raneen_eg.py`) | Inside each worker | Know how to fetch and read one listing page of each shop |
 | Telegram bot (@Jerrys_deals_bot) | Inside the coordinator | Sends deal alerts to approved subscribers and system warnings to you |
 
 Workers only make outgoing requests to the coordinator, so nothing needs to be opened on your Mac or on a
@@ -191,7 +191,7 @@ Adding a friend's computer as a worker (more crawling capacity from another conn
 1. On the server, create a token with `deals token`, add it under `[workers]` as `ahmed = "..."`, restart
    the coordinator.
 2. On their computer: clone the repo, do setup steps 1 and 2, then run
-   `DEALS_COORDINATOR=http://207.154.206.127:8787 DEALS_TOKEN=... DEALS_SITES=noon_eg,amazon_eg,jumia_eg,cairosales_eg,2b_eg,btech_eg,dream2000_eg,carrefour_eg,dubaiphone_eg,hardwaremarket_eg,amazon_now_eg,raya_eg,vodafone_eg,dokkantech_eg,etisal_eg,orange_eg,lcwaikiki_eg,defacto_eg,elaraby_eg,miami_eg,sigma_eg,elnekhely_eg,wayup_eg,gcshop_eg,azzam_eg,mazaya_eg,faces_eg .venv/bin/deals worker`.
+   `DEALS_COORDINATOR=http://207.154.206.127:8787 DEALS_TOKEN=... DEALS_SITES=noon_eg,amazon_eg,jumia_eg,cairosales_eg,2b_eg,btech_eg,dream2000_eg,carrefour_eg,dubaiphone_eg,hardwaremarket_eg,amazon_now_eg,raya_eg,vodafone_eg,dokkantech_eg,etisal_eg,orange_eg,lcwaikiki_eg,defacto_eg,elaraby_eg,miami_eg,sigma_eg,elnekhely_eg,wayup_eg,gcshop_eg,azzam_eg,mazaya_eg,faces_eg,aghezty_eg,samsung_eg,eand_eg,ravin_eg,raneen_eg .venv/bin/deals worker`.
 
 Running everything on one machine without the server (for experiments): `cp config.example.toml config.toml`,
 then `.venv/bin/deals local` starts a coordinator and a worker in one process with a local database.
@@ -305,6 +305,8 @@ SKU; 95% show a discount that "ends" in 2027. [ETISAL.md](ETISAL.md).
 
 **Faces (faces.eg, 5 November 2026).** Perfume, makeup and skin care, about 3,500 products on Salesforce Commerce Cloud, read through its Load More address (48 a request) against `robots.txt`, by the user's decision. Where sizes cost differently its tile shows only the cheapest. [FACES.md](FACES.md).
 
+**The five of 5 November 2026's third batch.** **aghezty.com** (home appliances, 6,266 products, server pages with JSON in them, a filter on the price, droplet and Mac). **samsung.com/eg** (the official price, about 150 priced models, through the search API its pages call; colours fold, versions don't). **eand.com.eg** (e&, formerly Etisalat: a marketplace of 2B, Raya and itself, whose campaign-shaped categories are held to their groups by product type). **shop.iravin.com** (Ravin, Egyptian clothes on Shopify, 4,413 products; a discount app puts campaigns on top of the JSON's price, so its alerts start kept, not sent). **raneen.com** (a marketplace, home connections only; `robots.txt` asks for 10 s a page and no filters, so only 8 leaf categories are read, and a pass takes 34 minutes, which is its real time to notice). Each has its doc.
+
 **Amazon Now.** amazon.eg's 20-minute grocery store (from July 2026) is the ordinary amazon.eg search under its own
 browse root, node `211761638031`, so the amazon_eg parser and cookies serve it unchanged. It is a shop of its own
 because an ASIN on Amazon Now is a separate offer at its own price (Juhayna 6×1 L: EGP 275.95 from Amazon, 289.75
@@ -341,6 +343,8 @@ delivery location: the Mac's is served, the droplet's lists nothing. Details: [A
 | wayupsports.com, gcshopeg.com, azzamwatches.com | Works (tested 5 November) | Works |
 | mazaya.eg | Works, with Chrome's fingerprint (tested 5 November) | Works |
 | faces.eg | Works (tested 5 November) | Works |
+| aghezty.com, samsung.com/eg, eand.com.eg, shop.iravin.com | Works (tested 5 November) | Works |
+| raneen.com | Works (tested 5 November); `robots.txt`: 10 s a page, no filters | HTTP 403 |
 | Amazon Now (amazon.eg) | Works, the default delivery location is served (tested 3 November) | Pages load but list nothing: the droplet's location has no Amazon Now store |
 
 **What is read from each product card** (no extra requests):
@@ -497,6 +501,9 @@ crawled like any other slice (same group, same interval and cap, same filters):
 | Raya | not used: offer categories exist (`flash-sale` 1437, `daily-deals-offers` 3722) but would need a watch group of their own | | 22, 106 |
 | DeFacto | not a fast lane, a root: `woman-discount`, `man-discount`, `kids-discount` | | 5,328, 2,679, 2,935 |
 | Vodafone, Dokkan Tech, Etisal, Orange, El Araby, Miami, Elnekhely, GC Shop, Azzam, Mazaya | none needed: small catalogues, passes of a minute or two | | |
+| Aghezty | `deals:flash-sale` (the offers' one page, 28 products) | the whole page | 28 |
+| Samsung, e&, Ravin | none needed: passes of about 2 minutes | | |
+| Raneen | none: `robots.txt` leaves no filter, and its offers page has no cards. A pass takes 34 minutes | | |
 | Faces | `deals:extra-sale` (the first 48 of "Big Beauty Sale", 554 products, which it reads every 10 minutes) | the sale's first page | 554 |
 | Sigma, WayUp | none: no feed by date. Passes of 3 to 7 minutes, well inside their caps | | |
 | Dubai Phone | none needed: every root is one or two pages, read past Vercel's 10-minute cache (`flash-sale` holds 2 earbuds under every minimum) | | |
@@ -864,7 +871,7 @@ the price block (price, discount, crossed-out price) and the seller line ("shipp
 cropped to the title, the main image and the boxes: a friend sees the deal as the shop shows it. Every shop
 has its boxes (`SPECS` in `shots.py`, 3 Nov 2026). The seller box is there where the shop names one: Amazon,
 Amazon Now, noon, Jumia, B.TECH, Carrefour and Raya (marketplaces); 2B, Cairo Sales, Dubai Phone, Hardware Market,
-Dream 2000, Vodafone, Dokkan Tech, Etisal, Orange, LC Waikiki, DeFacto, El Araby, Miami, Sigma, Elnekhely, WayUp, GC Shop, Azzam, Mazaya and Faces sell their own stock and get the price box alone.
+Dream 2000, Vodafone, Dokkan Tech, Etisal, Orange, LC Waikiki, DeFacto, El Araby, Miami, Sigma, Elnekhely, WayUp, GC Shop, Azzam, Mazaya, Faces, Aghezty, Samsung, e& and Ravin get the price box alone (e& is a marketplace, but its page names no seller beside the price).
 
 | Shop | Page | Price box | Seller box | Context | Time (Mac) |
 |---|---|---|---|---|---|
@@ -894,6 +901,11 @@ Dream 2000, Vodafone, Dokkan Tech, Etisal, Orange, LC Waikiki, DeFacto, El Araby
 | azzam_eg | English (the Arabic page crops blank) | `.price-list--product` | | title, image | 3 s |
 | mazaya_eg | `/ar/` | `.text-primary-800:has(.currency)` | | title, image | 8 s |
 | faces_eg | `/ar/` | `.js-price-container` | | title, image | 4 s |
+| aghezty_eg | `/ar/` | `.pd-price-card` | | title, image | 3 s |
+| samsung_eg | Arabic only | `#sgDevPriceAreaBase`, `.hubble-price-bar__price` | | title | 4 to 9 s |
+| eand_eg | `?lang=ar` in the hash route | `div.product-price div.price` | | title, image | 6 s |
+| ravin_eg | English | `[class*="ai-premium-product__price-wrapper"]` | | title, image | 4 s |
+| raneen_eg | `/ar/` | `.rn-price` | `div:has(> .rn-seller__chips)` | image | 3 s |
 
 The shop details (why each selector, what loads late) are in each shop's doc and, for Amazon and noon, in
 docs/CATEGORIES.md. Times include starting the browser and a 2 s wait for the page's last images.
@@ -961,7 +973,7 @@ nothing until `/start` again. `make report` (sending the report by hand) still g
 
 ## Shop settings
 
-With 27 shops, the web UI's **Shop settings** page (and the Settings card on each shop's page) switches them
+With 32 shops, the web UI's **Shop settings** page (and the Settings card on each shop's page) switches them
 without touching the server or any device (since 5 Nov 2026). A change works at once and stays until changed:
 it is all in the database (`shop_settings.py`) and enforced by the coordinator, so old workers need nothing.
 
