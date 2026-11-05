@@ -524,6 +524,30 @@ MIGRATIONS = [
     CREATE INDEX reviews_status ON reviews (status, next_attempt_at);
     CREATE INDEX reviews_created ON reviews (created_at);
     """,
+    """
+    -- What the admins switched per shop from the web UI (shop_settings.py). No row means every default.
+    CREATE TABLE shop_settings (
+        site        TEXT PRIMARY KEY,
+        crawl       INTEGER NOT NULL DEFAULT 1,
+        alerts      TEXT NOT NULL DEFAULT 'on',  -- on | silent (kept, not sent) | off (not written)
+        screenshots INTEGER NOT NULL DEFAULT 1,
+        pages       INTEGER NOT NULL DEFAULT 1,  -- product-page reading
+        pace        INTEGER NOT NULL DEFAULT 1,  -- the shop's delays times this: 1, 2 or 4
+        min_drop    REAL,                        -- this shop's own floors for alerts
+        min_price   INTEGER,                     -- EGP
+        note        TEXT,
+        updated_at  TEXT,
+        updated_by  TEXT
+    );
+    -- One row: this device doesn't crawl this shop, though it has it in its DEALS_SITES.
+    CREATE TABLE device_shops (
+        worker     TEXT NOT NULL,
+        site       TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        updated_by TEXT,
+        PRIMARY KEY (worker, site)
+    );
+    """,
 ]
 
 # Price moves smaller than this are noise (amazon.eg prices creep by a piastre per

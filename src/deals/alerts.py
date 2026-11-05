@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 
 from curl_cffi import CurlMime, requests
 
-from deals import db, matching, publish, shop_rules, shotq
+from deals import db, matching, publish, shop_rules, shop_settings, shotq
 from deals.config import Config
 from deals.db import iso, parse_iso, utcnow
 from deals.pricing import LOW_STOCK_EVERYWHERE, Deal, Point, PriceStats, ProductView, compute_stats, evaluate, manual_deal
@@ -47,6 +47,10 @@ SIGNAL_TEXT = {
 }
 
 
+# Alerts people heard of: neither cancelled nor kept without sending (shop_settings.SILENT).
+WENT_OUT = "(error IS NULL OR (error NOT LIKE 'cancelled%' AND error NOT LIKE 'silent%'))"
+
+
 def product_stats(conn: sqlite3.Connection, product_id: int, now: datetime) -> PriceStats:
     points = [Point(parse_iso(r["observed_at"]), r["price"], bool(r["in_stock"]))
               for r in db.history(conn, product_id)]
@@ -57,6 +61,9 @@ def check_product(conn: sqlite3.Connection, cfg: Config, product_id: int, *, boo
                   now: datetime) -> Deal | None:
     """Evaluate a product whose price just changed (or that just appeared); queue an alert if it's a deal."""
     p = db.product(conn, product_id)
+    switches = shop_settings.get(conn, p["site"])
+    if switches.alerts == "off":
+        return None
     stats = product_stats(conn, product_id, now)
     watch = cfg.watch(p["grp"]) if p["grp"] else None
     view = _view(p)
@@ -72,7 +79,13 @@ def check_product(conn: sqlite3.Connection, cfg: Config, product_id: int, *, boo
         shop_rules.hit(conn, rule, p["site"], p["sku"], deal.reference, now,
                        detail=f"stopped {deal.kind}: {deal.price // 100:,} EGP, {deal.drop:.0%} below {deal.reference // 100:,}")
         return None
-    if _recently_alerted(conn, cfg, product_id, deal.price, now):
+    # The shop's own floors (web UI): after the rules, so they only ever remove an alert.
+    if ((switches.min_drop and deal.drop < switches.min_drop)
+            or (switches.min_price and deal.price < switches.min_price * 100)):
+        log.info("no alert for %s: %s at %s is under the shop's own floor", p["sku"], deal.kind, deal.price)
+        return None
+    silent = switches.alerts == "silent"
+    if _recently_alerted(conn, cfg, product_id, deal.price, now, silent=silent):
         return None
     other = db.best_other_offer(conn, p["site"], p["sku"], now)
     if other is not None and other < deal.price:
@@ -87,13 +100,20 @@ def check_product(conn: sqlite3.Connection, cfg: Config, product_id: int, *, boo
     wait = (deal.confidence == "low" and cfg.alerts.confirm_low_confidence
             and (deal.kind != "early_drop" or cfg.alerts.confirm_early_drops))
     confirm = iso(now + timedelta(minutes=hold)) if wait else None
-    past = conn.execute("SELECT COUNT(*) FROM alerts WHERE product_id = ? AND (error IS NULL OR error NOT LIKE 'cancelled%')",
-                        (product_id,)).fetchone()[0]
+    past = conn.execute(f"SELECT COUNT(*) FROM alerts WHERE product_id = ? AND {WENT_OUT}", (product_id,)).fetchone()[0]
     message = format_deal(p, stats, deal, group, other_offer=other, past_alerts=past)
     # Only text: the other shops' prices for the same product are appended after everything above
     # has decided the alert. The lookup is read-only and any failure in it is logged and ignored.
     others = _other_shops(conn, cfg, product_id, p["sku"], now)
     message = append_other_shops(message, p, deal.price, others, now)
+    if silent:  # kept for the web UI, already "sent": the outbox, the screenshots and the review never see it
+        conn.execute(
+            """INSERT INTO alerts (product_id, kind, price, reference_price, drop_pct, score, message,
+                                   created_at, next_attempt_at, sent_at, error)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (product_id, deal.kind, deal.price, deal.reference, deal.drop, deal.score, message, iso(now), iso(now),
+             iso(now), shop_settings.SILENT))
+        return deal
     cur = conn.execute(
         """INSERT INTO alerts (product_id, kind, price, reference_price, drop_pct, score, message,
                                created_at, next_attempt_at, confirm_until)
@@ -181,8 +201,7 @@ def manual_alert(conn: sqlite3.Connection, cfg: Config, product_id: int, now: da
                     min_drop=watch.min_drop if watch else None)
     stopped = shop_rules.stops(p["site"], auto) if auto else None
     seen_h = (now - parse_iso(p["last_seen_at"])).total_seconds() / 3600
-    past = conn.execute("SELECT COUNT(*) FROM alerts WHERE product_id = ? AND (error IS NULL OR error NOT LIKE 'cancelled%')",
-                        (product_id,)).fetchone()[0]
+    past = conn.execute(f"SELECT COUNT(*) FROM alerts WHERE product_id = ? AND {WENT_OUT}", (product_id,)).fetchone()[0]
     last = conn.execute("SELECT created_at, kind, price FROM alerts WHERE product_id = ? ORDER BY created_at DESC LIMIT 1",
                         (product_id,)).fetchone()
     other = db.best_other_offer(conn, p["site"], p["sku"], now)
@@ -204,6 +223,7 @@ def manual_alert(conn: sqlite3.Connection, cfg: Config, product_id: int, now: da
         "other_offer": other, "message": message,
         "recipients": conn.execute("SELECT COUNT(*) FROM subscribers WHERE status = 'active'").fetchone()[0],
         "review": cfg.review_enabled,  # it goes to the admins' review group, not to the subscribers
+        "shop_alerts": shop_settings.get(conn, p["site"]).alerts,  # sent by hand it goes out whatever this says
     }
     if not send:
         return out
@@ -245,12 +265,14 @@ def append_other_shops(message: str, p: sqlite3.Row, price: int, others: list, n
     return body + "\n\n" + "\n".join(lines) + "\n\n🔖 " + footer
 
 
-def _recently_alerted(conn, cfg: Config, product_id: int, price: int, now: datetime) -> bool:
-    """Don't repeat an alert unless the price fell noticeably further or a week passed."""
+def _recently_alerted(conn, cfg: Config, product_id: int, price: int, now: datetime, *, silent: bool = False) -> bool:
+    """Don't repeat an alert unless the price fell noticeably further or a week passed. An alert kept but not
+    sent only stops another one like it: nobody heard of it, so it can't stop the real one later."""
     since = iso(now - timedelta(days=cfg.alerts.realert_after_days))
+    counts = "(error IS NULL OR error NOT LIKE 'cancelled%')" if silent else WENT_OUT
     last = conn.execute(
-        """SELECT price FROM alerts WHERE product_id = ? AND created_at >= ?
-           AND (error IS NULL OR error NOT LIKE 'cancelled%') ORDER BY created_at DESC LIMIT 1""",
+        f"""SELECT price FROM alerts WHERE product_id = ? AND created_at >= ?
+            AND {counts} ORDER BY created_at DESC LIMIT 1""",
         (product_id, since),
     ).fetchone()
     return last is not None and price > last["price"] * (1 - cfg.alerts.realert_extra_drop)

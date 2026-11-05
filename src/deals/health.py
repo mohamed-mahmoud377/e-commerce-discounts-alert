@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from deals import audit, db, publish, scheduler, uptime
+from deals import audit, db, publish, scheduler, shop_settings, uptime
 from deals.alerts import KIND_TITLE, SITE_NAME
 from deals.config import Config
 from deals.db import iso, parse_iso
@@ -109,9 +109,12 @@ def run_checks(conn: sqlite3.Connection, cfg: Config, now: datetime) -> list[Che
         detail = (f"last slice finished {'never' if ago is None else f'{ago:.0f} min ago'}, {r['slices']} slices "
                   f"({r['never']} not crawled yet), most overdue {max(0, overdue):.0f} min")
         name_ar = SITE_NAME.get(site, site)
-        if hold := scheduler.site_paused(conn, site, now):
-            add(Check(f"crawl {site}", WARN, f"paused by hand until {hold['until'][:16]} UTC"
-                      + (f" ({hold['reason']})" if hold["reason"] else "") + f"; {detail}",
+        hold = scheduler.site_paused(conn, site, now)
+        if hold and hold["until"] is None:  # meant to stay off: named here and in the report, not a problem
+            add(Check(f"crawl {site}", OK, f"{scheduler.hold_text(hold)}; {detail}"))
+            continue
+        if hold:
+            add(Check(f"crawl {site}", WARN, f"{scheduler.hold_text(hold)}; {detail}",
                       f"{name_ar}: الجمع متوقف يدويًا حتى {hold['until'][11:16]}"))
         elif ago is None or ago > 180:
             add(Check(f"crawl {site}", FAIL, detail, f"{name_ar}: لم يكتمل أي جمع منذ أكثر من 3 ساعات"))
@@ -128,6 +131,9 @@ def run_checks(conn: sqlite3.Connection, cfg: Config, now: datetime) -> list[Che
         if r["oversized"]:
             add(Check(f"coverage {site}", WARN, f"{r['oversized']} slices too big to crawl completely",
                       f"{name_ar}: {r['oversized']} شريحة أكبر من أن تُجمع بالكامل"))
+
+    if off := shop_settings.summary(conn)[0]:
+        add(Check("shop settings", OK, "switched in the web UI: " + ", ".join(off)))
 
     for b in conn.execute("SELECT * FROM blocks WHERE until > ?", (iso(now),)).fetchall():
         add(Check(f"blocked {b['site']}", WARN, f"{b['ip']} paused until {b['until'][11:16]} UTC "
@@ -194,7 +200,7 @@ def daily_report(conn: sqlite3.Connection, cfg: Config, now: datetime) -> str:
     changes = one("SELECT COUNT(*) FROM price_history WHERE observed_at >= ?", since)[0]
     by_kind = {r["kind"]: r["n"] for r in conn.execute(
         "SELECT kind, COUNT(*) n FROM alerts WHERE created_at >= ? AND kind != 'system' "
-        "AND (error IS NULL OR error NOT LIKE 'cancelled%') GROUP BY kind", (since,))}
+        "AND (error IS NULL OR (error NOT LIKE 'cancelled%' AND error NOT LIKE 'silent%')) GROUP BY kind", (since,))}
     subs = one("SELECT COUNT(*) FROM subscribers WHERE status = 'active'")[0]
     lines += [
         "",
@@ -212,6 +218,8 @@ def daily_report(conn: sqlite3.Connection, cfg: Config, now: datetime) -> str:
         lines.append(f"🧑‍⚖️ المراجعة: نُشر {counts.get('published', 0)} · رُفض {counts.get('rejected', 0)} · "
                      f"انتهى وقته {counts.get('expired', 0)} · ينتظر {counts.get('pending', 0)}"
                      + (f" · متوسط القرار {times[len(times) // 2] / 60:.0f} دقيقة" if times else ""))
+    if off := shop_settings.summary(conn)[1]:
+        lines.append("⚙️ إعدادات المواقع: " + " · ".join(html.escape(x, quote=False) for x in off))
     workers = conn.execute("SELECT name, last_seen_at FROM workers WHERE last_seen_at >= ?",
                            (iso(now - timedelta(days=7)),)).fetchall()
     if workers:

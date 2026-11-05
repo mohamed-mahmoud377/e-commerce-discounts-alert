@@ -40,6 +40,7 @@ write down anything new you learn about the shops or the operations there (the u
 | Devices and their fetch state | `make devices` (terminal), `make dashboard` (browser), `GET /api/devices` |
 | Logs from every device + server | `make save-logs` (download all for analysis), `make events` (live, `SOURCE=mac`), `make logs` (server journal), `make worker-log` (Mac) |
 | Live numbers | `make status`, `make alerts`, `make movers`, `make logs` |
+| Switch a shop off (everywhere or on one device), its alerts off or not sent, pace | web UI → Shop settings (stays until changed; a device must have the shop in `DEALS_SITES` first) |
 | Pause crawling for a while | `make pause DEVICE=mac SITE=jumia_eg HOURS=3` (ends by itself), `make resume`; web UI → Devices |
 | Same product on other shops | `make models` (`FIND=<code>`, `SAMPLE=10`); web UI product page, Queries → Matching |
 | Database | `make sql` (live, read-only), `make dbweb` (browser), `make db` (snapshot for IntelliJ) |

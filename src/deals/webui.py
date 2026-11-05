@@ -2,8 +2,9 @@
 
 Only the admins (users table, auth.py) get in: they log in with username and password and
 keep a 90-day JWT in an HttpOnly cookie. They can also do what the bot's /subscribers buttons
-do (approve, reject, remove, helper admin) and send the daily report now; nothing here can
-affect crawling. Over an SSH tunnel (127.0.0.1) the page opens read-only without a login.
+do (approve, reject, remove, helper admin), send the daily report now, pause crawling and
+change the shop settings (shop_settings.py). Over an SSH tunnel (127.0.0.1) the page opens
+read-only without a login.
 
 Built for the 1 GB droplet: the server sends one static page and small JSON; lists are
 paged in SQL, and the browser does the drawing (charts, filters over a loaded page).
@@ -16,7 +17,7 @@ import re
 import sqlite3
 from datetime import datetime, timedelta
 
-from deals import audit, db, health, matching, monitor, scheduler, shop_rules, shops, uptime
+from deals import audit, db, health, matching, monitor, scheduler, shop_rules, shop_settings, shops, uptime
 from deals.alerts import product_stats
 from deals.config import Config
 from deals.db import iso
@@ -36,7 +37,8 @@ def overview(conn: sqlite3.Connection, cfg: Config, now: datetime, revision: str
             "products": one("SELECT COUNT(*) FROM products"),
             "in_stock": one("SELECT COUNT(*) FROM products WHERE in_stock"),
             "changes_24h": one("SELECT COUNT(*) FROM price_history WHERE observed_at >= ?", since),
-            "alerts_24h": one("SELECT COUNT(*) FROM alerts WHERE created_at >= ? AND kind != 'system'", since),
+            "alerts_24h": one("SELECT COUNT(*) FROM alerts WHERE created_at >= ? AND kind != 'system' "
+                              "AND (error IS NULL OR error NOT LIKE 'silent%')", since),
             "atl_24h": one("SELECT COUNT(*) FROM alerts WHERE created_at >= ? AND kind = 'all_time_low'", since),
             "subscribers": one("SELECT COUNT(*) FROM subscribers WHERE status = 'active'"),
             "pending": one("SELECT COUNT(*) FROM subscribers WHERE status = 'pending'"),
@@ -52,6 +54,7 @@ def overview(conn: sqlite3.Connection, cfg: Config, now: datetime, revision: str
                WHERE a.kind != 'system' ORDER BY a.created_at DESC LIMIT 5""")],
         "devices": monitor.devices(conn, now),
         "sites": monitor.sites(conn, now),
+        "shops_off": [s["name"] for s in shop_settings.listing(conn) if not s["crawl"]],
         "server": server_stats(),
     }
 
@@ -78,6 +81,7 @@ def alerts(conn: sqlite3.Connection, now: datetime, days: float, kind: str | Non
         """SELECT a.id, a.created_at, a.kind, a.price, a.reference_price, a.drop_pct, a.score, a.message, a.error,
                   a.product_id, p.site, p.title, p.url, p.grp,
                   CASE WHEN a.confirm_until IS NOT NULL THEN 'held' WHEN a.error LIKE 'cancelled%' THEN 'cancelled'
+                       WHEN a.error LIKE 'silent%' THEN 'silent'
                        WHEN a.sent_at IS NULL THEN 'queued' ELSE 'sent' END AS state,
                   (SELECT COUNT(*) FROM deliveries d WHERE d.alert_id = a.id AND d.sent_at IS NOT NULL) delivered,
                   (SELECT r.status FROM reviews r WHERE r.alert_id = a.id) review
@@ -231,6 +235,7 @@ def shop_list(conn: sqlite3.Connection, now: datetime) -> list[dict]:
     problems = by_site("""SELECT site, COUNT(*) FROM errors WHERE site IS NOT NULL AND last_seen_at >= ?
                           AND (resolved_at IS NULL OR last_seen_at > resolved_at) GROUP BY site""", since)
     devices = monitor.devices(conn, now)
+    settings = {s["name"]: s for s in shop_settings.listing(conn)}
     out = []
     for s in shops.for_ui():
         name, c = s["name"], crawl.get(s["name"]) or {}
@@ -238,7 +243,7 @@ def shop_list(conn: sqlite3.Connection, now: datetime) -> list[dict]:
         out.append({**s, "products": c.get("products") or 0,
                     "slices": c.get("slices") or 0, "running": c.get("running") or 0, "failing": c.get("failing") or 0,
                     "last_done": c.get("last_done"), "deals_24h": deals.get(name, 0), "blocked_ips": blocked.get(name, 0),
-                    "problems_24h": problems.get(name, 0), "status": status.get(name),
+                    "problems_24h": problems.get(name, 0), "status": status.get(name), "settings": settings.get(name),
                     "devices": len(on), "devices_working": sum(d["online"] and x["state"] in ("ok", "crawling", "idle")
                                                                for d, x in on)})
     return out
@@ -380,8 +385,18 @@ td.mono{overflow-wrap:anywhere} tr.WARNING td{background:var(--rowwarn)} tr.ERRO
 .pill i{width:7px;height:7px;border-radius:50%;background:currentColor}
 .ok,.sent,.active{background:var(--ok-bg);color:var(--ok-fg)} .warn,.blocked,.held{background:var(--warn-bg);color:var(--warn-fg)}
 .fail,.failing,.offline{background:var(--fail-bg);color:var(--fail-fg)} .info,.crawling,.queued{background:var(--info-bg);color:var(--info-fg)}
-.idle,.cancelled{background:var(--idle-bg);color:var(--idle-fg)} .new{background:var(--new-bg);color:var(--new-fg)}
+.idle,.cancelled,.silent,.off{background:var(--idle-bg);color:var(--idle-fg)} .new{background:var(--new-bg);color:var(--new-fg)}
 .na{color:var(--muted);font-size:12px}
+.switch{position:relative;display:inline-block;width:38px;height:22px;vertical-align:middle;cursor:pointer}
+.switch input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:inherit}
+.switch i{position:absolute;inset:0;border-radius:999px;background:var(--line);transition:background .15s}
+.switch i:after{content:'';position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3);transition:transform .15s}
+.switch input:checked+i{background:var(--pri)} .switch input:checked+i:after{transform:translateX(16px)}
+.switch input:focus-visible+i{outline:2px solid var(--pri);outline-offset:2px}
+.switch input:disabled{cursor:default} .switch input:disabled+i{opacity:.5}
+.field.tiny{width:84px;min-height:32px;padding:0 8px} select.field.tiny{width:auto}
+.setgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px 28px;padding:16px 18px}
+.setgrid>div{display:flex;justify-content:space-between;align-items:center;gap:12px} .setgrid .sub{display:block;margin-top:2px}
 .banner{padding:16px 20px;display:flex;flex-wrap:wrap;gap:14px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:12px}
 .banner.warn{background:var(--banner-warn);border-color:var(--banner-warnline);color:var(--fg)}
 .banner.fail{background:var(--banner-fail);border-color:var(--banner-failline);color:var(--fg)}
@@ -457,8 +472,8 @@ body.loading #bar{opacity:1;width:70%}
 </nav>
 <div class='toast' id='toast' role='status'></div>
 <script>
-const TABS = ['Overview', 'Deals', 'Products', 'Shops', 'Devices', 'Uptime', 'Errors', 'Jobs', 'Logs', 'Queries'], ADMIN = ['Subscribers', 'Rules'];
-const LABEL = {Rules: 'Rules & watches'};
+const TABS = ['Overview', 'Deals', 'Products', 'Shops', 'Devices', 'Uptime', 'Errors', 'Jobs', 'Logs', 'Queries'], ADMIN = ['Settings', 'Subscribers', 'Rules'];
+const LABEL = {Rules: 'Rules & watches', Settings: 'Shop settings'};
 // Every shop from deals/shops.py (name, label, badge, kind, kind_label, url, home_only, doc), in its order.
 const SHOPS = __SHOPS__, SHOP_KINDS = [...new Set(SHOPS.map(s => s.kind))];
 const KINDS = {price_drop: ['Price drop', 'info'], all_time_low: ['All-time low', 'ok'], early_drop: ['Early drop', 'idle'],
@@ -536,7 +551,8 @@ function openProduct(id) { location.hash = 'Products:' + id; }
 function shopsCard(sites, checks) {
   const blocked = new Set(checks.filter(c => c.name.startsWith('blocked ')).map(c => c.name.slice(8)));
   const age = s => s.last_done ? (Date.now() - Date.parse(s.last_done)) / 60000 : 1e9;
-  const bad = sites.filter(s => blocked.has(s.site) || s.failing || age(s) > 60).sort((a, b) => b.products - a.products);
+  const off = new Set(ov?.shops_off || []);  // switched off on purpose: not something that needs a look
+  const bad = sites.filter(s => !off.has(s.site) && (blocked.has(s.site) || s.failing || age(s) > 60)).sort((a, b) => b.products - a.products);
   const rows = bad.map(s => { const state = blocked.has(s.site) ? pill('warn', 'blocked', 1) : pill(age(s) > 60 ? 'warn' : 'ok', s.last_done ? ago(s.last_done) + ' ago' : 'never', 1);
     return `<tr class='click' onclick="location.hash='Shops:${s.site}'"><td><a class='rowlink' href='#Shops:${s.site}'>${esc(shop(s.site))}</a></td><td class='num r'>${s.products.toLocaleString()}</td><td>${state}</td><td class='num r'>${s.running}</td><td class='num r'>${s.failing}</td></tr>`; }).join('');
   const fine = sites.length - bad.length;
@@ -545,7 +561,7 @@ function shopsCard(sites, checks) {
     <div class='cardfoot'><span>${pill('ok', `${fine} of ${sites.length} working`, 1)} ${fine ? 'crawled within the hour, nothing blocked or failing' : ''}</span><a href='#Jobs'>Crawl schedule</a></div></section>`;
 }
 // Device-on-shop states, the ones that need a look first.
-const BAD_FIRST = st => ({blocked: 0, failing: 1, offline: 2, crawling: 3, ok: 4, idle: 5}[st] ?? 3);
+const BAD_FIRST = st => ({blocked: 0, failing: 1, offline: 2, crawling: 3, ok: 4, idle: 5, off: 6}[st] ?? 3);
 // "11 shops, all fine" or "11 shops · blocked on Jumia, failing on noon": a device's shops in one line.
 function shopCount(x) {
   const bad = x.sites.filter(s => s.state === 'blocked' || s.state === 'failing');
@@ -626,7 +642,7 @@ const views = {
       ${sel.price ? `<div class='box3'><div><div class='k'>Now</div><div class='v'>${money(sel.price)}</div></div><div><div class='k'>Typical, 90 d</div><div class='v'>${money(sel.reference_price)}</div></div>
         <div class='good'><div class='k'>Real drop</div><div class='v'>▼ ${pct(sel.drop_pct)}</div></div></div>` : ''}
       <div class='sub' style='font-weight:500'>Telegram message</div><div class='bubble' dir='rtl'>${esc(plain(sel.message))}</div>
-      <div class='sub'>${sel.review ? `Review: ${esc(sel.review)}` : sel.state === 'sent' ? `Delivered to ${sel.delivered} ${sel.delivered === 1 ? 'person' : 'people'}` : sel.state === 'held' ? 'Held until the price is seen again, then sent' : sel.state === 'queued' ? 'Waiting to be sent' : esc(sel.error || sel.state)}</div>
+      <div class='sub'>${sel.review ? `Review: ${esc(sel.review)}` : sel.state === 'sent' ? `Delivered to ${sel.delivered} ${sel.delivered === 1 ? 'person' : 'people'}` : sel.state === 'held' ? 'Held until the price is seen again, then sent' : sel.state === 'queued' ? 'Waiting to be sent' : sel.state === 'silent' ? "Kept here only: this shop's alerts are not sent to Telegram" : esc(sel.error || sel.state)}</div>
       ${sel.product_id ? `<div class='row'><a class='btn pri' href='#Products:${sel.product_id}'>Price history</a><a class='btn' href='${esc(sel.url)}' target='_blank' rel='noopener'>Open in shop ↗</a></div>` : ''}`;
     return head('Deals', 'Every alert the rules produced, with the exact Telegram message that went out',
         `<span><b class='num'>${dz.data.length - count('held') - count('queued') - count('cancelled')}</b> <span class='muted'>sent</span></span>&nbsp;
@@ -682,14 +698,14 @@ const views = {
     const d = await api('/api/shops'), all = d.shops;
     every(30000, render);
     const card = (k, v, s, bad) => `<div class='card kpi'><div class='k'>${k}</div><div class='v' ${bad ? `style='color:var(--fail-fg)'` : ''}>${v}</div><div class='s'>${s}</div></div>`;
-    const down = all.filter(s => shopState(s)[0] !== 'ok');
+    const down = all.filter(s => !['ok', 'idle'].includes(shopState(s)[0]));
     const row = s => { const [cls, label] = shopState(s);
       return `<tr class='click ${cls === 'fail' ? 'bad' : ''}' onclick="location.hash='Shops:${s.name}'"><td><a class='rowlink' href='#Shops:${s.name}'>${esc(s.label)}</a><div class='sub'>${esc(s.url.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, ''))}</div></td>
-        <td>${pill(cls, label, 1)}</td><td class='num r'>${s.products.toLocaleString()}</td>
+        <td>${pill(cls, label, 1)}${s.settings.alerts !== 'on' ? ' ' + pill('warn', ALERT_LABEL[s.settings.alerts]) : ''}</td><td class='num r'>${s.products.toLocaleString()}</td>
         <td class='muted nw'>${s.last_done ? ago(s.last_done) + ' ago' : 'never'}</td><td class='num r'>${s.deals_24h}</td>
         <td class='num r'>${s.devices_working} / ${s.devices}</td><td class='num r'>${s.failing ? `<span class='up'>${s.failing}</span>` : 0} / ${s.slices}</td>
         <td class='num r'>${s.problems_24h || '—'}</td><td class='nw'>${s.home_only ? pill('idle', 'home only') : pill('info', 'any IP')}</td></tr>`; };
-    return head('Shops', `Every shop we crawl: is it working, how much it holds, who can fetch it · refreshes every 30 s`) +
+    return head('Shops', `Every shop we crawl: is it working, how much it holds, who can fetch it · refreshes every 30 s`, `<a class='btn' href='#Settings'>Shop settings</a>`) +
       `<section class='cards'>${card('Shops working', `${all.length - down.length} / ${all.length}`, down.length ? 'needs a look: ' + down.map(s => s.label).join(', ') : 'all crawled within the hour', down.length)}
         ${card('Products', all.reduce((n, s) => n + s.products, 0).toLocaleString(), 'biggest: ' + all.slice().sort((a, b) => b.products - a.products)[0].label)}
         ${card('Deals, 24 h', all.reduce((n, s) => n + s.deals_24h, 0), 'from ' + all.filter(s => s.deals_24h).length + ' shops')}
@@ -883,6 +899,27 @@ const views = {
   },
 
   // ---------------------------------------------------------------- Subscribers
+  // ---------------------------------------------------------------- Shop settings
+  // No auto-refresh: it would wipe a number being typed.
+  async Settings() {
+    const d = await api('/api/settings/shops'), a = d.admin, by = n => d.shops.find(s => s.name === n);
+    const row = m => { const s = by(m.name); return `<tr class='${s.crawl ? '' : 'bad'}'><td class='nw'><a class='rowlink' href='#Shops:${m.name}'>${esc(m.label)}</a>${s.note ? `<div class='sub' dir='auto' style='max-width:220px;white-space:normal'>${esc(s.note)}</div>` : ''}</td>
+      <td class='c'>${setField(m.name, 'crawl', s.crawl, a, 'Crawl ' + m.label)}</td><td>${setAlerts(m.name, s.alerts, a)}</td>
+      <td class='c'>${setField(m.name, 'screenshots', s.screenshots, a, 'Screenshots of ' + m.label)}</td><td class='c'>${setField(m.name, 'pages', s.pages, a, 'Product pages of ' + m.label)}</td>
+      <td>${setPace(m.name, s.pace, a)}</td><td>${setDrop(m.name, s.min_drop, a)}</td><td>${setPrice(m.name, s.min_price, a)}</td>
+      ${d.devices.map(x => `<td class='c'>${setDevice(m.name, x, a)}</td>`).join('')}</tr>`; };
+    const cols = 8 + d.devices.length;
+    return head('Shop settings', 'Applied at once, kept until changed, no restart and nothing to do on the workers. A device only has a switch for the shops in its <span class="mono">DEALS_SITES</span>: add a shop on the device first, then switch it from here. For a stop that ends by itself, use the pause under <a href="#Devices">Devices</a>.') +
+      (a ? '' : `<section class='banner'>${pill('idle', 'Read-only')}<span class='msg muted'>You are reading over the server's own address without logging in. Log in as an admin to change settings.</span></section>`) +
+      `<section class='card' style='overflow:hidden'><div class='scroll'><table>
+        <tr><th>Shop</th><th class='c' title='Off: no device gets its work, the job in progress stops at its next page'>Crawl</th><th title='Kept, not sent: written and shown under Deals, nothing goes to Telegram'>Alerts</th>
+          <th class='c' title='The page with the price boxed, before an alert'>Shots</th><th class='c' title='Read when idle, for barcodes and model numbers'>Pages</th><th title='Longer waits between pages: fewer blocks, later notice'>Pace</th>
+          <th title='On top of the deal rules: fewer alerts, never more'>Min drop %</th><th title='No alert for anything cheaper'>Min EGP</th>${d.devices.map(x => `<th class='c' title='${x.online ? 'online' : 'offline'}'>${esc(x.name)}${x.online ? '' : ' 💤'}</th>`).join('')}</tr>
+        ${a ? `<tr><td class='sub' style='font-weight:500'>Every shop</td><td class='c nw'><button class='btn small' type='button' onclick="setEveryShop({crawl:false},'Stop crawling every shop on every device?')">Off</button> <button class='btn small' type='button' onclick="setEveryShop({crawl:true},'Crawl every shop again?')">On</button></td>
+          <td colspan='${cols - 2}'><select class='field tiny' aria-label='Alerts of every shop' onchange="if(this.value)setEveryShop({alerts:this.value},'Change the alerts of every shop to: '+this.options[this.selectedIndex].text+'?')"><option value=''>Set all alerts…</option>${Object.keys(ALERT_LABEL).map(k => `<option value='${k}'>${ALERT_LABEL[k]}</option>`).join('')}</select></td></tr>` : ''}
+        ${SHOP_KINDS.map(k => `<tr><td class='qh' colspan='${cols}'>${esc(kindLabel(k))}</td></tr>` + SHOPS.filter(s => s.kind === k).map(row).join('')).join('')}</table></div></section>`;
+  },
+
   async Subscribers() {
     const d = await api('/api/subscribers'), people = d.people; sz.people = people;
     const pending = people.filter(p => p.status === 'pending'), rest = people.filter(p => p.status !== 'pending');
@@ -1085,6 +1122,7 @@ async function productPage(id) {
 // A shop's state in one pill: down or paused (uptime), blocked on some IP, slices failing, late, or working.
 function shopState(s) {
   const st = s.status && s.status.state, age = s.last_done ? (Date.now() - Date.parse(s.last_done)) / 60000 : 1e9;
+  if (s.settings && !s.settings.crawl) return ['idle', 'switched off'];
   if (st === 'paused') return ['idle', 'paused'];
   if (st === 'down' || age > 180) return ['fail', 'down'];
   if (!s.devices_working) return ['fail', s.devices ? 'no device fetching it' : 'no device has it'];
@@ -1095,7 +1133,7 @@ function shopState(s) {
 }
 // One shop end to end (GET /api/shops/<name>): what used to be spread over Devices, Jobs, Rules, Errors and Uptime.
 async function shopPage(name) {
-  const d = await api('/api/shops/' + encodeURIComponent(name)), s = d.shop, [cls, label] = shopState(s);
+  const [d, set] = await Promise.all([api('/api/shops/' + encodeURIComponent(name)), api('/api/settings/shops')]), s = d.shop, [cls, label] = shopState(s);
   every(30000, render);
   const kpi = (k, v, sub) => `<div class='card kpi'><div class='k'>${k}</div><div class='v'>${v}</div><div class='s'>${sub}</div></div>`;
   const table = (title, sub, cols, rows, empty) => `<section class='card' style='overflow:hidden'><div class='cardhead'><h2>${title}</h2>${sub ? `<span class='sub'>${sub}</span>` : ''}</div>
@@ -1111,6 +1149,7 @@ async function shopPage(name) {
       ${kpi('Last pass', s.last_done ? ago(s.last_done) : 'never', s.running + ' slice' + (s.running === 1 ? '' : 's') + ' running now')}
       ${kpi('Slices', s.slices, s.failing ? s.failing + ' failing' : 'none failing')}
       ${kpi('Devices', `${s.devices_working} / ${s.devices}`, 'fetching it fine')}</section>
+    ${settingsCard(s.name, set)}
     ${table('Devices', 'every worker that has this shop in DEALS_SITES', '<th>Device</th><th>State</th><th>Detail</th><th class="r">Pages</th><th class="r">Products</th><th class="r">Blocks</th>',
       d.devices.sort((a, b) => BAD_FIRST(a.state) - BAD_FIRST(b.state)).map(x => `<tr><td class='nw'>${esc(x.device)}<div class='sub'>${esc(x.ip || '')}</div></td><td>${pill(x.state, x.state, 1)}</td>
         <td class='muted'>${esc(x.detail)}${x.last_error && x.state !== 'failing' ? `<div class='sub'>last problem ${esc((x.last_error_at || '').slice(5, 16).replace('T', ' '))}: ${esc(x.last_error)}</div>` : ''}</td>
@@ -1158,6 +1197,7 @@ async function alertPanel(id) {
   const notes = [
     d.rules ? pill('ok', `The rules would send it too (${(KINDS[d.rules] || [d.rules])[0].toLowerCase()})`, 1)
       : pill('warn', d.stopped_by ? `The rules would not send it: shop rule ${d.stopped_by}` : 'The rules would not send it', 1),
+    d.shop_alerts !== 'on' ? pill('warn', `This shop's alerts are ${d.shop_alerts === 'off' ? 'off' : 'not sent'}: sent by hand it still goes out`, 1) : '',
     d.basis === 'history' ? pill('idle', `${d.history_days} days of history`) : pill('warn', d.basis === 'shop_claim' ? 'no history: measured against the shop\'s claim' : 'no history, no crossed-out price'),
     d.all_time_low ? pill('ok', 'lowest price we have seen') : '',
     d.share_at_or_below ? pill('idle', `this cheap ${Math.round(d.share_at_or_below * 100)}% of the time`) : '',
@@ -1183,6 +1223,53 @@ async function sendAlert(id, n, review) {
   if (!confirm(review ? 'Send this deal to the review group on Telegram now?' : `Send this alert to ${n} subscriber${n === 1 ? '' : 's'} on Telegram now?`)) return;
   try { const r = await api(`/api/products/${id}/alert`, 'POST', {note: az.note}); toast(`Alert #${r.alert_id} is on its way`); az.note = ''; render(); }
   catch (e) { toast(e.message); }
+}
+// What the admins switch per shop (shop_settings.py). The same controls on the Settings page and on a shop's page.
+const ALERT_LABEL = {on: 'Alerts on', silent: 'Alerts kept, not sent', off: 'Alerts off'};
+const ALERT_HINT = {on: 'Sent to Telegram (the review group, or the subscribers)', silent: 'Written and shown under Deals, nothing goes to Telegram: to try a shop out, or to stop a wave of bad alerts', off: 'No alert at all; prices are still recorded'};
+const setSwitch = (on, change, admin, title = '') => `<label class='switch' title='${esc(title)}'><input type='checkbox' aria-label='${esc(title)}' ${on ? 'checked' : ''} ${admin ? '' : 'disabled'} onchange="${change}"><i></i></label>`;
+const setField = (site, key, on, admin, title) => setSwitch(on, `setShop('${site}',{${key}:this.checked})`, admin, title);
+const setAlerts = (site, cur, admin) => `<select class='field tiny' aria-label='Alerts' ${admin ? '' : 'disabled'} onchange="setShop('${site}',{alerts:this.value})">${Object.keys(ALERT_LABEL).map(k => `<option value='${k}' ${k === cur ? 'selected' : ''}>${ALERT_LABEL[k]}</option>`).join('')}</select>`;
+const setPace = (site, cur, admin) => `<select class='field tiny' aria-label='Pace' ${admin ? '' : 'disabled'} onchange="setShop('${site}',{pace:+this.value})">${[[1, 'Normal'], [2, '2x slower'], [4, '4x slower']].map(([v, l]) => `<option value='${v}' ${v === cur ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+const setDrop = (site, cur, admin) => `<input class='field tiny num' type='number' min='1' max='99' placeholder='any' aria-label='Lowest drop, percent' value='${cur ? Math.round(cur * 100) : ''}' ${admin ? '' : 'disabled'} onchange="setShop('${site}',{min_drop:this.value?this.value/100:null})">`;
+const setPrice = (site, cur, admin) => `<input class='field tiny num' type='number' min='1' placeholder='any' aria-label='Lowest price, EGP' value='${cur || ''}' ${admin ? '' : 'disabled'} onchange="setShop('${site}',{min_price:this.value?+this.value:null})">`;
+// One device on one shop: only what it has in DEALS_SITES has a switch, adding a shop is done on the device.
+function setDevice(site, x, admin) {
+  if (!x.sites.includes(site)) return `<span class='na' title='Add it to DEALS_SITES on the device first'>—</span>`;
+  const on = !x.off.includes(site);
+  return setSwitch(on, `setDeviceShop('${site}','${esc(x.name)}',this.checked)`, admin, `${x.name} crawls this shop`);
+}
+async function setShop(site, change) {
+  try { await api(`/api/settings/shops/${encodeURIComponent(site)}`, 'POST', change); toast('Saved'); }
+  catch (e) { toast(e.message); }
+  render();
+}
+async function setDeviceShop(site, worker, on) {
+  try { await api(`/api/settings/shops/${encodeURIComponent(site)}/devices/${encodeURIComponent(worker)}`, 'POST', {on}); toast('Saved'); }
+  catch (e) { toast(e.message); }
+  render();
+}
+async function setEveryShop(change, ask) {
+  if (!confirm(ask)) return render();
+  return setShop('*', change);
+}
+// A shop's own page: every setting with what it does, the devices, and a note on why it is the way it is.
+function settingsCard(name, d) {
+  const s = d.shops.find(x => x.name === name), a = d.admin;
+  const line = (title, sub, control) => `<div><span><b style='font-weight:500'>${title}</b><span class='sub'>${sub}</span></span>${control}</div>`;
+  const devices = d.devices.filter(x => x.sites.includes(name));
+  return `<section class='card' style='overflow:hidden'><div class='cardhead'><h2>Settings</h2><span class='sub'>${s.updated_at ? `changed ${ago(s.updated_at)} ago by ${esc(s.updated_by)} · ` : ''}<a href='#Settings'>all shops</a></span></div>
+    <div class='setgrid'>
+      ${line('Crawl this shop', s.crawl ? 'On, for every device below' : 'Off: drops are not noticed until it is back on', setField(name, 'crawl', s.crawl, a, 'Crawl this shop'))}
+      ${devices.map(x => line(esc(x.name), x.off.includes(name) ? 'This device leaves it to the others' : 'Crawls it (in its DEALS_SITES)', setDevice(name, x, a))).join('')}
+      ${line('Alerts', ALERT_HINT[s.alerts], setAlerts(name, s.alerts, a))}
+      ${line('Screenshots', 'The page with the price boxed, before an alert', setField(name, 'screenshots', s.screenshots, a, 'Screenshots'))}
+      ${line('Product pages', 'Read when idle, for barcodes and model numbers', setField(name, 'pages', s.pages, a, 'Product pages'))}
+      ${line('Pace', 'Longer waits between pages: fewer blocks, later notice', setPace(name, s.pace, a))}
+      ${line('Lowest drop, %', 'On top of the deal rules: fewer alerts, never more', setDrop(name, s.min_drop, a))}
+      ${line('Lowest price, EGP', 'No alert for anything cheaper', setPrice(name, s.min_price, a))}
+    </div>
+    <div class='row' style='gap:8px;padding:0 18px 16px'><input class='field' dir='auto' style='flex:1 1 300px' maxlength='300' placeholder='A note: why it is set this way' aria-label='Note' value='${esc(s.note)}' ${a ? '' : 'disabled'} onchange="setShop('${name}',{note:this.value})"></div></section>`;
 }
 // Crawling paused by hand: the active pauses, and (admin) a form to pause or resume. A pause ends by itself.
 function pausesCard(d) {

@@ -6,6 +6,8 @@ What the output means: [MONITORING.md](MONITORING.md). How it all works: [GUIDE.
 
 ## Web UI (the easiest way)
 
+Shop settings (admin): every shop's switches on one page, see [GUIDE.md](GUIDE.md), "Shop settings".
+
 Screens (sidebar on a computer, tab bar on a phone): Overview (the health checks and shops that need a look;
 the rest fold into one line), Deals (every alert by kind, with the exact Telegram message), Products (search,
 shop, group, sort, in stock, "price changed in the last 24 h / 7 days / 30 days"; click a product for its price
@@ -86,6 +88,7 @@ On the server (`make ssh` first):
 | One product's history | `make ssh`, then `runuser -u deals -- /opt/deals/.venv/bin/deals product amazon_eg B0CYZK7PVC --config /etc/deals/config.toml` |
 | Biggest price moves | `make movers` |
 | Same product on other shops (matching coverage) | `make models`; one model: `make models FIND=AH-XP12BME` (or title words); random ones to check: `make models SAMPLE=10`; in the web UI: a product's page, or Queries → Matching |
+| Switch a shop off, or off on one device; alerts off or kept but not sent; screenshots, product pages, pace, alert floors (stays until changed) | web UI → Shop settings, or the Settings card on a shop's page |
 | Pause crawling (a device, a shop, or both; ends by itself) | web UI → Devices → "Paused crawling" (admin); or `make pause DEVICE=mac SITE=jumia_eg HOURS=3` (all optional; `PAGES=1` also stops product-page reading); `make resume` (`DEVICE=`/`SITE=` to pick), `make pauses` to list |
 | Fix a match by hand | web UI product page (admin token): "Not the same" on a listing, or link another listing by its product id; or `make ssh`, then `runuser -u deals -- /opt/deals/.venv/bin/deals models --config /etc/deals/config.toml --same A B` (also `--different`, `--forget`, `--overrides`) |
 | Recent alerts | `make alerts` |

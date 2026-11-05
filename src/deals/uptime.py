@@ -14,7 +14,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from deals import alerts, scheduler
+from deals import alerts, scheduler, shop_settings
 from deals.alerts import SITE_NAME
 from deals.db import iso, parse_iso
 
@@ -51,8 +51,7 @@ def observe(conn: sqlite3.Connection, now: datetime) -> list[Seen]:
         done = f"last slice finished {_ago(last_done, now)}" if last_done else "no slice finished yet"
         subject = f"shop:{site}"
         if hold := scheduler.site_paused(conn, site, now):
-            out.append(Seen(subject, "shop", site, "paused", f"paused by hand until {hold['until'][:16]} UTC"
-                            + (f" ({hold['reason']})" if hold["reason"] else "")))
+            out.append(Seen(subject, "shop", site, "paused", scheduler.hold_text(hold)))
         elif overdue > SHOP_OVERDUE and (last_done is None or now - last_done > SHOP_IDLE):
             blocks = conn.execute("SELECT ip, until FROM blocks WHERE site = ? AND until > ?",
                                   (site, iso(now))).fetchall()
@@ -80,6 +79,9 @@ def observe(conn: sqlite3.Connection, now: datetime) -> list[Seen]:
             subject = f"device_shop:{name}/{site}"
             if not online:
                 out.append(Seen(subject, "device_shop", f"{name}/{site}", "offline", "the device is offline"))
+                continue
+            if reason := shop_settings.stopped(conn, name, site):
+                out.append(Seen(subject, "device_shop", f"{name}/{site}", "paused", reason))
                 continue
             # A block lasts until a page from that IP succeeds (scheduler.unblock), not until its pause ends.
             block = conn.execute("SELECT * FROM blocks WHERE site = ? AND ip = ?", (site, w["last_ip"])).fetchone()

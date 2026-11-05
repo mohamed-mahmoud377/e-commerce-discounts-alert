@@ -17,7 +17,7 @@ import secrets
 import sqlite3
 from datetime import datetime, timedelta
 
-from deals import audit
+from deals import audit, shop_settings
 from deals.config import Config
 from deals.db import iso
 from deals.planner import PlannedSlice
@@ -236,8 +236,11 @@ def resume(conn: sqlite3.Connection, now: datetime, *, worker: str | None = None
         return conn.execute(f"UPDATE crawl_pauses SET until = ? WHERE {' AND '.join(where)}", (iso(now), *args)).rowcount
 
 
-def paused(conn: sqlite3.Connection, worker: str, site: str, now: datetime) -> sqlite3.Row | None:
-    """The active pause covering this device on this shop, if any (one that also stops pages first)."""
+def paused(conn: sqlite3.Connection, worker: str, site: str, now: datetime) -> sqlite3.Row | dict | None:
+    """What stops this device on this shop, if anything: a switch in the shop's settings (it has no end, and
+    stops product pages too), or the active pause covering it (one that also stops pages first)."""
+    if reason := shop_settings.stopped(conn, worker, site):
+        return {"worker": worker, "site": site, "pages": 1, "until": None, "reason": reason}
     return conn.execute(
         """SELECT * FROM crawl_pauses WHERE until > ? AND worker IN (?, '*') AND site IN (?, '*')
            ORDER BY pages DESC, until DESC LIMIT 1""", (iso(now), worker, site)).fetchone()
@@ -247,8 +250,15 @@ def active_pauses(conn: sqlite3.Connection, now: datetime) -> list[dict]:
     return [dict(r) for r in conn.execute("SELECT * FROM crawl_pauses WHERE until > ? ORDER BY until", (iso(now),))]
 
 
-def site_paused(conn: sqlite3.Connection, site: str, now: datetime) -> sqlite3.Row | None:
-    """A pause that stops every online device that crawls this shop (seen in the last 30 minutes; an
+def hold_text(hold: sqlite3.Row | dict) -> str:
+    """A hold from paused() in words, for health and uptime."""
+    if hold["until"] is None:
+        return f"switched off in its settings ({hold['reason']})"
+    return f"paused by hand until {hold['until'][:16]} UTC" + (f" ({hold['reason']})" if hold["reason"] else "")
+
+
+def site_paused(conn: sqlite3.Connection, site: str, now: datetime) -> sqlite3.Row | dict | None:
+    """A hold that stops every online device that crawls this shop (seen in the last 30 minutes; an
     offline one isn't crawling anyway), if any: the shop is meant to be quiet, so no 'stalled' alarm."""
     workers = [r["name"] for r in conn.execute("SELECT name, sites FROM workers WHERE last_seen_at > ?",
                                                (iso(now - timedelta(minutes=30)),)) if site in (r["sites"] or "").split(",")]

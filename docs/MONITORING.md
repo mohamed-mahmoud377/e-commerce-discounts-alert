@@ -13,7 +13,7 @@ again (✅) when the shop, the device or the server is back.
 Two tables record what happens in the background, so it can be read back later:
 
 - **Uptime** (`status`, `status_changes`; web UI → Uptime, `make uptime`): the state of every shop (up, down,
-  paused), device (online, offline) and device on each shop (ok, blocked, failing, offline), checked every
+  paused), device (online, offline) and device on each shop (ok, blocked, failing, offline, paused), checked every
   minute, and every change with its reason and how long the state before it lasted. Kept 180 days.
 - **Errors**, the error book (`errors`; web UI → Errors, `make errors`): every warning and error any device or
   the server logs, plus the workers' failed and blocked reports, one row per kind of problem (device, shop,
@@ -267,6 +267,14 @@ longer needed.
 **Too many or too few alerts.** Change `[alerts]` in `/etc/deals/config.toml` (for example
 `min_drop = 0.25`), or a group's own `min_drop` / `min_price` under its `[[watch]]`, then
 `systemctl restart deals-coordinator`.
+
+## Switching a shop off
+
+Web UI → **Shop settings** ([GUIDE.md](GUIDE.md), "Shop settings"): crawl, each device, alerts, screenshots, product pages,
+pace, alert floors. They stay until changed; `make health` shows them on a `shop settings` line (OK level), the
+daily report on a ⚙️ line. To check by hand: `make sql`, then `SELECT * FROM shop_settings; SELECT * FROM device_shops;`.
+A device that is switched off shows the state `off` under Devices and `paused` under Uptime, and its worker still
+asks for work every 30 s (`job: null`), which keeps it online. A worker's log line `lease lost for job ...; moving on` right after a switch is expected.
 
 ## Pausing crawling by hand
 

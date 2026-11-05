@@ -17,6 +17,7 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from deals import shop_settings
 from deals.config import Config
 from deals.db import iso
 from deals.shots import SPECS
@@ -78,6 +79,8 @@ def add(conn, cfg: Config, alert_id: int, site: str, url: str, now: datetime, *,
     """Ask for a screenshot of an alert that is about to go out (no-op when nobody can take it: then
     holding the alert would only delay it)."""
     if not (cfg.alerts.screenshots and site in SPECS and (force or can_shoot(site, now))):
+        return False
+    if not force and not shop_settings.get(conn, site).screenshots:
         return False
     usual = REVIEW_WAIT_SECONDS if cfg.review_enabled else cfg.alerts.screenshot_wait_seconds
     wait = usual if wait_seconds is None else wait_seconds

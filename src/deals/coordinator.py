@@ -27,14 +27,15 @@ from pathlib import Path
 from contextlib import asynccontextmanager, closing
 from datetime import datetime, timedelta
 from importlib.metadata import version as pkg_version
+from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse
 from starlette.concurrency import run_in_threadpool
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from deals import alerts, audit, auth, bot, db, detailq, health, matching, monitor, scheduler, shop_rules, shotq, uptime, webui
+from deals import alerts, audit, auth, bot, db, detailq, health, matching, monitor, scheduler, shop_rules, shop_settings, shotq, uptime, webui
 from deals.config import Config
 from deals.db import iso, utcnow
 from deals.models import Listing, Slice
@@ -262,11 +263,12 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
         with conn:
             scheduler.worker_seen(conn, worker, ip, now, sites=body.worker_sites or body.sites,
                                   version=body.version)
-        # Shops whose crawling is paused for this device (by hand, crawl_pauses) get no crawl jobs.
+        # Shops paused for this device (by hand, crawl_pauses) or switched off (shop_settings) get no crawl jobs.
         holds = {s: scheduler.paused(conn, worker, s, now) for s in body.sites}
         active = [s for s in body.sites if holds[s] is None]
         job = scheduler.lease(conn, cfg, worker, ip, active, now) if active else None
-        shot = take_shot(body.shoot, body.sites, worker, now)
+        # Switched off means nothing from this device on this shop: no screenshots either (a pause still takes them).
+        shot = take_shot(body.shoot, [s for s in body.sites if not (holds[s] and holds[s]["until"] is None)], worker, now)
         if job is None:
             due = scheduler.next_due(conn, active) if active else None
             wait = 30 if due is None else (due - now).total_seconds()
@@ -282,12 +284,12 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
                 except Exception:
                     log.exception("product page offer for %s", body.sites[0])
             return reply
-        site = cfg.site(job["site"])
+        site, pace = cfg.site(job["site"]), shop_settings.get(conn, job["site"]).pace
         return {"job": {
             "id": job["id"], "kind": job["kind"], "site": job["site"], "target": job["target"],
             "root": job["root"], "group": job["grp"], "lease_token": job["lease_token"],
             "expected_total": job["expected_total"],
-            "min_delay": site.min_delay, "max_delay": site.max_delay,
+            "min_delay": site.min_delay * pace, "max_delay": site.max_delay * pace,
         }, **({"shot": shot} if shot else {})}
 
     def take_shot(shoot: bool, sites: list[str], worker: str, now: datetime) -> dict | None:
@@ -658,6 +660,62 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
         if not n:
             raise HTTPException(404, "no such active pause")
         log.info("crawling resumed by hand (pause %d)", pause_id)
+        return {"ok": True}
+
+    class ShopSettingsIn(BaseModel):  # only what is sent changes; min_drop or min_price null clears that floor
+        crawl: bool | None = None
+        alerts: Literal["on", "silent", "off"] | None = None
+        screenshots: bool | None = None
+        pages: bool | None = None
+        pace: Literal[1, 2, 4] | None = None
+        min_drop: float | None = Field(None, gt=0, lt=1)
+        min_price: int | None = Field(None, gt=0)
+        note: str | None = Field(None, max_length=shop_settings.NOTE_MAX)
+
+    class DeviceShopIn(BaseModel):
+        on: bool
+
+    @app.get("/api/settings/shops", dependencies=[Depends(viewer)])
+    def shop_settings_api(request: Request):
+        """Every shop's settings, and each device with the shops it has in DEALS_SITES and the ones switched off."""
+        with closing(read_conn()) as rc:
+            off = shop_settings.devices_off(rc)
+            devices = [{"name": d["name"], "online": d["online"], "sites": [s["site"] for s in d["sites"]],
+                        "off": [x["site"] for x in off if x["worker"] == d["name"]]} for d in monitor.devices(rc, utcnow())]
+            return {"admin": is_admin(request), "shops": shop_settings.listing(rc), "devices": devices}
+
+    @app.post("/api/settings/shops/{site}", dependencies=[Depends(admin)])
+    def shop_settings_set(site: str, body: ShopSettingsIn, request: Request):
+        """Change one shop's settings, or every shop's with '*' (a note belongs to one shop)."""
+        changes = body.model_dump(exclude_unset=True)
+        for key in ("crawl", "alerts", "screenshots", "pages", "pace", "note"):
+            if key in changes and changes[key] is None:
+                raise HTTPException(422, f"{key} can't be empty")
+        if site != "*" and site not in SHOPS:
+            raise HTTPException(422, f"unknown shop {site!r}")
+        if site == "*" and "note" in changes:
+            raise HTTPException(422, "a note belongs to one shop")
+        who = admin_user(request) or "?"
+        with closing(db.connect(cfg.db_path)) as wc:
+            shop_settings.update(wc, list(SHOPS) if site == "*" else [site], changes, who, utcnow())
+        log.info("shop settings changed by %s: %s %s", who, site, changes)
+        return {"ok": True}
+
+    @app.post("/api/settings/shops/{site}/devices/{worker}", dependencies=[Depends(admin)])
+    def device_shop_set(site: str, worker: str, body: DeviceShopIn, request: Request):
+        """Switch one device off or back on for one shop. Only a shop the device has in its DEALS_SITES:
+        what a device may crawl is decided on the device."""
+        if site not in SHOPS:
+            raise HTTPException(422, f"unknown shop {site!r}")
+        who = admin_user(request) or "?"
+        with closing(db.connect(cfg.db_path)) as wc:
+            row = wc.execute("SELECT sites FROM workers WHERE name = ?", (worker,)).fetchone()
+            if row is None:
+                raise HTTPException(404, "no such device")
+            if site not in (row["sites"] or "").split(",") and not (body.on and shop_settings.device_off(wc, worker, site)):
+                raise HTTPException(409, f"{worker} doesn't crawl {site}: add it to DEALS_SITES on the device first")
+            shop_settings.set_device(wc, worker, site, body.on, who, utcnow())
+        log.info("shop settings changed by %s: %s %s on %s", who, site, "on" if body.on else "off", worker)
         return {"ok": True}
 
     class MatchIn(BaseModel):

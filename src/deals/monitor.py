@@ -14,7 +14,7 @@ import threading
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from deals import db, scheduler
+from deals import db, scheduler, shop_settings
 from deals.db import iso, parse_iso, utcnow
 
 ONLINE = timedelta(minutes=15)
@@ -48,6 +48,8 @@ def _site_state(conn, w: sqlite3.Row, site: str, online: bool, now: datetime) ->
 
     if not online:
         state, detail = "offline", f"last seen {_ago(parse_iso(w['last_seen_at']), now)}"
+    elif off := shop_settings.stopped(conn, w["name"], site):
+        state, detail = "off", off
     elif block:
         state, detail = "blocked", (f"paused until {block['until'][11:16]} UTC (block #{block['strikes']}): "
                                     f"{block['reason']}")

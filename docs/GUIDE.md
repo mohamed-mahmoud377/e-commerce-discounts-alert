@@ -939,6 +939,33 @@ to have changed, low disk) and the daily report go to you and to your helper adm
 A second tap on an already answered request just says it was handled. A helper who sends `/stop` gets
 nothing until `/start` again. `make report` (sending the report by hand) still goes only to you.
 
+## Shop settings
+
+With 19 shops, the web UI's **Shop settings** page (and the Settings card on each shop's page) switches them
+without touching the server or any device (since 5 Nov 2026). A change works at once and stays until changed:
+it is all in the database (`shop_settings.py`) and enforced by the coordinator, so old workers need nothing.
+
+| Setting | What it does | The price |
+| --- | --- | --- |
+| **Crawl** | Off: no device gets the shop's work. A job in progress stops at its next page (its lease is dropped, so the worker gets the usual 409) and its slice stays due | Drops on that shop go unseen until it is back on. Other shops' alerts stop quoting it after a day (`OTHER_SHOPS_FRESH`) |
+| **A device's switch** | That device leaves the shop to the others; it takes no screenshots or product pages of it either | The others take all its slices: one job per IP and the same delays, so each IP's rate doesn't rise, but it can be busy for longer than before |
+| **Alerts** | `Alerts on`; `Kept, not sent`: written and shown under Deals with the state `silent`, nothing goes to Telegram; `Off`: no alert at all. Prices are recorded either way | |
+| **Shots** | No screenshot before this shop's alerts | Alerts go out as text |
+| **Pages** | No product pages read for barcodes and model numbers | Its matches rest on titles |
+| **Pace** | The shop's delays times 2 or 4. It can only slow down: `[sites.<shop>]` stays the fastest allowed | Slices take that much longer, so a slower worst-case time to notice |
+| **Min drop %, Min EGP** | This shop's own floors, checked after the deal rules | Only ever fewer alerts: they can't make one, or change a reference |
+
+**What a device may crawl is decided on the device.** `DEALS_SITES` is the most it can do: the UI shows a
+switch only for the shops in it and the API refuses others with a 409. Add a shop there first (`worker.env`,
+`make install-mac-worker`), then switch it from the UI as often as you like.
+
+**"Kept, not sent" is how to try a new shop out**, or to stop a wave of bad alerts: switching away from `on`
+also cancels what hasn't gone out yet (queued and held alerts, unsent deliveries, review cards not yet in the group, their screenshots). Cards already in the group, approved deals and alerts sent by hand stay: a person decided those, and an admin can still send an alert by hand from a silenced shop. A silent
+alert stops another silent one like it (the 7-day rule), but not the first real one after switching back on: nobody heard of it. It doesn't count in the alert's "alerted N times before" or in the daily report's sent count.
+
+**Nobody forgets what is off.** Unlike a pause (`make pause`, which ends by itself) these stay, so `make health` has a `shop settings` line and the daily
+report a ⚙️ line naming everything off, slowed or silenced. A shop that is off is not a problem: no "stalled" alarm, state `paused` under Uptime, `switched off` under Shops, an OK line in health. When it comes back, its overdue slices count from that moment, so it doesn't read as stalled.
+
 ## Keeping it healthy
 
 See [MONITORING.md](MONITORING.md) for the full monitoring guide and runbook. In short: run `make health`

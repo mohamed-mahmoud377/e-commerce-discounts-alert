@@ -231,6 +231,14 @@ passes them.
 | No new-listing alerts (shop rules) | a shop with a `no_claim_alerts` rule (noon) sends no Path B alert at all | Unionaire 440L fridge on noon, 18,999 "was 30,000" with a Deal badge: stopped (other shops 21,249) |
 | Doubtful reference (shop rules) | no alert when the reference (typical price, or the crossed-out price for a new listing) is a value the shop also uses as a placeholder: Jumia's 10,000 EGP (`doubtful_reference` rules in `shop_rules.py`). Each stopped alert is counted on the web UI's Rules page | Fresh microwave on Jumia: listed at 10,000, then 5,941. Alerted on 27 Oct as "41% off"; now stopped. The same 10,000 on noon is a normal reference |
 
+### 7b. The shop's own settings (web UI)
+
+`alerts.check_product` reads `shop_settings` for the product's shop ([GUIDE.md](GUIDE.md), "Shop settings"):
+alerts `off` stops here before anything is judged; `min_drop` and `min_price` drop a deal the rules accepted
+(so they never add one); `silent` writes the alert with `sent_at` already set and `error = 'silent: ...'`, so
+the outbox, the screenshots and the review never see it. To answer "why no alert?", look at this first: `make health`
+names what is switched, and the Deals page shows silent alerts with the state `silent`.
+
 ## 8. Writing, holding and delivering the alert
 
 **The score (0 to 100)**, for ranking:

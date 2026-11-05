@@ -304,6 +304,8 @@ which stops the whole system. A worker on old code **refuses to start** with an 
 **Going wrong?** `make pause SITE=<shop> HOURS=3` stops it at once and ends by itself. To remove it, restore the config backup and restart
 the coordinator. `worker.env` can stay: with no jobs the worker just waits.
 
+**Trying a shop out:** to watch its alerts before anyone gets them, set its Alerts to "Kept, not sent" in the web UI's Shop settings as soon as the code is live, read them under Deals, then switch it on. Silent alerts don't stop the first real one.
+
 ## Stage 9: Verify live
 
 **In the first hour.** `make health`, `make devices`, `make errors SITE=<shop> DAYS=1`, the web UI's Shops page, then `make sql`:

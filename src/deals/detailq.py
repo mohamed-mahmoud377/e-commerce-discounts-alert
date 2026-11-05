@@ -12,6 +12,7 @@ import logging
 import sqlite3
 from datetime import datetime, timedelta
 
+from deals import shop_settings
 from deals.config import Config
 from deals.db import iso, parse_iso
 from deals.models import valid_gtin
@@ -32,6 +33,8 @@ def offer(conn: sqlite3.Connection, cfg: Config, ip: str, site: str, now: dateti
     """One product page for an idle worker on `site`, or None. Takes it off the queue."""
     rules = cfg.details
     if not rules.enabled or site not in rules.sites or idle_seconds < MIN_IDLE:
+        return None
+    if not shop_settings.get(conn, site).pages:
         return None
     now_s, today = iso(now), now.date().isoformat()
     if conn.execute("SELECT 1 FROM blocks WHERE site = ? AND ip = ? AND until > ?", (site, ip, now_s)).fetchone():
