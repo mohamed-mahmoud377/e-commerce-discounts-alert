@@ -137,6 +137,8 @@ Then (tests/test_shops.py checks each one):
   5. DEALS_SITES: scripts/mac-worker-env.sh, README.md, docs/RUN_A_WORKER.md, docs/GETTING_STARTED.md,
      docs/GUIDE.md, and by hand in every home worker's worker.env (make install-mac-worker)
   6. link docs/{doc} from CLAUDE.md; docs/CATEGORIES.md, docs/SHOP_RULES.md, docs/INTERNALS.md "Add a shop"
+
+The whole walkthrough, with what to measure and the safe shipping order: .claude/skills/add-shop/SKILL.md
 """)
 
 

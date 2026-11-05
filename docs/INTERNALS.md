@@ -368,7 +368,8 @@ Every change follows the same loop: write a test that shows what you want, chang
 `make deploy`, restart the Mac worker if worker or site code changed, `make health`, then check the real
 data with `make sql` or `make devices`.
 
-**Add a shop** (Jumia was added exactly this way on 26 October 2026, Cairo Sales, 2B, B.TECH and Dream 2000 on 27 October, Carrefour on 28 October, Dubai Phone and Hardware Market on 30 October, Amazon Now on 3 November;
+**Add a shop** (the full walkthrough, with what to measure, the traps and the safe shipping order, is the
+[`add-shop` skill](../.claude/skills/add-shop/SKILL.md); this is the outline. Jumia was added exactly this way on 26 October 2026, Cairo Sales, 2B, B.TECH and Dream 2000 on 27 October, Carrefour on 28 October, Dubai Phone and Hardware Market on 30 October, Amazon Now on 3 November;
 [JUMIA.md](JUMIA.md), [CAIROSALES.md](CAIROSALES.md), [2B.md](2B.md), [BTECH.md](BTECH.md), [DREAM2000.md](DREAM2000.md), [CARREFOUR.md](CARREFOUR.md), [DUBAIPHONE.md](DUBAIPHONE.md), [HARDWAREMARKET.md](HARDWAREMARKET.md) and [AMAZON_NOW.md](AMAZON_NOW.md) show the analysis to do first: access,
 URL scheme or API, page caps, empty-result behaviour, category tree, signals):
 

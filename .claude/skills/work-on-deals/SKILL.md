@@ -41,7 +41,8 @@ explain the reasons behind decisions that the code alone does not show.
 | Why an alert did or didn't go out | `docs/PRODUCT_FLOW.md` | `pricing.py`, `alerts.py` | `test_pricing.py`, `test_deal_rules.py` |
 | A shop's data is wrong (placeholder prices, a signal that means nothing) | `docs/SHOP_RULES.md` | `shop_rules.py` | `test_shop_rules.py` |
 | Fetching/parsing a shop | `docs/<SHOP>.md`, `docs/CATEGORIES.md` | `sites/<shop>.py` | `test_parsers.py` + `tests/fixtures/*.gz` |
-| Adding a shop; a shop's names, kind, roots | INTERNALS "Add a shop" (`make new-shop`) | `shops.py` (the one list of shops) | `test_shops.py` (every shop has everything) |
+| Adding a shop | **the `add-shop` skill**: every stage from first probe to live checks | `shops.py`, `sites/<shop>.py` | `test_shops.py` |
+| A shop's names, kind, roots | INTERNALS "Add a shop" | `shops.py` (the one list of shops) | `test_shops.py` (every shop has everything) |
 | Splitting categories into slices | GUIDE Algorithm 2 | `planner.py` | `test_planner.py` |
 | Leases, intervals, blocks, speed | GUIDE Algorithm 3 + "How fast you hear" | `scheduler.py`, `coordinator.py` | `test_coordinator.py`, `test_worker_e2e.py` |
 | Same product on other shops | `docs/MATCHING.md` | `matching.py`, `details.py`, `detailq.py` | `test_matching.py`, `fixtures/matching_gold.tsv` |
