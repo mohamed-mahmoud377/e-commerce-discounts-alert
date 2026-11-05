@@ -98,6 +98,10 @@ SHOPS: dict[str, Shop] = {s.name: s for s in (
     Shop("defacto_eg", "DeFacto", "ديفاكتو", "DF", "fashion", "https://www.defacto.com.eg", False, "DEFACTO.md",
          (("Women on sale", "woman-discount"), ("Women new season", "woman-new-season"), ("Men on sale", "man-discount"),
           ("Kids on sale", "kids-discount"), ("Women's dresses", "woman-dress"))),
+    Shop("elaraby_eg", "El Araby", "العربي جروب", "EA", "electronics", "https://www.elarabygroup.com", False, "ELARABY.md",
+         (("Home Appliances", "60"), ("TVs and Audio", "329"), ("Air Conditioners", "62"), ("Watches", "64"),
+          ("Lighting", "65"), ("Spare Parts", "217"), ("Accessories", "1966"), ("Business Products", "66")),
+         slug_codes=True),
 )}
 
 

@@ -7,6 +7,7 @@ from deals.sites.defacto_eg import DeFactoEG
 from deals.sites.dokkantech_eg import DokkanTechEG
 from deals.sites.dream2000_eg import Dream2000EG
 from deals.sites.dubaiphone_eg import DubaiPhoneEG
+from deals.sites.elaraby_eg import ElarabyEG
 from deals.sites.etisal_eg import EtisalEG
 from deals.sites.hardwaremarket_eg import HardwareMarketEG
 from deals.sites.jumia_eg import JumiaEG
@@ -36,4 +37,5 @@ SITES = {
     OrangeEG.name: OrangeEG,
     LcWaikikiEG.name: LcWaikikiEG,
     DeFactoEG.name: DeFactoEG,
+    ElarabyEG.name: ElarabyEG,
 }

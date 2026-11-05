@@ -171,6 +171,8 @@ Lines worth reacting to:
 | `lcwaikiki_eg: no catalogModel in the page` | Layout changed | Save a new page; [LCWAIKIKI.md](LCWAIKIKI.md) |
 | `blocked: defacto_eg: HTTP 403` | Akamai | Pauses by itself; slow it down if it repeats; [DEFACTO.md](DEFACTO.md) |
 | `defacto_eg: no product cards and no count` | Layout changed | Save a new page; [DEFACTO.md](DEFACTO.md) |
+| `elaraby_eg: GraphQL error` | A field changed | [ELARABY.md](ELARABY.md) |
+| Screenshot timeouts on `elaraby_eg` now and then | Its pages answer 404 at random | Nothing: the alert goes out as text; [ELARABY.md](ELARABY.md) |
 | `lease lost` | The device was too slow (over 5 min between pages) and the job went to another device | Fine occasionally |
 
 ## Telegram warnings

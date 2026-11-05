@@ -143,6 +143,10 @@ max_delay = 5.0
 min_delay = 2.0
 max_delay = 4.0
 
+[sites.elaraby_eg]  # Magento GraphQL API (100 products per request); works from anywhere
+min_delay = 2.0
+max_delay = 4.0
+
 # ---------------------------------------------------------------------------
 # What to track. Each [[watch]] is a product group with one root per site:
 #   amazon_eg = "category:<browse node id>"
@@ -161,6 +165,7 @@ max_delay = 4.0
 #   orange_eg = "category:<url name>"  (e.g. smart-tvs, headphones-earbuds; docs/ORANGE.md)
 #   lcwaikiki_eg = "category:<page name>"  (e.g. women-clothing-t-10; Mac only; docs/LCWAIKIKI.md)
 #   defacto_eg = "category:<page name>"  (e.g. woman-discount; docs/DEFACTO.md)
+#   elaraby_eg = "category:<id>"  (Magento's numeric id, e.g. 155 = TVs; "search:<words>" too; docs/ELARABY.md)
 #   hardwaremarket_eg = "category:<id>"  (WooCommerce id or slug, e.g. 39 = Headsets; "deals:<id>" = its 50 most
 #                       recently modified products, a fast lane; Mac only; docs/HARDWAREMARKET.md)
 #   amazon_now_eg = "category:<browse node id>"  (amazon.eg node; the Amazon Now root 211761638031 is added to every
@@ -209,6 +214,7 @@ raya_eg = "category:534"
 vodafone_eg = "category:tv"
 etisal_eg = "category:1160"
 orange_eg = "category:smart-tvs"
+elaraby_eg = "category:155"
 
 [[watch]]
 name = "Refrigerators"
@@ -235,6 +241,7 @@ btech_eg = ["category:large-home-appliances/refrigerators", "category:large-home
 dream2000_eg = ["category:refrigerator-and-deep-freezer", "category:deep-freezer-1"]
 carrefour_eg = ["category:NFEGY4100500", "category:NFEGY4100400"]  # fridges, freezers
 raya_eg = ["category:293", "category:294"]
+elaraby_eg = ["category:84", "category:86"]
 
 [[watch]]
 name = "Air conditioners"
@@ -262,6 +269,7 @@ raya_eg = "category:298"
 vodafone_eg = "category:air-conditioners"
 etisal_eg = "category:1525"
 orange_eg = "category:special-offers"
+elaraby_eg = ["category:92", "category:1710", "category:1853", "category:1973"]
 
 [[watch]]
 name = "Gaming consoles"
@@ -325,6 +333,7 @@ exclude_words = ["pre-owned", "pre owned", "used ", "refurbished",  # B.TECH sel
 dubaiphone_eg = "category:ps-consoles"  # one PS5; "games" mixes it with e-scooters
 raya_eg = "category:338"
 vodafone_eg = "category:consoles"
+elaraby_eg = "category:1826"
 
 [[watch]]
 name = "Phones"
@@ -402,6 +411,7 @@ carrefour_eg = "category:NFEGY4070500"
 dubaiphone_eg = "category:all-laptops"
 raya_eg = "category:270"
 vodafone_eg = "category:laptops"
+elaraby_eg = ["category:94", "category:1641"]
 
 [[watch]]
 name = "Desktops"
@@ -514,6 +524,7 @@ vodafone_eg = ["category:headphones", "category:true-wireless", "category:headse
 dokkantech_eg = "category:wearables-2"
 etisal_eg = "category:1334"
 orange_eg = "category:headphones-earbuds"
+elaraby_eg = "category:263"
 
 [[watch]]
 name = "Kitchen machines"
@@ -602,6 +613,7 @@ raya_eg = ["category:3463", "category:358", "category:2148", "category:356", "ca
 vodafone_eg = "category:home-appliances"
 etisal_eg = ["category:1531", "category:1570"]
 orange_eg = "category:small-appliances"
+elaraby_eg = ["category:192", "category:193", "category:215", "category:319"]
 
 # The rest of the small appliances (kettles, irons, toasters, grinders...): low priority.
 [[watch]]
@@ -703,6 +715,7 @@ carrefour_eg = ["category:NFEGY4040300", "category:NFEGY4040700", "category:NFEG
 dubaiphone_eg = "category:irons"
 raya_eg = ["category:334", "category:372", "category:371", "category:305", "category:359", "category:302"]
 vodafone_eg = "category:water-dispenser"
+elaraby_eg = ["category:200", "category:189", "category:87", "category:201"]
 
 [[watch]]
 name = "Cooking & dishwashers"
@@ -747,6 +760,7 @@ carrefour_eg = [
 
 raya_eg = ["category:326", "category:296", "category:1561"]
 orange_eg = "category:large-appliances"
+elaraby_eg = ["category:89", "category:90", "category:249", "category:91", "category:234"]
 
 # Gaming mice, keyboards, gamepads, microphones and webcams: Hardware Market's whole trade (and Dubai Phone's
 # keyboards and mice). Amazon, noon and Jumia aren't crawled for these (thousands of cheap listings).
@@ -833,6 +847,7 @@ vodafone_eg = ["category:chargers", "category:powerbanks"]
 dokkantech_eg = ["category:charger", "category:power-banks", "category:car-charger"]
 etisal_eg = "category:1283"
 orange_eg = ["category:chargers-cables", "category:power-banks"]
+elaraby_eg = ["category:344", "category:342"]
 
 # Jumia's flash-sales page: the only place its flash prices are marked (category cards show the same
 # price with no marker), mixed categories, about 400 products (86 above 1,500 EGP). Crawled as its own
@@ -870,3 +885,22 @@ min_price = 500
 min_drop = 0.35
 lcwaikiki_eg = ["category:women-clothing-t-10", "category:men-clothing-t-9", "category:girls-clothing-t-100046", "category:boys-clothing-t-200046", "category:femei-incaltaminte-t-33"]
 defacto_eg = ["category:woman-discount", "category:woman-new-season", "category:man-discount", "category:man-new-season", "category:kids-discount"]
+
+# El Araby's watches and clocks (from 5 Nov 2026): Seiko and Alba, no hurry. docs/ELARABY.md.
+[[watch]]
+name = "Watches"
+label = "ساعات"
+interval_minutes = 120
+max_interval_minutes = 180
+min_price = 1000
+elaraby_eg = "category:64"
+
+# El Araby's other categories (from 5 Nov 2026), so nothing it sells is left out: washing machines, vacuums, fans, heaters,
+# audio, lighting, projectors, spare parts. A product also in a group above keeps the group that saw it first. docs/ELARABY.md.
+[[watch]]
+name = "Home & more"
+label = "أجهزة منزلية وأخرى"
+interval_minutes = 120
+max_interval_minutes = 180
+min_price = 200
+elaraby_eg = ["category:317", "category:186", "category:1927", "category:93", "category:309", "category:65", "category:66", "category:320", "category:1966", "category:217", "category:360", "category:1652", "category:1497"]

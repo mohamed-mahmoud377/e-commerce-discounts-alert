@@ -132,6 +132,10 @@ SPECS: dict[str, Spec] = {
     "defacto_eg": Spec(boxes=(("div.product-detail__price",),),
                        context=("h1.product-detail__info-header-title", "div.product-first-media img"),
                        ready="div.product-detail__price", arabic=("defacto.com.eg/en-eg/", "defacto.com.eg/")),
+    # Magento with its usual layout; sells its own stock. The gallery's image is the active Fotorama frame.
+    "elaraby_eg": Spec(boxes=((".product-info-main .product-info-price",),),
+                       context=("h1.page-title", ".fotorama__stage__frame.fotorama__active img"),
+                       ready=".product-info-main .product-info-price", arabic=("/en/", "/ar/")),
 }
 
 VIEWPORT = {"width": 1280, "height": 1000}  # the desktop layout, like the shop's own page on a computer

@@ -1127,3 +1127,46 @@ def test_defacto_paging_ends_and_refusals(monkeypatch):
         site.fetch_page(Slice("category", "woman-dress"), 1)
     with pytest.raises(UnknownTarget):
         site.fetch_page(Slice("search", "dress"), 1)
+
+
+def test_elaraby_products():
+    from deals.sites.elaraby_eg import build_query, parse_products
+    result = parse_products(fixture_json("elaraby_ducts.json.gz")["data"], 1)
+    assert result.total == 3 and not result.has_next and len(result.listings) == 3
+    duct = {x.sku: x for x in result.listings}["GB-X18BME.."]
+    assert (duct.price, duct.list_price, duct.list_price_kind, duct.in_stock, duct.brand) == (
+        5834000, 6077000, "list", True, "SHARP")
+    assert duct.url == "https://www.elarabygroup.com/en/sharp-duct-air-conditioner-2-25-hp-cool-heat-inverter-digital-gb-x18bme"
+    assert parse_products(fixture_json("elaraby_televisions.json.gz")["data"], 1).total == 33
+    query = build_query(Slice("category", "155", 3000, 9000), 2)
+    assert 'category_id: {eq: "155"}, price: {from: "3000", to: "9000"}' in query and "currentPage: 2" in query
+    # from "0" finds nothing on this shop, even inside a category
+    assert "price" not in build_query(Slice("category", "155", 0, None), 1).split("pageSize")[0]
+    assert 'price: {to: "500"}' in build_query(Slice("category", "155", 0, 500), 1)
+
+
+def test_elaraby_zero_price_is_no_price():
+    from deals.sites.elaraby_eg import _parse_item
+    zero = {"value": 0}
+    item = _parse_item({"sku": "QHL097L", "name": "SEIKO Alarm Clock Digital QHL097L", "url_key": "x", "stock_status": "OUT_OF_STOCK",
+                        "price_range": {"minimum_price": {"regular_price": zero, "final_price": zero}}})
+    assert (item.price, item.list_price, item.in_stock, item.brand) == (None, None, False, "SEIKO")
+
+
+def test_elaraby_unknown_category_and_refusals(monkeypatch):
+    from deals.models import Blocked, UnknownTarget
+    from deals.sites.elaraby_eg import ElarabyEG
+    site = ElarabyEG()
+    answers = [_response(200, {"data": {"products": {"total_count": 0, "items": []}, "category": []}}),
+               _response(403, {}), _response(200, {"errors": [{"message": "Cannot query field"}]}), _response(503, {}, "text/html")]
+    monkeypatch.setattr(site._session, "post", lambda *a, **k: answers.pop(0))
+    with pytest.raises(UnknownTarget):
+        site.fetch_page(Slice("category", "99999"), 1)
+    with pytest.raises(Blocked):
+        site.fetch_page(Slice("category", "155"), 1)
+    with pytest.raises(ValueError, match="API changed"):
+        site.fetch_page(Slice("category", "155"), 1)
+    with pytest.raises(RuntimeError):  # its Varnish's 503: retried, not a block
+        site.fetch_page(Slice("category", "155"), 1)
+    with pytest.raises(UnknownTarget):
+        site.fetch_page(Slice("deals", "155"), 1)

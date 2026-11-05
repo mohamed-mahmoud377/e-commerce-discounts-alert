@@ -9,7 +9,7 @@ cat > worker.env <<ENV
 DEALS_COORDINATOR=http://${HOST#*@}:8787
 DEALS_TOKEN=$token
 # Every shop (deals/shops.py; tests/test_shops.py checks this line lists them all).
-DEALS_SITES=noon_eg,amazon_eg,jumia_eg,cairosales_eg,2b_eg,btech_eg,dream2000_eg,carrefour_eg,dubaiphone_eg,hardwaremarket_eg,amazon_now_eg,raya_eg,vodafone_eg,dokkantech_eg,etisal_eg,orange_eg,lcwaikiki_eg,defacto_eg
+DEALS_SITES=noon_eg,amazon_eg,jumia_eg,cairosales_eg,2b_eg,btech_eg,dream2000_eg,carrefour_eg,dubaiphone_eg,hardwaremarket_eg,amazon_now_eg,raya_eg,vodafone_eg,dokkantech_eg,etisal_eg,orange_eg,lcwaikiki_eg,defacto_eg,elaraby_eg
 DEALS_DATA_DIR=$PWD/data
 DEALS_SCREENSHOTS=1
 ENV

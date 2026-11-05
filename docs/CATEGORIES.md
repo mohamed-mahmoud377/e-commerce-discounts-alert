@@ -344,6 +344,10 @@ The URL's last part, keeping its `-t-<id>`: `women-clothing-t-10`, `men-clothing
 
 Collections: `woman-discount`, `woman-new-season`, `woman-modest`, `man-discount`, `man-new-season`, `kids-discount`. Leaves: `woman-dress`, `man-t-shirt`, `boys-teens-jacket`...: `/sharedxml/en-eg/category.xml` lists 168, with a Chrome fingerprint. Details: [DEFACTO.md](DEFACTO.md).
 
+## elarabygroup.com category ids
+
+Magento ids; `deals categories elaraby_eg <id>` lists the children. `product_count` is stale, so check `total_count`. Home Appliances `60`: Large `317` (Refrigerators `84`, Deep freezers `86`, Dispensers `87`, Cookers `89`, Hobs `90`, Ovens `249`, Hoods `91`, Washing machines `85`, Dishwashers `234`, Dryers `233`, Water heaters `88`), Small `186` (Microwaves `192`, Electric ovens `193`, Kettles `200`, Coffee `215`, Juicers `201`, Fans `190`, Ventilating `191`, Heaters `187`, Irons `189`), Food preparation `319`, Vacuums `1927`. TVs and Audio `329`: Televisions `155`, Home audio `309` (Headphones `263`). ACs `62`: Split `92`, Duct `1710`, VRF `1853`, Beko `1973`, Purifiers `93`. Watches `64`. Lighting `65`. Spare parts `217`. Business `66` (Laptops `94`). Accessories `1966` (Chargers `344`, Power `342`). Health `320`. Exclusive `360`. Gaming `1652` (PS5 `1826`). Laptops `1641`. Clearance `1497`. Details: [ELARABY.md](ELARABY.md).
+
 ## Amazon Now browse nodes
 
 The Amazon Now root is `211761638031`; the adapter puts it in front of every query, so the children are ordinary

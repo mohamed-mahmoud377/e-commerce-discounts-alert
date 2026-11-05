@@ -42,6 +42,8 @@ even if one were somehow stored.
 | LC Waikiki | `lcwaikiki-empty-is-not-empty` | note | An empty result shows 52 unrelated products; past the last page is page 1 | Reads `ProductFound`, stops on `PageCount` | 5 Nov 2026 |
 | LC Waikiki | `lcwaikiki-maxprice-ignored` | note | `MaxPrice` doesn't hold | `MinPrice` only; never split by price | 5 Nov 2026 |
 | DeFacto | `defacto-promo-cards` | note | A few cards are promotions with no price | Skipped | 5 Nov 2026 |
+| El Araby | `elaraby-zero-price` | note | 42 sold-out products show a price of 0 | Read as no price | 5 Nov 2026 |
+| El Araby | `elaraby-manufacturer-is-country` | note | `manufacturer` holds the country of origin | Brand comes from the title | 5 Nov 2026 |
 | Raya | `raya-prebooking-deposits` | note | "Pre Booking" phones at a 10,000 EGP deposit | Skipped in the adapter | 5 Nov 2026 |
 | Vodafone | `vodafone-only-in-stock-read` | note | 4,085 listed, 921 in stock, no stock flag | Only what is in stock is asked for | 5 Nov 2026 |
 | Orange | `orange-sizes-hide-behind-one-price` | note | A product with several sizes lists its cheapest price; the page opens on any size (53 of 98 phones) | Its phones, tablets, laptops and consoles aren't watched | 5 Nov 2026 |

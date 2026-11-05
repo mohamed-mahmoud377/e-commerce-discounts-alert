@@ -46,6 +46,7 @@ SAVED = [
     ("orange_eg", "orange_product_rendered.html.gz", ("25,655",), None),
     ("lcwaikiki_eg", "lcwaikiki_product_rendered.html.gz", ("1,499.00", "1,999.00"), None),
     ("defacto_eg", "defacto_product_rendered.html.gz", ("799", "999"), None),
+    ("elaraby_eg", "elaraby_product_rendered.html.gz", ("58,340", "60,770"), None),
 ]
 
 

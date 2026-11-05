@@ -7,7 +7,7 @@ description: The complete walkthrough for adding a new shop or store to the deal
 
 Adding a shop is one adapter, one table row, one config block and one doc. **Core code does not change.** The
 real work is learning how the shop behaves, because a wrong assumption about it means false alerts or a blocked
-home IP. Eighteen shops were added this way. Their docs in `docs/` are worked examples.
+home IP. Nineteen shops were added this way. Their docs in `docs/` are worked examples.
 
 Work through the stages in order. Each ends in a gate: don't start the next stage until it holds. Everything
 below was checked against the code on 5 Nov 2026 by rehearsing a fake shop. If the code disagrees, trust the code
@@ -256,16 +256,16 @@ To find every list that must grow:
 
 ```bash
 grep -rnE "Hardware ?Market|hardwaremarket" README.md CLAUDE.md docs .claude/skills/work-on-deals --include='*.md' | grep -v '^docs/HARDWAREMARKET'
-grep -rnE "\b(eighteen|18) shops|all eighteen" README.md CLAUDE.md docs src
+grep -rnE "\b(nineteen|19) shops|all nineteen" README.md CLAUDE.md docs src
 ```
 
 | File | What |
 |---|---|
 | `docs/<SHOP>.md` | Every scaffold section, with dates and measured numbers |
-| `CLAUDE.md` | The opening list, the doc link, what the droplet crawls if not home-only, "all eighteen shops" |
+| `CLAUDE.md` | The opening list, the doc link, what the droplet crawls if not home-only, "all nineteen shops" |
 | `README.md` | Opening list, the diagram's shop lists, the code tree |
 | `docs/GUIDE.md` | Opening list, adapters row, diagram, a paragraph on the shop, the access and signal tables, fast lanes table, screenshot list and table |
-| `docs/INTERNALS.md` | Code map row, worker thread list, delays row, watch keys row, the dates in "Add a shop", "all eighteen" on `shots.py` |
+| `docs/INTERNALS.md` | Code map row, worker thread list, delays row, watch keys row, the dates in "Add a shop", "all nineteen" on `shots.py` |
 | `docs/MONITORING.md` | One row per new log line: what it means, what to do |
 | `docs/PRODUCT_FLOW.md` | Step 1's list of card readers |
 | `docs/CATEGORIES.md` | A section with its category ids |
@@ -372,3 +372,8 @@ Lessons from Raya, Vodafone, Dokkan Tech, Etisal and Orange (5 Nov 2026), each o
 - **The price field may not be the price.** LC Waikiki's sale price is in `CampaignBadges`; `DiscountedPriceValue` is always 0. Always check a product on sale against its page.
 - **`robots.txt` can disallow a path the shop doesn't use.** DeFacto's `/app/` holds few products; its categories are elsewhere. Read the sitemap before reporting what is forbidden.
 - **Clothes go on sale by the thousand.** The Fashion group uses `min_drop` 0.35, a slow schedule and `no_claim_alerts`. Watch the review group when a season's sale starts.
+- **To cover a whole shop, walk it once and check the roots against it.** El Araby's parents and children disagree and its `product_count` is stale. Reading every product with its `categories`, then reading the planned roots and comparing SKUs, proved nothing was missing, and showed 42 products the price filter hides.
+- **Field names lie too.** El Araby's `manufacturer` is a country. Print a few values before using a field.
+- **`from: 0` can empty a Magento answer.** Test the planner's edge values (0 and open ends) against the real API.
+- **A 404 may not mean gone.** 5 of 40 El Araby pages answered 404, then 200 minutes later. Before calling a link dead, fetch it again.
+- **Keep checks short.** A long probe script can be killed and lose its results: save as you go, with short timeouts.

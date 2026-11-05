@@ -169,6 +169,18 @@ RULES: tuple[ShopRule, ...] = (
         "5 Nov 2026: the first card of woman-discount is index 9000213, 'kargobedava'",
         "5 Nov 2026", where="sites/defacto_eg.py"),
     ShopRule(
+        "elaraby-zero-price", "elaraby_eg", "note",
+        "42 sold-out products show a price of 0",
+        "The adapter reads 0 as no price",
+        "5 Nov 2026: e.g. SEIKO Alarm Clock QHL097L at 0, all out of stock, hidden from any price filter",
+        "5 Nov 2026", where="sites/elaraby_eg.py"),
+    ShopRule(
+        "elaraby-manufacturer-is-country", "elaraby_eg", "note",
+        "The API's `manufacturer` holds the country of origin ('Egypt', 'China'), not the brand",
+        "The adapter finds the brand in the title",
+        "5 Nov 2026: option 18 is Egypt on 599 products, 19 China on 898",
+        "5 Nov 2026", where="sites/elaraby_eg.py"),
+    ShopRule(
         "raya-prebooking-deposits", "raya_eg", "note",
         "'Pre Booking' products are priced at the deposit: 10,000 EGP for a Galaxy Z Fold8 Ultra",
         "The adapter skips them: a deposit is not a price, and the real listing replacing it would look like a change",
