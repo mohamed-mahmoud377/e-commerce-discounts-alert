@@ -5,7 +5,7 @@ from datetime import timedelta
 
 import pytest
 
-from deals import alerts, bot, db, health, publish, shotq
+from deals import alerts, bot, db, health, matching, publish, shotq
 from deals.alerts import AlertSender, TelegramError, manual_alert, system_alert
 from deals.config import ReviewRules, load
 from deals.db import iso, utcnow
@@ -144,18 +144,78 @@ def test_the_card_gives_every_price_its_own_line_and_separates_its_sections(env)
     assert len(text.split("\n\n")) >= 4  # header, title, prices, history
 
 
-def test_the_card_lists_the_other_prices_one_a_line(env):
+CODED = "Sharp AC AH-XP12BME"
+
+
+def seen_now(conn, pid, price=None):
+    p = db.product(conn, pid)
+    db.record(conn, Listing(p["site"], p["sku"], p["title"], p["url"], price or p["price"], None, "EGP", True, seller=p["seller"]),
+              grp="TVs", now=utcnow())
+
+
+def matched_deal(env, confidence=None):
+    """A deal on Amazon for a product noon (whose price moved) and Jumia (whose price did not) sell as well."""
     cfg, conn, tg = env
-    pid = product(conn)
+    pid = product(conn, "A1", CODED)
+    noon = product(conn, "N1@s", CODED, was=1_100_000, site="noon_eg", seller="Shop")
+    jumia = product(conn, "J1", CODED, was=950_000, site="jumia_eg")
+    seen_now(conn, noon, 900_000)
+    seen_now(conn, jumia)
+    matching.rebuild(conn, utcnow())
+    if confidence is not None:
+        with conn:
+            conn.execute("UPDATE models SET confidence = ?", (confidence,))
+    alert_id = drop_to(conn, cfg, pid, 600_000)
+    sender_round(cfg, conn, tg)
+    return alert_id
+
+
+def test_the_card_gives_each_other_shop_a_link_and_its_price_history(env):
+    matched_deal(env)
+    lines = env[2].sent[0]["text"].split("\n")
+    at = lines.index("🏪 Elsewhere")
+    assert lines[at + 1:at + 3] == [
+        '<a href="https://shop.example/N1@s">noon</a>: 9,000 EGP (usual 11,000, lowest 9,000)',
+        '<a href="https://shop.example/J1">Jumia</a>: 9,500 EGP (same price for 60 days)']
+
+
+def test_the_card_labels_a_less_sure_match_and_the_old_alert_text_stays_without_it(env):
+    alert_id = matched_deal(env, confidence=60)
+    text = env[2].sent[0]["text"]
+    assert "🏪 Elsewhere (unsure match, confidence 60)" in text and "9,000 EGP" in text
+    assert "🏪" not in env[1].execute("SELECT message FROM alerts WHERE id = ?", (alert_id,)).fetchone()[0]
+
+
+def test_the_card_leaves_out_a_match_below_the_floor(env):
+    matched_deal(env, confidence=49)
+    assert "🏪 Elsewhere: no usable match found" in env[2].sent[0]["text"]
+
+
+def test_the_card_says_when_no_other_shop_has_it(env):
+    carded(env)
+    assert "🏪 Elsewhere: no usable match found" in env[2].sent[0]["text"]
+
+
+def test_the_card_lists_another_seller_and_says_no_other_shop_has_it(env):
+    cfg, conn, tg = env
+    pid, deal = product(conn), alerts.Deal(kind="price_drop", price=600_000, reference=1_000_000, drop=0.4, previous=900_000,
+                                           confidence="medium", score=40, reference_days=60)
     with conn:
         conn.execute("UPDATE products SET list_price = 1200000 WHERE id = ?", (pid,))
-    p, deal = db.product(conn, pid), alerts.Deal(kind="price_drop", price=600_000, reference=1_000_000, drop=0.4, previous=900_000,
-                                                 confidence="medium", score=40, reference_days=60)
-    others = [{"site": "noon_eg", "price": 650_000}, {"site": "jumia_eg", "price": 700_000}]
-    lines = publish.format_card(1, p, alerts.product_stats(conn, pid, utcnow()), deal, "good", other_offer=620_000, others=others, past=2,
-                                note="", now=utcnow()).split("\n")
-    for line in ("Just before: 9,000 EGP", "Crossed out: 12,000 EGP (claims −50%)", "Other seller: 6,200 EGP", "noon: 6,500 EGP", "Jumia: 7,000 EGP"):
+    lines = publish.format_card(1, db.product(conn, pid), alerts.product_stats(conn, pid, utcnow()), deal, "good", other_offer=620_000,
+                                others=[], past=2, note="", now=utcnow()).split("\n")
+    for line in ("Just before: 9,000 EGP", "Crossed out: 12,000 EGP (claims −50%)", "🏪 Elsewhere", "Other seller: 6,200 EGP",
+                 "Other shops: no usable match found"):
         assert line in lines, line
+
+
+def test_a_failed_lookup_costs_neither_the_card_nor_claims_there_is_no_match(env, monkeypatch):
+    def boom(*a):
+        raise RuntimeError("matching tables gone")
+    monkeypatch.setattr(matching, "other_shops", boom)
+    carded(env)
+    text = env[2].sent[0]["text"]
+    assert "💰 Price" in text and "no usable match" not in text and "Elsewhere" not in text
 
 
 def test_the_card_warns_about_renewed_goods_and_marketplace_sellers(env):

@@ -1248,22 +1248,27 @@ OTHER_SHOPS_FRESH = timedelta(hours=24)
 
 def other_shops(conn: sqlite3.Connection, product_id: int, now: datetime, min_confidence: int = 75) -> list[sqlite3.Row]:
     """The same product's cheapest in-stock listing on each *other* shop, seen in the last day, for
-    the end of an alert: (site, price, url, seller, last_seen_at), cheapest shop first. Empty when the
-    product is not in an 'ok' model. Read-only, and only called after the alert decision is made."""
+    the end of an alert: (id, site, price, url, seller, last_seen_at, confidence), cheapest shop first. Empty
+    when the product is not in an 'ok' model. Read-only, and only called after the alert decision is made."""
     me = conn.execute(
-        """SELECT pm.model, p.site FROM product_models pm JOIN products p ON p.id = pm.product_id
+        """SELECT pm.model, p.site, COALESCE(m.confidence, 0) AS confidence
+           FROM product_models pm JOIN products p ON p.id = pm.product_id
            JOIN models m ON m.model = pm.model
            WHERE pm.product_id = ? AND pm.status = 'model' AND m.status = 'ok'
              AND COALESCE(m.confidence, 0) >= ?""", (product_id, min_confidence)).fetchone()
     if me is None:
         return []
+    # A window, not MIN(price): next to a MAX(), SQLite may take the other columns from the MAX() row, which
+    # paired the cheapest price with the link of the listing seen last.
     return conn.execute(
-        """SELECT p.site, MIN(p.price) AS price, p.url, p.seller, MAX(p.last_seen_at) AS last_seen_at
-           FROM product_models pm JOIN products p ON p.id = pm.product_id
-           WHERE pm.model = ? AND pm.status = 'model' AND p.site != ? AND p.in_stock = 1
-                 AND p.price IS NOT NULL AND p.last_seen_at >= ?
-           GROUP BY p.site ORDER BY price""",
-        (me["model"], me["site"], iso(now - OTHER_SHOPS_FRESH))).fetchall()
+        """SELECT id, site, price, url, seller, last_seen_at, ? AS confidence FROM (
+             SELECT p.id, p.site, p.price, p.url, p.seller, p.last_seen_at,
+                    ROW_NUMBER() OVER (PARTITION BY p.site ORDER BY p.price, p.last_seen_at DESC) AS place
+             FROM product_models pm JOIN products p ON p.id = pm.product_id
+             WHERE pm.model = ? AND pm.status = 'model' AND p.site != ? AND p.in_stock = 1
+                   AND p.price IS NOT NULL AND p.last_seen_at >= ?)
+           WHERE place = 1 ORDER BY price""",
+        (me["confidence"], me["model"], me["site"], iso(now - OTHER_SHOPS_FRESH))).fetchall()
 
 
 def same_model(conn: sqlite3.Connection, product_id: int) -> dict | None:

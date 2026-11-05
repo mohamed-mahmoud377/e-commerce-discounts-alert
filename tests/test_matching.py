@@ -451,6 +451,18 @@ def test_alerts_only_quote_sure_matches(cfg):
     assert matching.other_shops(conn, a, NOW, min_confidence=90) == []
 
 
+def test_other_shops_gives_the_link_of_the_cheapest_listing_not_of_the_latest_seen(cfg):
+    conn = db.connect(cfg.db_path)
+    with conn:
+        a = db.record(conn, listing("jumia_eg", "J1", "Sokany Kettle SK-2010", 100_000, "Sokany"), now=NOW).product_id
+        cheap = db.record(conn, listing("noon_eg", "N1@s", "Sokany Kettle SK-2010", 90_000, "Sokany"), now=NOW).product_id
+        db.record(conn, listing("noon_eg", "N2@s", "Sokany Kettle SK-2010", 95_000, "Sokany"), now=NOW + timedelta(minutes=5))
+    matching.rebuild(conn, NOW)
+    row = matching.other_shops(conn, a, NOW + timedelta(minutes=5))[0]
+    assert (row["id"], row["price"], row["url"]) == (cheap, 90_000, db.product(conn, cheap)["url"])
+    assert row["confidence"] >= 75
+
+
 def test_codes_in_product_links():
     assert matching.slug_codes("https://btech.com/en/p/hyundai-43-fhd-smart-led-tv-with-built-in-receiver-l43hynda630"
                                "?offering_id=943ebba5") == ["L43HYNDA630"]

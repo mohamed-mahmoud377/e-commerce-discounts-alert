@@ -71,12 +71,26 @@ Lowest we saw
 
 🏪 Elsewhere
 Other seller: 1,300 EGP
+Jumia: 1,250 EGP (usual 1,399, lowest 1,250)
+B.TECH: 1,300 EGP (same price for 5 days)
 
 Rating: ★ 3.7 (29)
 Signals: limited_deal
 
 Past alerts: 0 · found 23:18 Cairo · public tone: good
 ```
+
+**Elsewhere** (`alerts._card_shops`, 5 Nov 2026): each other shop's cheapest listing as a link, with that listing's own
+history: `usual` is its time-weighted median over 90 days, `lowest` the lowest we saw, and `same price for N days` when it
+has not moved. A person judges the card, so it also quotes matches from confidence 50 (`review.other_shops_min_confidence`),
+with the header `🏪 Elsewhere (unsure match, confidence 70)` below 75 (`alerts.other_shops_min_confidence`, which still
+decides the Arabic alert text). Conflicts and probable matches stay out. With nothing to quote it says
+`🏪 Elsewhere: no usable match found`; if the lookup itself failed the section is left out, as that says nothing about a match.
+
+Measured on the 298 cards of 4 and 5 Nov 2026: 35 sure, 11 unsure (46, 15%), 252 nothing, 104 shop lines, lookup 5.8 ms
+at most, longest card 871 characters. Of the 11 unsure, 10 were the right product and one was not (Infinix XWatch N4
+Pro at 2,532 against the plain N4 at 1,525): the label is there for that. Most cards have nothing because the product
+has no match at all (106 are Amazon Now groceries) or only one shop sells it.
 
 Warnings: renewed or used (from the title), noon marketplace seller, possible pricing mistake, low confidence, inflated
 crossed-out price, a round usual price that may be the shop's placeholder (10,000 or 100,000 EGP, see

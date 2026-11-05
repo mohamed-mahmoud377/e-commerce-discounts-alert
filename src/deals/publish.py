@@ -88,7 +88,7 @@ def _basis(deal: Deal) -> str:
 
 
 def prepare(conn: sqlite3.Connection, cfg: Config, alert_id: int, p: sqlite3.Row, stats: PriceStats, deal: Deal, group: str,
-            *, other_offer: int | None, others: list, past: int, note: str, now: datetime) -> None:
+            *, other_offer: int | None, others: list | None, past: int, note: str, now: datetime) -> None:
     """Write the deal's review row: the card as it is now, and the facts its public post needs later."""
     level = tier(deal, cfg.review)
     skipped = deal.kind != "manual" and deal.score < cfg.review.min_score
@@ -104,8 +104,8 @@ def prepare(conn: sqlite3.Connection, cfg: Config, alert_id: int, p: sqlite3.Row
 
 
 def format_card(alert_id: int, p: sqlite3.Row, stats: PriceStats, deal: Deal, level: str, *, other_offer: int | None,
-                others: list, past: int, note: str, now: datetime) -> str:
-    """Everything an admin needs to decide, in English."""
+                others: list | None, past: int, note: str, now: datetime) -> str:
+    """Everything an admin needs to decide, in English. `others` is None when the other shops could not be looked up."""
     def e(text: str) -> str:
         return html.escape(text, quote=False)
 
@@ -115,7 +115,17 @@ def format_card(alert_id: int, p: sqlite3.Row, stats: PriceStats, deal: Deal, le
     def days(n: float) -> str:
         return f"{n:.0f} day{'' if f'{n:.0f}' == '1' else 's'}"
 
-    shop = SHOPS[p["site"]].label if p["site"] in SHOPS else p["site"]
+    def label(site: str) -> str:
+        return SHOPS[site].label if site in SHOPS else site
+
+    def shop_line(o: dict) -> str:
+        line = f"<a href=\"{html.escape(o['url'])}\">{e(label(o['site']))}</a>: {egp(o['price'])}"
+        if o["usual"] is not None:
+            low = min(o["price"], o["low"]) if o["low"] is not None else o["price"]
+            return f"{line} (usual {o['usual'] / 100:,.0f}, lowest {low / 100:,.0f})"
+        return f"{line} (same price for {days(o['steady_days'])})" if o["steady_days"] >= 1 else line
+
+    shop = label(p["site"])
     where = [shop, p["grp"] or "", f"seller: {e(p['seller'])}" if p["seller"] else ""]
     lines = [
         f"{TIER_ICON[level]} <b>REVIEW #{alert_id}</b> · {deal.kind} · score {deal.score} · {deal.confidence} confidence",
@@ -170,10 +180,17 @@ def format_card(alert_id: int, p: sqlite3.Row, stats: PriceStats, deal: Deal, le
     if deal.all_time_low:
         lines.append("Lowest we saw")
 
-    elsewhere = [f"Other seller: {egp(other_offer)}"] if other_offer is not None else []
-    elsewhere += [f"{SHOPS[o['site']].label if o['site'] in SHOPS else o['site']}: {egp(o['price'])}" for o in others]
-    if elsewhere:
-        lines += ["", "🏪 Elsewhere", *elsewhere]
+    nothing = "no usable match found"
+    seller = [f"Other seller: {egp(other_offer)}"] if other_offer is not None else []
+    if others:
+        unsure = f" (unsure match, confidence {others[0]['confidence']})" if others[0]["unsure"] else ""
+        lines += ["", f"🏪 Elsewhere{unsure}", *seller, *map(shop_line, others)]
+    elif others is None and seller:
+        lines += ["", "🏪 Elsewhere", *seller]
+    elif others is not None and seller:
+        lines += ["", "🏪 Elsewhere", *seller, f"Other shops: {nothing}"]
+    elif others is not None:
+        lines += ["", f"🏪 Elsewhere: {nothing}"]
 
     product = [f"Rating: ★ {p['rating']:.1f} ({p['reviews'] or 0:,})" if p["rating"] else "",
                f"Stock: {p['stock_left']} left" + (" (shown on half the shop)" if p["site"] in LOW_STOCK_EVERYWHERE else "")

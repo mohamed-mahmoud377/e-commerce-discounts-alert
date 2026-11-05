@@ -103,7 +103,7 @@ def check_product(conn: sqlite3.Connection, cfg: Config, product_id: int, *, boo
     if confirm is None:  # a held alert gets its screenshot when it is released (AlertSender.confirm)
         shotq.add(conn, cfg, cur.lastrowid, p["site"], p["url"], now)
     if cfg.review_enabled:
-        _to_review(conn, cfg, cur.lastrowid, p, stats, deal, group, other, others, past, "", now)
+        _to_review(conn, cfg, cur.lastrowid, p, stats, deal, group, other, past, "", now)
     return deal
 
 
@@ -117,11 +117,29 @@ def _other_shops(conn, cfg: Config, product_id: int, sku: str, now: datetime) ->
         return []
 
 
-def _to_review(conn, cfg: Config, alert_id: int, p, stats, deal, group, other, others, past, note, now) -> None:
+def _card_shops(conn, cfg: Config, product_id: int, sku: str, now: datetime) -> list[dict] | None:
+    """The other shops for the admins' card: less sure matches too, since a person judges them, each with its
+    own price history. None when the lookup failed, which is not the same as no match."""
+    if not cfg.alerts.show_other_shops:
+        return None
+    try:
+        shops = []
+        for o in matching.other_shops(conn, product_id, now, cfg.review.other_shops_min_confidence):
+            history = product_stats(conn, o["id"], now)
+            shops.append({**dict(o), "usual": history.typical_90d, "low": history.low,
+                          "steady_days": (now - history.current_since).total_seconds() / 86400 if history.current_since else 0,
+                          "unsure": o["confidence"] < cfg.alerts.other_shops_min_confidence})
+        return shops
+    except Exception:
+        log.exception("the card's other shops for %s", sku)
+        return None
+
+
+def _to_review(conn, cfg: Config, alert_id: int, p, stats, deal, group, other, past, note, now) -> None:
     """A slip in writing the card must not cost the crawl page that found the deal."""
     try:
-        publish.prepare(conn, cfg, alert_id, p, stats, deal, group, other_offer=other, others=others, past=past,
-                        note=note, now=now)
+        publish.prepare(conn, cfg, alert_id, p, stats, deal, group, other_offer=other,
+                        others=_card_shops(conn, cfg, p["id"], p["sku"], now), past=past, note=note, now=now)
     except Exception:
         log.exception("could not write the review card of alert %s", alert_id)
 
@@ -199,7 +217,7 @@ def manual_alert(conn: sqlite3.Connection, cfg: Config, product_id: int, now: da
         (product_id, f"manual:{sender}", deal.price, deal.reference, deal.drop, deal.score, message, iso(now), iso(now)))
     shotq.add(conn, cfg, cur.lastrowid, p["site"], p["url"], now)
     if cfg.review_enabled:
-        _to_review(conn, cfg, cur.lastrowid, p, stats, deal, group, other, others, past, note, now)
+        _to_review(conn, cfg, cur.lastrowid, p, stats, deal, group, other, past, note, now)
     log.info("manual alert %s for %s %s at %s by %s", cur.lastrowid, p["site"], p["sku"], deal.price, sender or "?")
     return {**out, "alert_id": cur.lastrowid}
 

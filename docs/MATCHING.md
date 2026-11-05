@@ -321,7 +321,12 @@ Every model gets a confidence from 0 to 100 and the evidence behind it in words 
 
 **Alerts quote other shops only for matches at 75 or more** (`alerts.other_shops_min_confidence`): a model code
 passes unless two doubts stack up, a product line only when nothing casts doubt on it, a probable match never.
-On 30 Oct: 5,892 such products on 2+ shops.
+On 30 Oct: 5,892 such products on 2+ shops. The admins' review card goes down to 50 with an "unsure match" label, since
+a person judges it ([PUBLISHING.md](PUBLISHING.md)).
+
+**A fixed bug, 5 Nov 2026:** `other_shops` selected `MIN(price)` and `MAX(last_seen_at)` together, and next to two such
+aggregates SQLite may take the other columns from the `MAX` row, so the cheapest price came with the link and seller
+of the listing seen last: 14 of 74 shop lines on real cards. It now picks the row with a window function.
 
 ## Other evidence and safety rules added on 30 Oct 2026
 

@@ -25,6 +25,7 @@ chat_id = ""            # run 'deals telegram' after sending your bot a message
 # [review]
 # expire_hours = 6      # a deal nobody decided on by then closes
 # min_score = 0         # deals scoring lower get no card (0: review everything)
+# other_shops_min_confidence = 50  # the card quotes other shops from this match confidence, labelled unsure below 75
 # crazy_score = 70      # the post's tone: "crazy" from this score, or a price error
 # crazy_low_drop = 0.40 # ...or an all-time low at least this far below usual
 # solid_low_days = 14   # a "lowest price" only counts (on the post too) on this much history

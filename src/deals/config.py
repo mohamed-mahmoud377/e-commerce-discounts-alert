@@ -42,6 +42,7 @@ class ReviewRules:
     """The admins' review of deals before the public channel (deals/publish.py, docs/PUBLISHING.md)."""
     expire_hours: float = 6  # a deal nobody decided on by then is stale: its card closes
     min_score: int = 0  # deals scoring lower get no card (hand-sent ones always do)
+    other_shops_min_confidence: int = 50  # the card quotes other shops from this match confidence, labelled below the alerts' own
     # How loud the public post is: "crazy", "strong" or "good" (publish.tier)
     crazy_score: int = 70
     crazy_low_drop: float = 0.40  # an all-time low at least this far below usual
