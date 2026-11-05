@@ -56,7 +56,8 @@ class ShopifyShop:
         products = data.get("products") or []
         total = None if count is None else max(count, len(products))
         result = dream2000_eg.parse_products(data, total, site=cls.name, base=cls.base, ignored=cls.ignored)
-        return replace(result, has_next=result.has_next and page < MAX_PAGES)
+        # An empty page after the first only ends the walk: total 0 would tell the coordinator the root emptied.
+        return replace(result, has_next=result.has_next and page < MAX_PAGES, total=result.total if page == 1 else None)
 
     def _get_json(self, url: str) -> dict | None:
         """The JSON answer, None for a 404; Blocked when Shopify refuses us."""

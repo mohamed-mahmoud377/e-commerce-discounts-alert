@@ -7,7 +7,7 @@ description: The complete walkthrough for adding a new shop or store to the deal
 
 Adding a shop is one adapter, one table row, one config block and one doc. **Core code does not change.** The
 real work is learning how the shop behaves, because a wrong assumption about it means false alerts or a blocked
-home IP. Twenty-five shops were added this way. Their docs in `docs/` are worked examples.
+home IP. Twenty-six shops were added this way. Their docs in `docs/` are worked examples.
 
 Work through the stages in order. Each ends in a gate: don't start the next stage until it holds. Everything
 below was checked against the code on 5 Nov 2026 by rehearsing a fake shop. If the code disagrees, trust the code
@@ -256,16 +256,16 @@ To find every list that must grow:
 
 ```bash
 grep -rnE "Hardware ?Market|hardwaremarket" README.md CLAUDE.md docs .claude/skills/work-on-deals --include='*.md' | grep -v '^docs/HARDWAREMARKET'
-grep -rnE "\b(twenty-five|25) shops|all twenty-five" README.md CLAUDE.md docs src
+grep -rnE "\b(twenty-six|26) shops|all twenty-six" README.md CLAUDE.md docs src
 ```
 
 | File | What |
 |---|---|
 | `docs/<SHOP>.md` | Every scaffold section, with dates and measured numbers |
-| `CLAUDE.md` | The opening list, the doc link, what the droplet crawls if not home-only, "all twenty-five shops" |
+| `CLAUDE.md` | The opening list, the doc link, what the droplet crawls if not home-only, "all twenty-six shops" |
 | `README.md` | Opening list, the diagram's shop lists, the code tree |
 | `docs/GUIDE.md` | Opening list, adapters row, diagram, a paragraph on the shop, the access and signal tables, fast lanes table, screenshot list and table |
-| `docs/INTERNALS.md` | Code map row, worker thread list, delays row, watch keys row, the dates in "Add a shop", "all twenty-five" on `shots.py` |
+| `docs/INTERNALS.md` | Code map row, worker thread list, delays row, watch keys row, the dates in "Add a shop", "all twenty-six" on `shots.py` |
 | `docs/MONITORING.md` | One row per new log line: what it means, what to do |
 | `docs/PRODUCT_FLOW.md` | Step 1's list of card readers |
 | `docs/CATEGORIES.md` | A section with its category ids |
@@ -387,3 +387,5 @@ Lessons from Raya, Vodafone, Dokkan Tech, Etisal and Orange (5 Nov 2026), each o
 - **Check memory before a big shop.** The coordinator peaked at 244 of 300 MB on 154,000 products. WayUp alone is 35,000: stage a shop like that, one root at a time, and read `MemoryPeak` after a matching pass.
 - **A blank screenshot of a fixed small size means the crop went wrong.** Azzam's two Arabic shots were the same 9 KB, white: a carousel made the right-to-left page 11,280 px wide. Check `document.documentElement.scrollWidth`; the English page was fine, so it stays English.
 - **Live config naming a shop must never get ahead of what is pushed.** A deploy from `main` without the shop's code makes the coordinator refuse to start. So: commit and push the code first, then the config.
+- **A shop's page may not be able to show one variant.** Mazaya's link opens on its default size or shade, so a sized listing's screenshot can show another's price. Note it in the doc; the alert's own number stays right.
+- **Shop settings give a careful start:** Pace 2x and "Kept, not sent" need no config, and are the terms for a shop whose `robots.txt` the user chose to overrule (Mazaya).

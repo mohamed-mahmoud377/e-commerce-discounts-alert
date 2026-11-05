@@ -1332,3 +1332,71 @@ def test_shopify_stops_at_its_limit_and_always_gives_the_planner_a_number():
     site._session = _Session(_Answer(404, ctype="text/html"))
     with pytest.raises(UnknownTarget):
         site.fetch_page(Slice.from_key("category:nope"), 1)
+
+
+def test_mazaya_reads_sizes_and_shades_one_by_one():
+    from deals.sites.mazaya_eg import parse_products
+    result = parse_products(fixture_json("mazaya_perfumes.json.gz")["data"])
+    by = {x.sku: x for x in result.listings}
+    assert result.total == 1513 and result.has_next
+    nishane = by["31446"]
+    assert (nishane.price, nishane.list_price, nishane.brand) == (2_350_000, None, "Nishane") and nishane.in_stock
+    assert nishane.url == "https://mazaya.eg/en/hundred-silent-ways-x-100-ml" and nishane.title == "Hundred Silent Ways X  100 ml"
+    dolce = by["36192"]
+    assert (dolce.price, dolce.list_price, dolce.list_price_kind) == (646_000, 760_000, "list")
+    # a size is its own listing: the listing's single price would be the cheapest one's
+    small = by["31391:50-ml"]
+    assert small.price == 1_500_000 and not small.in_stock and small.title == "Hundred Silent Ways (50 ML)"
+    assert "31391:100-ml" in by and by["31391:100-ml"].price == 2_290_000
+
+    skin = {x.sku: x for x in parse_products(fixture_json("mazaya_skincare.json.gz")["data"]).listings}
+    assert skin["33795:030-orange"].price == 35_700 and skin["33795:010-pink"].price == 25_500  # shades at different prices
+    assert skin["36857:400-ml"].price == 297_500 and not skin["36857:200-ml"].in_stock
+
+
+def test_mazaya_folds_shades_at_one_price_and_a_zero_is_no_price():
+    from deals.sites.mazaya_eg import parse_products
+    price = lambda v: {"minimum_price": {"final_price": {"value": v}, "regular_price": {"value": v}}}  # noqa: E731
+    shade = lambda label, stock: {"attributes": [{"code": "color", "label": label}],  # noqa: E731
+                                  "product": {"stock_status": stock, "price_range": price(140.25)}}
+    balm = {"id": 1, "name": " Balm ", "url_key": "balm", "stock_status": "IN_STOCK", "price_range": price(140.25),
+            "variants": [shade("Red", "OUT_OF_STOCK"), shade("Pink", "IN_STOCK")]}
+    free = {"id": 2, "name": "Sample", "url_key": "sample", "stock_status": "IN_STOCK", "price_range": price(0)}
+    data = {"products": {"total_count": 2, "page_info": {"total_pages": 1}, "items": [balm, free]}}
+    listings = {x.sku: x for x in parse_products(data).listings}
+    assert (listings["1"].price, listings["1"].in_stock, listings["1"].title) == (14_025, True, "Balm")
+    assert listings["2"].price is None and not listings["2"].in_stock
+
+
+def test_mazaya_filters_and_refusals():
+    from deals.models import Blocked, UnknownTarget
+    from deals.sites.mazaya_eg import MazayaEG, variables
+    values = variables(Slice.from_key("category:4|price:300-500"), 2)
+    assert values["filter"] == {"category_uid": {"eq": "NA=="}, "price": {"from": "300", "to": "500"}}
+    assert values["page"] == 2 and values["pageSize"] == 100 and values["sort"] == {"name": "ASC"}
+    empty = {"data": {"products": {"total_count": 0, "page_info": {"total_pages": 0}, "items": []}}}
+    site = MazayaEG()
+    site._session = _Session(_Answer(data=empty), _Answer(data={"data": {"categories": {"items": []}}}))
+    with pytest.raises(UnknownTarget):  # an unknown category is an empty answer: told apart by asking for it
+        site.fetch_page(Slice.from_key("category:999999"), 1)
+    site._session = _Session(_Answer(data=empty), _Answer(data={"data": {"categories": {"items": [{"id": 4}]}}}))
+    assert site.fetch_page(Slice.from_key("category:4"), 1).total == 0  # really empty
+    site._session = _Session(_Answer(data=empty))
+    assert site.fetch_page(Slice.from_key("category:4|price:99999-"), 1).total == 0  # an empty range needs no second request
+    site._session = _Session(_Answer(403, ctype="text/html"))
+    with pytest.raises(Blocked):
+        site.fetch_page(Slice.from_key("category:4"), 1)
+    site._session = _Session(_Answer(data={"errors": [{"message": "currentPage value 999"}]}))
+    with pytest.raises(ValueError, match="GraphQL error"):
+        site.fetch_page(Slice.from_key("category:4"), 999)
+    with pytest.raises(UnknownTarget):
+        site.fetch_page(Slice.from_key("search:perfume"), 1)
+
+
+def test_shopify_empty_last_page_doesnt_say_the_root_emptied():
+    from deals.models import Slice as S
+    from deals.sites.gcshop_eg import GcShopEG
+    site = GcShopEG()
+    site._session = _Session(_Answer(data={"products": []}))  # 8,500 products: page 34 is full, page 35 empty
+    result = site.fetch_page(S.from_key("category:all"), 35)
+    assert result.total is None and not result.has_next and result.listings == []

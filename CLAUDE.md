@@ -1,7 +1,7 @@
 # deals: notes for working on this project
 
 Personal price tracker for amazon.eg, noon.com (Egypt), jumia.com.eg, cairosales.com, 2b.com.eg, btech.com, dream2000.com, carrefouregypt.com,
-dubaiphone.net, hardwaremarket.net, rayashop.com, eshop.vodafone.com.eg, dokkantech.com, etisalstore.com, eshop.orange.eg, lcwaikiki.eg, defacto.com.eg, elarabygroup.com, miamicenters.com, sigma-computer.com, elnekhelytechnology.com, wayupsports.com, gcshopeg.com, azzamwatches.com and Amazon Now (amazon.eg's 20-minute grocery store, its own shop): crawls whole categories, keeps each
+dubaiphone.net, hardwaremarket.net, rayashop.com, eshop.vodafone.com.eg, dokkantech.com, etisalstore.com, eshop.orange.eg, lcwaikiki.eg, defacto.com.eg, elarabygroup.com, miamicenters.com, sigma-computer.com, elnekhelytechnology.com, wayupsports.com, gcshopeg.com, azzamwatches.com, mazaya.eg and Amazon Now (amazon.eg's 20-minute grocery store, its own shop): crawls whole categories, keeps each
 product's price history in SQLite, and sends Arabic Telegram alerts for real discounts.
 Read [README.md](README.md), [docs/GUIDE.md](docs/GUIDE.md) (design and algorithms) and
 [docs/INTERNALS.md](docs/INTERNALS.md) (code map, schema, API) before changing behaviour;
@@ -9,18 +9,18 @@ Read [README.md](README.md), [docs/GUIDE.md](docs/GUIDE.md) (design and algorith
 [docs/PRICING_RESEARCH.md](docs/PRICING_RESEARCH.md) is the research on how Amazon and noon price and on detection science
 (raw notes in `docs/research/`); [docs/MONITORING.md](docs/MONITORING.md) is the runbook and [docs/COMMANDS.md](docs/COMMANDS.md) lists every command.
 [docs/SHOP_RULES.md](docs/SHOP_RULES.md) lists what each shop gets wrong in its data (placeholder prices, noisy signals) and what we
-do about it (`src/deals/shop_rules.py`, shown on the web UI's Rules page); [docs/PUBLISHING.md](docs/PUBLISHING.md) is the way to the public channel (the admins' review group, the Arabic posts); [docs/CATEGORIES.md](docs/CATEGORIES.md) holds category ids and shop quirks; [docs/JUMIA.md](docs/JUMIA.md), [docs/CAIROSALES.md](docs/CAIROSALES.md), [docs/2B.md](docs/2B.md), [docs/BTECH.md](docs/BTECH.md), [docs/DREAM2000.md](docs/DREAM2000.md), [docs/CARREFOUR.md](docs/CARREFOUR.md), [docs/DUBAIPHONE.md](docs/DUBAIPHONE.md), [docs/HARDWAREMARKET.md](docs/HARDWAREMARKET.md), [docs/AMAZON_NOW.md](docs/AMAZON_NOW.md), [docs/RAYA.md](docs/RAYA.md), [docs/VODAFONE.md](docs/VODAFONE.md), [docs/DOKKANTECH.md](docs/DOKKANTECH.md), [docs/ETISAL.md](docs/ETISAL.md), [docs/ORANGE.md](docs/ORANGE.md), [docs/LCWAIKIKI.md](docs/LCWAIKIKI.md), [docs/DEFACTO.md](docs/DEFACTO.md), [docs/ELARABY.md](docs/ELARABY.md), [docs/MIAMI.md](docs/MIAMI.md), [docs/SIGMA.md](docs/SIGMA.md), [docs/ELNEKHELY.md](docs/ELNEKHELY.md), [docs/WAYUP.md](docs/WAYUP.md), [docs/GCSHOP.md](docs/GCSHOP.md) and [docs/AZZAM.md](docs/AZZAM.md) are the per-shop analyses. Keep these in step with the code, and
+do about it (`src/deals/shop_rules.py`, shown on the web UI's Rules page); [docs/PUBLISHING.md](docs/PUBLISHING.md) is the way to the public channel (the admins' review group, the Arabic posts); [docs/CATEGORIES.md](docs/CATEGORIES.md) holds category ids and shop quirks; [docs/JUMIA.md](docs/JUMIA.md), [docs/CAIROSALES.md](docs/CAIROSALES.md), [docs/2B.md](docs/2B.md), [docs/BTECH.md](docs/BTECH.md), [docs/DREAM2000.md](docs/DREAM2000.md), [docs/CARREFOUR.md](docs/CARREFOUR.md), [docs/DUBAIPHONE.md](docs/DUBAIPHONE.md), [docs/HARDWAREMARKET.md](docs/HARDWAREMARKET.md), [docs/AMAZON_NOW.md](docs/AMAZON_NOW.md), [docs/RAYA.md](docs/RAYA.md), [docs/VODAFONE.md](docs/VODAFONE.md), [docs/DOKKANTECH.md](docs/DOKKANTECH.md), [docs/ETISAL.md](docs/ETISAL.md), [docs/ORANGE.md](docs/ORANGE.md), [docs/LCWAIKIKI.md](docs/LCWAIKIKI.md), [docs/DEFACTO.md](docs/DEFACTO.md), [docs/ELARABY.md](docs/ELARABY.md), [docs/MIAMI.md](docs/MIAMI.md), [docs/SIGMA.md](docs/SIGMA.md), [docs/ELNEKHELY.md](docs/ELNEKHELY.md), [docs/WAYUP.md](docs/WAYUP.md), [docs/GCSHOP.md](docs/GCSHOP.md), [docs/AZZAM.md](docs/AZZAM.md) and [docs/MAZAYA.md](docs/MAZAYA.md) are the per-shop analyses. Keep these in step with the code, and
 write down anything new you learn about the shops or the operations there (the user wants findings kept).
 
 ## Where things run
 
 - **Droplet** `root@207.154.206.127` (1 GB RAM + 1 GB swap): systemd `deals-coordinator`
   (FastAPI :8787 + SQLite `/var/lib/deals/deals.db` + Telegram bot + watchdog) and `deals-worker`
-  (amazon, dream2000, carrefour, raya, vodafone, dokkantech, etisal, orange, defacto, elaraby, miami, sigma, wayup, gcshop and azzam only; datacenter IPs are often refused by Amazon and always by noon, Jumia, Cairo Sales, 2B,
-  B.TECH's API, Dubai Phone (Vercel), Hardware Market, LC Waikiki and Elnekhely (Cloudflare); Dream 2000 (Shopify), Carrefour (Akamai, browser fingerprint), Raya, Vodafone, Dokkan Tech, Etisal, Orange, El Araby, Miami, Sigma, WayUp, GC Shop, Azzam and DeFacto (Akamai, browser fingerprint) are open to everyone; Amazon Now lists nothing
+  (amazon, dream2000, carrefour, raya, vodafone, dokkantech, etisal, orange, defacto, elaraby, miami, sigma, wayup, gcshop, azzam and mazaya only; datacenter IPs are often refused by Amazon and always by noon, Jumia, Cairo Sales, 2B,
+  B.TECH's API, Dubai Phone (Vercel), Hardware Market, LC Waikiki and Elnekhely (Cloudflare); Dream 2000 (Shopify), Carrefour (Akamai, browser fingerprint), Raya, Vodafone, Dokkan Tech, Etisal, Orange, El Araby, Miami, Sigma, WayUp, GC Shop, Azzam, Mazaya and DeFacto (Akamai, browser fingerprint) are open to everyone; Amazon Now lists nothing
   at the droplet's delivery location).
   Config: `/etc/deals/config.toml` (worker tokens, Telegram token, watches). Code: `/opt/deals`.
-- **The user's Mac**: launchd agent `com.deals.worker` (all twenty-five shops), env in `./worker.env`,
+- **The user's Mac**: launchd agent `com.deals.worker` (all twenty-six shops), env in `./worker.env`,
   log `~/Library/Logs/deals-worker.log`. `make keep-awake` (launchd `com.deals.awake`,
   `caffeinate -s`) stops it sleeping on power. It runs code from this checkout; after changing worker
   code, restart it: `launchctl kickstart -k gui/$(id -u)/com.deals.worker`. After changing `worker.env`

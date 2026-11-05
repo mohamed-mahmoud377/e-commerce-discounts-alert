@@ -2,7 +2,7 @@
 
 `deals` crawls whole categories on **amazon.eg**, **noon.com (Egypt)**, **jumia.com.eg**, **cairosales.com**, **btech.com**, **dream2000.com**,
 **carrefouregypt.com**, **dubaiphone.net**, **hardwaremarket.net**, **2b.com.eg**, **rayashop.com**, **eshop.vodafone.com.eg**,
-**dokkantech.com**, **etisalstore.com**, **eshop.orange.eg**, **lcwaikiki.eg**, **defacto.com.eg**, **elarabygroup.com**, **miamicenters.com**, **sigma-computer.com**, **elnekhelytechnology.com**, **wayupsports.com**, **gcshopeg.com**, **azzamwatches.com** and **Amazon Now** (amazon.eg's
+**dokkantech.com**, **etisalstore.com**, **eshop.orange.eg**, **lcwaikiki.eg**, **defacto.com.eg**, **elarabygroup.com**, **miamicenters.com**, **sigma-computer.com**, **elnekhelytechnology.com**, **wayupsports.com**, **gcshopeg.com**, **azzamwatches.com**, **mazaya.eg** and **Amazon Now** (amazon.eg's
 20-minute grocery store, tracked as its own shop), keeps the
 price history of every product, and sends you a **Telegram** message when a price
 is genuinely low, judged against the product's own history rather than the
@@ -38,11 +38,11 @@ Each worker only takes jobs for the sites its internet connection can reach.
   your Mac (launchd)            friend's PC (optional)
   deals worker                  deals worker
   noon, amazon, jumia,          any shop it can reach
-  cairosales, 2b, btech, dream2000,  (home connections: all twenty-five;
+  cairosales, 2b, btech, dream2000,  (home connections: all twenty-six;
   carrefour, dubaiphone,        cloud: amazon, dream2000, carrefour,
   hardwaremarket, amazon_now,   raya, vodafone, dokkantech, etisal, orange,
-  raya, vodafone, dokkantech,   defacto, elaraby, miami, sigma, wayup, gcshop, azzam)
-  etisal, orange, lcwaikiki, defacto, elaraby, miami, sigma, elnekhely, wayup, gcshop, azzam
+  raya, vodafone, dokkantech,   defacto, elaraby, miami, sigma, wayup, gcshop, azzam, mazaya)
+  etisal, orange, lcwaikiki, defacto, elaraby, miami, sigma, elnekhely, wayup, gcshop, azzam, mazaya
 ```
 
 ## What it tracks
@@ -160,7 +160,7 @@ Prices are stored in piastres (divide by 100 for EGP); times are UTC.
    and restart the coordinator.
 2. On the other machine: clone the repo, create the venv as in Quick start, then:
    ```bash
-   DEALS_COORDINATOR=http://207.154.206.127:8787 DEALS_TOKEN=... DEALS_SITES=noon_eg,amazon_eg,jumia_eg,cairosales_eg,2b_eg,btech_eg,dream2000_eg,carrefour_eg,dubaiphone_eg,hardwaremarket_eg,amazon_now_eg,raya_eg,vodafone_eg,dokkantech_eg,etisal_eg,orange_eg,lcwaikiki_eg,defacto_eg,elaraby_eg,miami_eg,sigma_eg,elnekhely_eg,wayup_eg,gcshop_eg,azzam_eg \
+   DEALS_COORDINATOR=http://207.154.206.127:8787 DEALS_TOKEN=... DEALS_SITES=noon_eg,amazon_eg,jumia_eg,cairosales_eg,2b_eg,btech_eg,dream2000_eg,carrefour_eg,dubaiphone_eg,hardwaremarket_eg,amazon_now_eg,raya_eg,vodafone_eg,dokkantech_eg,etisal_eg,orange_eg,lcwaikiki_eg,defacto_eg,elaraby_eg,miami_eg,sigma_eg,elnekhely_eg,wayup_eg,gcshop_eg,azzam_eg,mazaya_eg \
      .venv/bin/deals worker
    ```
 That's all. The coordinator never gives two workers on the same internet connection the
@@ -188,7 +188,7 @@ home don't.
 src/deals/
   sites/amazon_eg.py, noon_eg.py, jumia_eg.py,  fetch + parse one listing page per site
   cairosales_eg.py, twob_eg.py, btech_eg.py, dream2000_eg.py, carrefour_eg.py,
-  dubaiphone_eg.py, hardwaremarket_eg.py, raya_eg.py, vodafone_eg.py, dokkantech_eg.py, etisal_eg.py, orange_eg.py, lcwaikiki_eg.py, defacto_eg.py, elaraby_eg.py, miami_eg.py, sigma_eg.py, elnekhely_eg.py, shopify.py (wayup_eg.py, gcshop_eg.py, azzam_eg.py),
+  dubaiphone_eg.py, hardwaremarket_eg.py, raya_eg.py, vodafone_eg.py, dokkantech_eg.py, etisal_eg.py, orange_eg.py, lcwaikiki_eg.py, defacto_eg.py, elaraby_eg.py, miami_eg.py, sigma_eg.py, elnekhely_eg.py, shopify.py (wayup_eg.py, gcshop_eg.py, azzam_eg.py), mazaya_eg.py,
   amazon_now_eg.py (amazon_eg under the Amazon Now root node)
   planner.py      split a category into slices each site lets us page through completely
   scheduler.py    job queue: leases, adaptive revisit intervals, per-IP block cooldowns

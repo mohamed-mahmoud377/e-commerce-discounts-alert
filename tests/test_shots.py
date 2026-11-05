@@ -53,6 +53,7 @@ SAVED = [
     ("wayup_eg", "wayup_product_rendered.html.gz", ("1,600.00", "3,199.00"), None),
     ("gcshop_eg", "gcshop_product_rendered.html.gz", ("6,360", "6,710"), None),
     ("azzam_eg", "azzam_product_rendered.html.gz", ("27,995.00",), None),
+    ("mazaya_eg", "mazaya_product_rendered.html.gz", ("6,460", "7,600"), None),
 ]
 
 

@@ -400,3 +400,7 @@ Slugs, from `/sitemap-category.xml`: `graphics-card`, `processors`, `motherboard
 ## wayupsports.com, gcshopeg.com, azzamwatches.com
 
 Shopify handles: `/collections.json?limit=250`, but read docs/WAYUP.md first: the counts are wrong. WayUp: `all-sale`, `all-new-in`, `all-footwear`, `all-apparel`. GC Shop and Azzam: `category:all` is the whole shop.
+
+## mazaya.eg category ids
+
+Magento ids (`deals categories` isn't wired for it; `categories(filters:{parent_id:{eq:"2"}})` lists them). Perfumes `4` (Men `39`, Women `40`, Unisex `509`), Makeup `81`, Skin Care `42`, Bundles & sets `862`, Gifts `542`, Niche brands `783`. The API wants them in base64 (`NA==` for `4`); the adapter does that.

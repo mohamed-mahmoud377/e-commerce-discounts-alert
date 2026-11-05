@@ -192,6 +192,7 @@ def test_noon_new_listings_never_alert_from_the_sellers_claim(cfg, conn):
 
 def test_raya_and_etisal_claims_and_stock_counts_prove_nothing():
     assert shop_rules.rules_for("wayup_eg", "no_claim_alerts")  # 86% crossed out: nothing but our own history counts
+    assert shop_rules.rules_for("mazaya_eg", "no_claim_alerts")  # 64%, by named campaigns
     for site in ("raya_eg", "etisal_eg", "lcwaikiki_eg", "defacto_eg"):
         assert shop_rules.rules_for(site, "no_claim_alerts"), site
         assert shop_rules.low_stock_is_noise(site), site

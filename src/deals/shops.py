@@ -7,7 +7,7 @@ everything else it needs (adapter, screenshot spec, parser fixture, doc, config 
 from dataclasses import dataclass
 
 # Kinds, in the order the web UI groups shops.
-KINDS = {"marketplace": "Marketplaces", "electronics": "Electronics shops", "grocery": "Supermarkets", "fashion": "Fashion", "watches": "Watches"}
+KINDS = {"marketplace": "Marketplaces", "electronics": "Electronics shops", "grocery": "Supermarkets", "fashion": "Fashion", "watches": "Watches", "beauty": "Beauty"}
 
 
 @dataclass(frozen=True)
@@ -119,6 +119,8 @@ SHOPS: dict[str, Shop] = {s.name: s for s in (
          (("Everything", "all"), ("Casio", "casio"), ("Citizen", "citizen"), ("Hot deals", "gc-stores-hotdeals"))),
     Shop("azzam_eg", "Azzam Watches", "عزام للساعات", "AZ", "watches", "https://azzamwatches.com", False, "AZZAM.md",
          (("Everything", "all"), ("Luxury", "luxury"), ("Fashion brands", "fashion-brands"))),
+    Shop("mazaya_eg", "Mazaya", "مزايا", "MZ", "beauty", "https://mazaya.eg/en", False, "MAZAYA.md",
+         (("Perfumes", "4"), ("Makeup", "81"), ("Skin Care", "42"), ("Bundles & sets", "862"), ("Gifts", "542"))),
 )}
 
 

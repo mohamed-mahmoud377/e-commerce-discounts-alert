@@ -44,6 +44,8 @@ even if one were somehow stored.
 | DeFacto | `defacto-promo-cards` | note | A few cards are promotions with no price | Skipped | 5 Nov 2026 |
 | El Araby | `elaraby-zero-price` | note | 42 sold-out products show a price of 0 | Read as no price | 5 Nov 2026 |
 | El Araby | `elaraby-manufacturer-is-country` | note | `manufacturer` holds the country of origin | Brand comes from the title | 5 Nov 2026 |
+| Mazaya | `mazaya-no-new-listing-alerts` | no_claim_alerts | 64% of perfumes in stock crossed out, median 15%, by named campaigns | No new-listing alerts | 5 Nov 2026 |
+| Mazaya | `mazaya-sizes-hide-behind-one-price` | note | A listing shows only its cheapest size (132 of 1,513 perfumes differ) | Each size its own listing | 5 Nov 2026 |
 | WayUp | `wayup-no-new-listing-alerts` | no_claim_alerts | 86% of in-stock variants crossed out, median 25% | No new-listing alerts | 5 Nov 2026 |
 | WayUp | `wayup-placeholder-1egp` | placeholder | 338 sold-out variants at 1 EGP | Under 10 EGP is no price | 5 Nov 2026 |
 | WayUp | `wayup-listing-cap` | note | A Shopify listing ends at page 100, 25,000 products | Stops there; only the sale and new-in roots are read | 5 Nov 2026 |

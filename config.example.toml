@@ -171,6 +171,10 @@ max_delay = 4.0
 min_delay = 2.0
 max_delay = 4.0
 
+[sites.mazaya_eg]  # Magento GraphQL over GET (100 products per request); works from anywhere; robots.txt disallows /graphql: docs/MAZAYA.md
+min_delay = 2.0
+max_delay = 4.0
+
 # ---------------------------------------------------------------------------
 # What to track. Each [[watch]] is a product group with one root per site:
 #   amazon_eg = "category:<browse node id>"
@@ -952,3 +956,12 @@ min_price = 200
 miami_eg = ["category:1639", "category:701", "category:2737"]
 sigma_eg = ["category:9f503e88-a70c-45a2-b6b1-4c7a3f7e52f3", "category:9f503e96-65b6-40ff-873f-ea2e2502e931", "category:9f503ea3-06b0-452a-8c04-946b3a206474", "category:9f503a53-6867-4fe3-a6ff-cef657dac290", "category:9f732b3d-d6a4-44d8-9a2b-cdc0e329b3d5"]
 elaraby_eg = ["category:317", "category:186", "category:1927", "category:93", "category:309", "category:65", "category:66", "category:320", "category:1966", "category:217", "category:360", "category:1652", "category:1497"]
+
+# Perfumes, makeup and skin care (from 5 Nov 2026). docs/MAZAYA.md.
+[[watch]]
+name = "Beauty"
+label = "عطور وتجميل"
+interval_minutes = 120
+max_interval_minutes = 180
+min_price = 300
+mazaya_eg = ["category:4", "category:81", "category:42", "category:862", "category:542"]

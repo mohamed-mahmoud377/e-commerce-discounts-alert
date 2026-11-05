@@ -20,6 +20,7 @@ from deals.sites.vodafone_eg import VodafoneEG
 from deals.sites.azzam_eg import AzzamEG
 from deals.sites.elnekhely_eg import ElnekhelyEG
 from deals.sites.gcshop_eg import GcShopEG
+from deals.sites.mazaya_eg import MazayaEG
 from deals.sites.miami_eg import MiamiEG
 from deals.sites.sigma_eg import SigmaEG
 from deals.sites.wayup_eg import WayUpEG
@@ -50,4 +51,5 @@ SITES = {
     WayUpEG.name: WayUpEG,
     GcShopEG.name: GcShopEG,
     AzzamEG.name: AzzamEG,
+    MazayaEG.name: MazayaEG,
 }

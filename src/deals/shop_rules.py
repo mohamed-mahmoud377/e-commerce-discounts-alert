@@ -150,6 +150,19 @@ RULES: tuple[ShopRule, ...] = (
         "(median 20%); 'November - Net %20 Discount' runs to 31 Dec. woman-discount alone holds 5,328 products",
         "5 Nov 2026"),
     ShopRule(
+        "mazaya-no-new-listing-alerts", "mazaya_eg", "no_claim_alerts",
+        "Most of what is in stock is discounted, by campaigns with names like 'deals 15%' and 'LATTAFA 25'",
+        "No new-listing alerts from the crossed-out price; its products alert only from our own history",
+        "5 Nov 2026: a crossed-out price on 537 of 833 perfumes in stock, median 15%",
+        "5 Nov 2026"),
+    ShopRule(
+        "mazaya-sizes-hide-behind-one-price", "mazaya_eg", "note",
+        "A product with several sizes lists only its cheapest price",
+        "The adapter reads each variant: every size is its own listing, and shades are when they cost differently",
+        "5 Nov 2026: 132 of 1,513 perfumes, such as Hundred Silent Ways at 22,900 (100 ML) and 15,000 (50 ML); "
+        "8 of 87 makeup products have shades at different prices",
+        "5 Nov 2026", where="sites/mazaya_eg.py"),
+    ShopRule(
         "wayup-no-new-listing-alerts", "wayup_eg", "no_claim_alerts",
         "Most of what is in stock is discounted, and its sale pages hold over 12,000 products",
         "No new-listing alerts from the crossed-out price; its products alert only from our own history",

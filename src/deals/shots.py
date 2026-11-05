@@ -158,6 +158,10 @@ SPECS: dict[str, Spec] = {
     "azzam_eg": Spec(boxes=((".price-list--product",),),
                      context=("h1.product-title", ".product-gallery__media.is-initial img"),
                      ready=".price-list--product"),
+    # Nuxt with Tailwind classes: the price's digits are .currency, in the block marked text-primary-800.
+    "mazaya_eg": Spec(boxes=((".text-primary-800:has(.currency)",),),
+                      context=("h1.product-name", ".zoom-container img"),
+                      ready="h1.product-name", settle=1, arabic=("mazaya.eg/en/", "mazaya.eg/ar/")),
 }
 
 VIEWPORT = {"width": 1280, "height": 1000}  # the desktop layout, like the shop's own page on a computer
