@@ -58,6 +58,7 @@ your Mac, which checks the outside of the system, then `deals health` on the ser
 | telegram | Configured, nothing stuck | A message waiting more than 15 min | Not configured, or a message failed 10 times | `make logs`; check the bot token |
 | worker NAME (one line each) | Seen in the last 15 min | 15 to 60 min | Over 60 min, or no worker at all in 7 days | Is that machine on and awake? Restart its worker |
 | crawl SITE | A slice finished within 60 min and the backlog is under 2 h | Last finish 1 to 3 h ago, or backlog over 2 h | Nothing finished for 3 h | `make devices` to see which device should be on it |
+| watch SITE | | A worker offers the shop but no `[[watch]]` names it, so it has no jobs and no `crawl` line, and its devices read "idle" | | Add its roots to `/etc/deals/config.toml` as in `config.example.toml`, then restart the coordinator; or drop it from that worker's `DEALS_SITES` |
 | jobs SITE | | Slices failing and retrying | A slice failed 3+ times in a row | `make status` shows the error; often a layout change |
 | coverage SITE | | A slice is too big to crawl fully | | Split the category in the config or raise its minimum price |
 | parser SITE | | | A page came in the last hour with over half of its in-stock listings (10 or more) without a price | The shop changed its layout: `deals crawl SITE "<slice>" --pages 1` on the Mac, save the page into `tests/fixtures/`, fix the parser. The page is still recorded (those products read "no price"); mark the error resolved in web UI → Errors once fixed |

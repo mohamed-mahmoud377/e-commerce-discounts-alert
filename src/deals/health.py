@@ -132,6 +132,13 @@ def run_checks(conn: sqlite3.Connection, cfg: Config, now: datetime) -> list[Che
             add(Check(f"coverage {site}", WARN, f"{r['oversized']} slices too big to crawl completely",
                       f"{name_ar}: {r['oversized']} شريحة أكبر من أن تُجمع بالكامل"))
 
+    # a shop no watch names has no jobs, so the loop above never sees it: its workers just sit idle
+    watched = {site for watch in cfg.watches for site in watch.targets}
+    offered = {site for w in recent for site in (w["sites"] or "").split(",") if site}
+    for site in sorted(offered - watched):
+        add(Check(f"watch {site}", WARN, "a worker offers this shop but no [[watch]] in the config names it: nothing is crawled",
+                  f"{SITE_NAME.get(site, site)}: لا يتم جمعه لأنه غير مضاف لأي مجموعة في الإعدادات"))
+
     if off := shop_settings.summary(conn)[0]:
         add(Check("shop settings", OK, "switched in the web UI: " + ", ".join(off)))
 

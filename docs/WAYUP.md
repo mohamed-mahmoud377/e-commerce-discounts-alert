@@ -24,6 +24,7 @@ Cloudflare in front; 200 from both, no refusal in about 250 requests at one ever
 - 250 products a page. **A listing ends at page 100: page 101 answers HTTP 400**, so `/products.json` shows 25,000 of the shop and no root may be larger. `MAX_PAGES` in `sites/shopify.py` stops there.
 - **`products_count` is no count** (see docs/GCSHOP.md); paging ends on a short page.
 - Sold-out products stay listed with `available: false`: 13,356 of the first 25,000 products have something in stock.
+- **The two collections we read hold almost only what is in stock** (13,690 of 13,700 products on 5 Nov 2026). A product that sells out leaves them, so its row keeps its last price and `in_stock` until it comes back: a sell-out isn't seen, and `last_seen_at` is what tells. Harmless for alerts: nothing changes, so nothing is judged.
 - Empty: an unknown collection answers 404 at `/collections/x.json`, which the adapter checks.
 
 ## Prices, stock, identity
@@ -52,6 +53,8 @@ One pass is about 7 minutes at 2 to 4 s (page 0.5 s + 3 s), against the group's 
 ```
 
 ## Troubleshooting
+
+**Idle on every device, no `crawl wayup_eg` line in `make health`:** no `[[watch]]` names it. That was its first 15 minutes: the shop went live on 5 Nov 2026 with `[sites.wayup_eg]` in `/etc/deals/config.toml` but no `wayup_eg = "category:all-sale"` in Fashion, so there were 0 jobs and 0 products, and workers reported "nothing due". `make health` now warns (`watch wayup_eg`).
 
 `HTTP 430` is Shopify's own block: slow it down from the web UI's Shop settings (Pace). `no collection with handle` means a handle went: `https://wayupsports.com/collections.json?limit=250`. Names like `adidas-sale-bf26` are seasonal; `all-sale` has lasted.
 

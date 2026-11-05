@@ -298,6 +298,7 @@ which stops the whole system. A worker on old code **refuses to start** with an 
    ssh root@207.154.206.127 systemctl restart deals-coordinator
    ```
    **Then check it really started, about 15 s later:** `systemctl is-active deals-coordinator` must say `active` (`activating` means a crash loop) and `curl -fsS http://127.0.0.1:8787/health` must answer. `/etc/deals/config.toml` is `root:deals 640`: the coordinator runs as `deals`, so edit it in place. Never copy its owner from a `cp` backup, which is `root:root`: that took the whole system down for 2 minutes on 5 Nov 2026, and the validation above runs as root, so it doesn't notice.
+   **Add both: the `[sites.<shop>]` block alone starts nothing.** Compare with the example: `wayup_eg` went live with only the block and sat idle (`make health` now warns `watch <shop>`).
    At start, `sync_watches` creates a plan job per root. `make health` shows `crawl <shop>` as FAIL until the first slice finishes: expected for
    minutes, a problem if it lasts.
 

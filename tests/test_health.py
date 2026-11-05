@@ -48,6 +48,17 @@ def test_stalled_site_and_silent_worker_are_flagged(cfg):
     assert got["worker mac"] == "fail" and got["crawl amazon_eg"] == "fail"
 
 
+def test_shop_a_worker_offers_but_no_watch_names_is_flagged(cfg):
+    conn = db.connect(cfg.db_path)
+    now = utcnow()
+    scheduler.sync_watches(conn, cfg, now)
+    with conn:
+        scheduler.worker_seen(conn, "mac", "1.2.3.4", now, sites=["amazon_eg", "wayup_eg"])
+    got = levels(health.run_checks(conn, cfg, now))
+    assert got["watch wayup_eg"] == "warn"  # no jobs, so it has no "crawl" line to go red: this is the only sign
+    assert "watch amazon_eg" not in got
+
+
 def test_daily_report_once_per_morning_in_cairo(cfg):
     conn = db.connect(cfg.db_path)
     early = datetime(2026, 10, 26, 5, 0, tzinfo=UTC)  # 08:00 in Cairo (UTC+3)
