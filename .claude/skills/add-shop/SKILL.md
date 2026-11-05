@@ -379,6 +379,7 @@ Lessons from Raya, Vodafone, Dokkan Tech, Etisal and Orange (5 Nov 2026), each o
 - **`from: 0` can empty a Magento answer.** Test the planner's edge values (0 and open ends) against the real API.
 - **A 404 may not mean gone.** 5 of 40 El Araby pages answered 404, then 200 minutes later. Before calling a link dead, fetch it again.
 - **Keep checks short.** A long probe script can be killed and lose its results: save as you go, with short timeouts.
+- **A product takes the group of the last root that read it, not the first** (`grp = COALESCE(?, grp)` in `db.record`). Overlapping roots in two groups flip its label on every crawl. Keep roots in different groups apart, and after going live compare products per group: El Araby's Refrigerators fell to 0 this way.
 - **Same platform, different unit.** Miami's WooCommerce API answers whole pounds (`currency_minor_unit` 0), Hardware Market's piastres: a copied adapter is off by 100. Read the unit, and compare a price with its page before anything else.
 - **Shopify listings end at page 100 (HTTP 400 at 101).** `sites/shopify.py` handles it, and its docstring holds the rest; a new Shopify shop is 5 lines. Count the variants' prices per option before folding, and read `products_count` as nothing: it was 21,227 for 7,287.
 - **A count that lands on a round number deserves a second source.** GC Shop's 8,500 looked like a cap; its sitemap agreed it wasn't. The sitemap is the cheap way to learn a shop's true size.

@@ -946,7 +946,7 @@ azzam_eg = "category:all"
 elaraby_eg = "category:64"
 
 # El Araby's other categories (from 5 Nov 2026), so nothing it sells is left out: washing machines, vacuums, fans, heaters,
-# audio, lighting, projectors, spare parts. A product also in a group above keeps the group that saw it first. docs/ELARABY.md.
+# audio, lighting, projectors, spare parts. No overlap with the groups above: a product takes the group of the last root that read it, so an overlap would flip its label. docs/ELARABY.md.
 [[watch]]
 name = "Home & more"
 label = "أجهزة منزلية وأخرى"
@@ -955,7 +955,7 @@ max_interval_minutes = 180
 min_price = 200
 miami_eg = ["category:1639", "category:701", "category:2737"]
 sigma_eg = ["category:9f503e88-a70c-45a2-b6b1-4c7a3f7e52f3", "category:9f503e96-65b6-40ff-873f-ea2e2502e931", "category:9f503ea3-06b0-452a-8c04-946b3a206474", "category:9f503a53-6867-4fe3-a6ff-cef657dac290", "category:9f732b3d-d6a4-44d8-9a2b-cdc0e329b3d5"]
-elaraby_eg = ["category:317", "category:186", "category:1927", "category:93", "category:309", "category:65", "category:66", "category:320", "category:1966", "category:217", "category:360", "category:1652", "category:1497"]
+elaraby_eg = ["category:85", "category:233", "category:88", "category:190", "category:191", "category:187", "category:334", "category:1927", "category:93", "category:76", "category:79", "category:210", "category:65", "category:110", "category:107", "category:320", "category:1651", "category:343", "category:63", "category:217", "category:360", "category:1827", "category:1497"]
 
 # Perfumes, makeup and skin care (from 5 Nov 2026). docs/MAZAYA.md.
 [[watch]]

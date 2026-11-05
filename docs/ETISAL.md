@@ -47,7 +47,7 @@ It lasts about a thousand years, but **each call creates a guest customer at the
 
 14 top categories (`/api/customer/home/categories`). Sub-categories are mostly by brand (`mobile-accessories-cables-anker`): read a product's `category.sub_categories`. See docs/CATEGORIES.md.
 
-`Mobiles & Tablets` (1081) holds 9 tablets under `s1382`, `s1383`. They are watched in Tablets too, so whichever group sees one first keeps it; a tablet can land in Phones, with Phones' lower minimum. Harmless.
+`Mobiles & Tablets` (1081) holds 9 tablets under `s1382`, `s1383`. They are watched in Tablets too, and a product takes the group of the last root that read it, so a tablet's label flips between Phones and Tablets. Prices and alerts are unaffected except for that label.
 
 ## How we crawl it
 
