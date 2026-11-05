@@ -183,7 +183,7 @@ Measured on 280 cards from category pages (phones, fryers, fridges, headphones, 
 | Crossed-out price (`oldPrice`) | 88% | Seller-set, so kind `list` (an RRP-like claim). Claims of 60%+ are rejected for new listings, same as noon |
 | Claimed discount size | median 12% of the cards that show one; 24% of all cards claim 25% or more | |
 | "N items left" | 72% show one; 45% say 3 or fewer | Proves nothing, so `jumia_eg` is in `LOW_STOCK_EVERYWHERE` (like amazon.eg) and the alert says so |
-| Deal badges ("limited deal", "lowest price in N days") | none exist on listing cards | No strong signal, so **new-listing alerts essentially never fire on Jumia**: its alerts come from our own price history (real drops, all-time lows, early drops), which is the trustworthy path anyway |
+| Deal badges ("limited deal", "lowest price in N days") | none exist on category cards; the adapter marks cards from `/flash-sales/` as a limited deal (176 of 17,336 in-stock products on 5 Nov 2026) | Outside the flash page there is no strong signal, so new-listing alerts fire only for flash-sale products: 166 by 5 Nov 2026, 24 in the last day. None of the 166 was ever seen within 5% of its crossed-out price, so the claim is unconfirmed by our own data. All other alerts come from our own price history |
 | Rating with 0 reviews | common on new items | stored as rating None, reviews 0 |
 
 **Flash sales.** `/flash-sales/` (409 products when checked) shows a stock bar (`stock`: "3 items left",

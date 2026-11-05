@@ -95,6 +95,11 @@ learned from the admins' decisions (until then, publishing waits for a person, w
 ## Known limits (today)
 
 - Prices come from listing cards, not product pages (see item 4).
+- noon seller Laptech lists renewed laptops at a placeholder of 47,200 EGP (81 products ever, 57 still there on 5 Nov 2026).
+  When one gets its real price, it is alerted against 47,200: 48 false alerts on 24 products (3 to 4 Nov), none of them published.
+  Shop rules are per shop and 47,200 is real elsewhere, so this needs a per-seller placeholder rule. Until then these keep firing.
+- All-time-low alerts need 14 days of history, so none could fire before 8 Nov 2026 (789 candidates at 15 to 20% off since 29 Oct).
+  This path is covered by unit tests only: look at its first live alerts.
 - New listings can only be judged by the shop's own claims plus signals until we have ~3 days of history.
 - noon's crossed-out price is seller-set and treated with suspicion; its "lowest price in N days" badge is trusted more.
 - Amazon category browsing works from home IPs only (tested 2026-10-25).

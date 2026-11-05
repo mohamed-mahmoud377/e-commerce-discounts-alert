@@ -23,7 +23,7 @@ flowchart TB
     E --> checks
     B --> checks
     checks --> write["7. Alert written to the outbox<br/>(Arabic message, score)"]
-    write -- "new listing" --> hold["Held until the next crawl<br/>confirms the price"]
+    write -- "new listing, if the hold is on<br/>(off since 27 Oct 2026)" --> hold["Held until the next crawl<br/>confirms the price"]
     write -- "everything else" --> out["8. Delivered to every subscriber"]
     hold --> out
 ```
@@ -180,7 +180,7 @@ message says the history is short. Since 27 October early drops are **sent at on
 | Example | Numbers | Result |
 | --- | --- | --- |
 | Air fryer at 5,220 for 2 days, now 3,500 | drop 33%, new low | ⏳ early drop, sent at once |
-| Same air fryer now 3,977 | drop 24% < 30% | no alert (would be a real drop after day 3 if it is still there) |
+| Same air fryer now 3,977 | drop 24% < 30% | no alert, and none later while the price stays: a product is judged only when its price falls, and the days at today's price never count as its history (checked 5 Nov 2026: 1,151 in-stock products sit 20%+ below a thin earlier reference without an alert, 588 of them for 3+ days; at that age the "discount" is simply their price) |
 | Phone at 9,000 for 1.5 days and 7,000 for half a day, now 6,000 | typical 9,000 (1.5 of 2 days); drop 33%, below 7,000 | ⏳ early drop |
 
 ### Path B: less than 1 day of history (a new listing)
@@ -201,7 +201,7 @@ The Rules page counts every alert the rule stops.
    catalogue, so it does not count either.)
 4. During a slice's **first crawl**, when everything looks new, **two** signals are needed.
 
-Confidence is low, and the alert is **held** until the next crawl sees the same price (section 8).
+Confidence is low. The alert goes out at once: the hold until the next crawl (section 8) has been off in the live config since 27 October 2026.
 
 Real cases (current rules):
 
@@ -280,7 +280,7 @@ Liberty 5 by Anker, Noise-Cancelling Wireless Earbuds, ...
 🔖 سماعات · نون مصر · الثقة: منخفضة · النقاط: 29/100
 ```
 
-**Holding (new listings only).** A new-listing alert waits for the product's next crawl:
+**Holding (new listings only, off in the live config since 27 October 2026, `confirm_low_confidence = false`).** When switched on, a new-listing alert waits for the product's next crawl:
 
 | Next sighting | Result | Real case |
 | --- | --- | --- |
@@ -380,7 +380,8 @@ planner fix found on 26 October, start later.)
   badge or a "Was:" price; it also adds few new products a day (806). Its 6 new-listing alerts were all on
   the first evening (Nespresso machines with limited-time deals).
 - **Jumia** shows no badges on category pages at all, and "3 or fewer left" is on 63% of its cards, so it
-  can't count. By design a Jumia new listing never alerts. 2,113 Jumia products claim 30 to 60% off, which
+  can't count. By design a Jumia new listing alerts only from `/flash-sales/`, whose cards the adapter marks as a
+  limited deal (166 alerts by 5 November 2026, 1% of its in-stock products carry the mark). 2,113 Jumia products claim 30 to 60% off, which
   shows why: those claims are routine there.
 - **noon** has the badges that make a claim believable ("lowest price in a year", Deal, Mega Deal) and its
   "only 1 left" is meaningful.
