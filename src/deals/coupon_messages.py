@@ -151,9 +151,9 @@ def _card(alert_id: int, c: sqlite3.Row, count: int, best: float, message: str) 
             f"{count:,} products in stock · best {best:.0%} below its usual price\n\n{message}")
 
 
-def _queue(conn: sqlite3.Connection, cfg: Config, c: sqlite3.Row, count: int, offers: list[dict], shown: list[dict],
-           brand: str | None, best: float, now: datetime) -> None:
-    message = _message(c, coupons.from_row(offers[0]["p"]), brand, shown)
+def _queue(conn: sqlite3.Connection, cfg: Config, c: sqlite3.Row, count: int, coupon: Coupon, shown: list[dict],
+           brand: str | None, best: float, now: datetime) -> int:
+    message = _message(c, coupon, brand, shown)
     alert_id = conn.execute(
         """INSERT INTO alerts (kind, coupon_id, drop_pct, score, message, created_at, next_attempt_at)
            VALUES ('coupon', ?, ?, ?, ?, ?, ?)""", (c["id"], best, round(best * 100), message, iso(now), iso(now))).lastrowid
@@ -165,6 +165,7 @@ def _queue(conn: sqlite3.Connection, cfg: Config, c: sqlite3.Row, count: int, of
              iso(now + timedelta(hours=cfg.review.expire_hours)), iso(now)))
     if c["group_url"]:  # the page itself is the picture; no worker to take it, and the post goes as text
         shotq.add(conn, cfg, alert_id, c["site"], c["group_url"], now)
+    return alert_id
 
 
 def _decide(conn: sqlite3.Connection, c: sqlite3.Row, state: str, best: float, count: int, now: datetime) -> None:
@@ -208,6 +209,80 @@ def step(conn: sqlite3.Connection, cfg: Config, now: datetime) -> None:
                 if old:
                     _decide(conn, c, "over_limit", best, count, now)
                 continue
-            _queue(conn, cfg, c, count, offers, shown, brand, best, now)
+            _queue(conn, cfg, c, count, coupons.from_row(offers[0]["p"]), shown, brand, best, now)
             _decide(conn, c, "sent", best, count, now)
             log.info("coupon post: %s %s, %d products, best %.0f%%", c["site"], c["code"], count, best * 100)
+
+
+# --- the web UI's Coupons tab
+
+
+class CouponRefused(ValueError):
+    """Why this coupon can't be sent by hand."""
+
+
+def _in_stock(conn: sqlite3.Connection, c: sqlite3.Row, limit: int = SHOWN) -> list[sqlite3.Row]:
+    return conn.execute("SELECT * FROM products WHERE site = ? AND coupon_code = ? AND in_stock = 1 AND price IS NOT NULL ORDER BY price LIMIT ?",
+                        (c["site"], c["code"], limit)).fetchall()
+
+
+def _look(conn: sqlite3.Connection, cfg: Config, c: sqlite3.Row, now: datetime) -> dict:
+    """Everything the post would be made of. For a person, who may pick what the rule passes over: a coupon with no number to
+    measure still has its products to list. Without a page or a best product, any of them."""
+    count, offers, brand = _offers(conn, cfg, c, now)
+    shown = [o for o in offers if not _recently_alerted(conn, o["p"]["id"], now)][:SHOWN]
+    some = _in_stock(conn, c)
+    if not shown and not c["group_url"]:
+        shown = [{"p": p, "price": p["price"]} for p in some]
+    sample = offers[0]["p"] if offers else some[0] if some else None
+    return {"count": count, "offers": offers, "shown": shown, "brand": brand, "best": offers[0]["discount"] if offers else 0.0,
+            "coupon": coupons.from_row(sample) if sample else None}
+
+
+def _refusal(c: sqlite3.Row, coupon: Coupon | None, now: datetime) -> str | None:
+    if c["state"] == "sent":
+        return "It has already been posted"
+    if c["kind"] == "bank" or c["state"] == "bank":
+        return "It is a bank offer: only people with that card get it"
+    if c["state"] == "ended" or (c["ends_at"] and c["ends_at"] < now.astimezone(CAIRO).date().isoformat()):
+        return "It has ended"
+    if coupon is None:
+        return "No product in stock shows it"
+    if coupon.kind == "promo":
+        return "Its page has not been read yet, so we don't know what it is"
+    return None
+
+
+def detail(conn: sqlite3.Connection, cfg: Config, site: str, code: str, now: datetime) -> dict | None:
+    """One coupon for the web UI: the post as it would look, and why the rule decided as it did. The post comes from the code
+    that sends it, so the two can't differ. Only reads."""
+    c = conn.execute("SELECT * FROM coupons WHERE site = ? AND code = ?", (site, code)).fetchone()
+    if c is None:
+        return None
+    look, rules = _look(conn, cfg, c, now), cfg.alerts
+    readable = look["coupon"] is not None and look["coupon"].kind != "promo"
+    return {
+        "coupon": dict(c), "count": look["count"], "best": look["best"], "brand": look["brand"],
+        "min_products": rules.coupon_message_min_products, "min_discount": rules.coupon_message_min_discount,
+        "preview": _message(c, look["coupon"], look["brand"], look["shown"]) if readable else None,
+        "refused": _refusal(c, look["coupon"], now), "review": cfg.review_enabled, "posts_on": rules.coupon_messages,
+        "products": [{"id": o["p"]["id"], "title": o["p"]["title"], "url": o["p"]["url"], "shelf": o["p"]["price"], "after": o["price"],
+                      "usual": o["usual"], "discount": o["discount"]} for o in look["offers"]]
+                    or [{"id": p["id"], "title": p["title"], "url": p["url"], "shelf": p["price"], "after": None, "usual": None,
+                         "discount": None} for p in _in_stock(conn, c, CANDIDATES)],
+    }
+
+
+def send_by_hand(conn: sqlite3.Connection, cfg: Config, site: str, code: str, now: datetime) -> int:
+    """An admin picked this coupon: queue its post like an automatic one, to review when that is on. It works with the automatic
+    posts switched off and passes over the minimums, since a person chose it, and it counts towards the shop's limit for the day."""
+    c = conn.execute("SELECT * FROM coupons WHERE site = ? AND code = ?", (site, code)).fetchone()
+    if c is None:
+        raise CouponRefused("no such coupon")
+    look = _look(conn, cfg, c, now)
+    if why := _refusal(c, look["coupon"], now):
+        raise CouponRefused(why)
+    alert_id = _queue(conn, cfg, c, look["count"], look["coupon"], look["shown"], look["brand"], look["best"], now)
+    _decide(conn, c, "sent", look["best"], look["count"], now)
+    log.info("coupon post by hand: %s %s", site, code)
+    return alert_id

@@ -130,6 +130,13 @@ products where there is one. It goes through the review group like any deal.
 
 ## Looking coupons up
 
+**Web UI → Coupons.** Every code seen in the last 30 days, best discount first, with what the rule decided in plain words. Bank offers and ended ones show only when picked in the Decision filter.
+A row opens the post as it would look (from the same code that sends it), why it got that decision, and its products: on the shelf, with the coupon, usual price.
+
+**Send by hand:** an admin can queue one coupon's post from that page, with its screenshot. It goes to the review group when that is set up, else straight to the subscribers, and the button says which. It works with `coupon_messages` off and passes over the minimums, since a person chose it, and counts towards the shop's limit for the day. Refused for a bank offer, an ended coupon, one already posted, an Amazon promotion not read yet, or one no product in stock shows.
+
+From the command line:
+
 ```bash
 make coupons
 ```
@@ -152,7 +159,7 @@ the coupon and other products sharing the code.
 
 ## Tuning from real data
 
-Run in `make sql` once the code has been live for a few days:
+The Coupons tab's cards and Decision filter show most of this. For more, run in `make sql` once the code has been live for a few days:
 
 ```sql
 -- Codes per day and what the rule decided

@@ -688,6 +688,131 @@ def test_screenshots_pick_the_right_page_spec():
     assert shots.spec_for("noon_eg", "https://www.noon.com/egypt-en/x/N1/p/") is shots.SPECS["noon_eg"]
 
 
+# --- the web UI's Coupons tab
+
+
+@pytest.fixture
+def ui(review_env):
+    from fastapi.testclient import TestClient
+    from deals.coordinator import create_app
+    cfg, conn, tg = review_env
+    cfg = replace(cfg, admin_token="admin-secret", alerts=replace(cfg.alerts, coupon_messages=False))
+    conn.commit()  # the app writes as it starts
+    with TestClient(create_app(cfg, background=False)) as c:
+        c.cfg, c.db, c.tg = cfg, conn, tg
+        admin_in(c)
+        yield c
+
+
+def admin_in(c):
+    c.get("/ui/login", params={"token": "admin-secret"}, follow_redirects=False)
+
+
+def test_the_tab_is_in_the_page_and_needs_a_login(ui):
+    page = ui.get("/ui").text
+    assert "'Coupons'" in page and "couponPage" in page and "sendCoupon" in page
+    ui.cookies.clear()
+    assert ui.get("/api/coupons").status_code == 401 and ui.get("/api/coupons/noon_eg/X").status_code == 401
+
+
+def test_the_list_is_best_first_with_counts_and_keeps_old_codes_out(ui):
+    conn = ui.db
+    now = covered(conn)
+    covered(conn, coupon=replace(CODE, code="BIG", amount=200_000), site_prefix="B")
+    conn.execute("UPDATE coupons SET best_discount = 0.2, state = 'would_send' WHERE code = 'BIG'")
+    conn.execute("INSERT INTO coupons (site, code, kind, title, first_seen_at, last_seen_at, state) VALUES ('noon_eg', 'OLD', 'code', 'x', ?, ?, 'ended')",
+                 (iso(now - timedelta(days=90)), iso(now - timedelta(days=90))))
+    conn.execute("INSERT INTO coupons (site, code, kind, title, first_seen_at, last_seen_at, state) VALUES ('amazon_eg', 'NBE', 'bank', 'x', ?, ?, 'bank')", (iso(now), iso(now)))
+    conn.commit()
+    d = ui.get("/api/coupons").json()
+    assert [c["code"] for c in d["coupons"]][0] == "BIG" and "OLD" not in [c["code"] for c in d["coupons"]]
+    big = d["coupons"][0]
+    assert big["in_stock"] == 6
+    assert d["summary"] == {"active": 2, "new_today": 2, "would_post": 1, "products": 12}
+
+
+def test_the_old_lookup_by_code_still_works(ui):
+    covered(ui.db)
+    ui.db.commit()
+    d = ui.get("/api/coupons", params={"site": "noon_eg", "code": "MOBILE300"}).json()
+    assert d["coupons"][0]["code"] == "MOBILE300" and len(d["products"]) == 6
+
+
+def test_the_detail_shows_the_same_post_that_is_sent(ui):
+    conn, cfg = ui.db, ui.cfg
+    promoted(conn)
+    conn.commit()
+    d = ui.get(f"/api/coupons/amazon_eg/{PROMO.code}").json()
+    assert "وفر 75 جنيه" in d["preview"] and d["brand"] == "TRESemmé" and d["count"] == 6 and d["refused"] is None
+    assert (d["min_products"], d["min_discount"]) == (5, 0.05) and d["products"][0]["after"] < d["products"][0]["shelf"]
+    assert ui.get("/api/coupons/amazon_eg/NOPE").status_code == 404
+    r = ui.post(f"/api/coupons/amazon_eg/{PROMO.code}/send").json()
+    row = conn.execute("SELECT message, kind FROM alerts WHERE id = ?", (r["alert_id"],)).fetchone()
+    assert row["message"] == d["preview"] and row["kind"] == "coupon"
+
+
+def test_a_coupon_sent_by_hand_goes_to_review_with_the_switch_off_and_counts(ui):
+    conn = ui.db
+    now = covered(conn, coupon=replace(CODE, amount=5_000))  # well under the 5% minimum
+    conn.commit()
+    r = ui.post("/api/coupons/noon_eg/MOBILE300/send")
+    assert r.status_code == 200
+    alert_id = r.json()["alert_id"]
+    assert review(conn, alert_id)["status"] == "pending" and state(conn)["state"] == "sent"
+    assert conn.execute("SELECT COUNT(*) FROM coupons WHERE state = 'sent' AND decided_at >= ?", (iso(now - timedelta(days=1)),)).fetchone()[0] == 1
+    assert ui.post("/api/coupons/noon_eg/MOBILE300/send").status_code == 409  # not twice
+
+
+def test_sending_needs_an_admin(ui):
+    covered(ui.db)
+    ui.db.commit()
+    ui.cookies.clear()
+    assert ui.post("/api/coupons/noon_eg/MOBILE300/send").status_code == 401
+    assert state(ui.db)["state"] == "new"
+
+
+@pytest.mark.parametrize("change,why", [
+    ("UPDATE coupons SET kind = 'bank', state = 'bank'", "bank"),
+    ("UPDATE coupons SET state = 'ended'", "ended"),
+    ("UPDATE coupons SET ends_at = '2020-01-01'", "ended"),
+    ("UPDATE coupons SET state = 'sent'", "already"),
+    ("UPDATE products SET in_stock = 0", "in stock"),
+])
+def test_what_cant_be_sent_by_hand(ui, change, why):
+    conn = ui.db
+    covered(conn)
+    conn.execute(change)
+    conn.commit()
+    assert why in ui.get("/api/coupons/noon_eg/MOBILE300").json()["refused"]
+    r = ui.post("/api/coupons/noon_eg/MOBILE300/send")
+    assert r.status_code == 409 and why in r.json()["detail"]
+
+
+def test_an_unread_promotion_has_no_post_and_cant_be_sent(ui):
+    conn = ui.db
+    covered(conn, coupon=PROMO)
+    conn.commit()
+    d = ui.get(f"/api/coupons/noon_eg/{PROMO.code}").json()
+    assert d["preview"] is None and "not been read" in d["refused"]
+
+
+def test_a_coupon_with_no_value_can_be_sent_and_lists_its_products(ui):
+    conn = ui.db
+    covered(conn, coupon=Coupon(kind="code", title="Use code WF500", code="WF500"))
+    conn.commit()
+    d = ui.get("/api/coupons/noon_eg/WF500").json()
+    assert d["best"] == 0 and d["refused"] is None and d["preview"].count("• ") == coupon_messages.SHOWN
+    assert d["products"][0]["after"] is None and len(d["products"]) == 6
+
+
+def test_a_shops_html_in_a_coupon_is_escaped_in_the_post(ui):
+    conn = ui.db
+    covered(conn, coupon=Coupon(kind="code", title="<b>x</b>", code="<C>"))
+    conn.commit()
+    d = ui.get("/api/coupons/noon_eg/%3CC%3E").json()
+    assert "<b>x</b>" not in d["preview"].replace("<b>&lt;b&gt;x&lt;/b&gt;</b>", "") and "&lt;C&gt;" in d["preview"]
+
+
 # --- looking them up
 
 

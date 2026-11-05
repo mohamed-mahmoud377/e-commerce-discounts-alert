@@ -43,7 +43,7 @@ write down anything new you learn about the shops or the operations there (the u
 | Live numbers | `make status`, `make alerts`, `make movers`, `make logs` |
 | Switch a shop off (everywhere or on one device), its alerts off or not sent, pace | web UI → Shop settings (stays until changed; a device must have the shop in `DEALS_SITES` first) |
 | Pause crawling for a while | `make pause DEVICE=mac SITE=jumia_eg HOURS=3` (ends by itself), `make resume`; web UI → Devices |
-| Coupons on the shops | `make coupons` (`CODE=`, `FIND=`), `make coupon-group URL=<noon page>` (Mac) |
+| Coupons on the shops | web UI → Coupons (and send one by hand); `make coupons` (`CODE=`, `FIND=`), `make coupon-group URL=<noon page>` (Mac) |
 | Same product on other shops | `make models` (`FIND=<code>`, `SAMPLE=10`); web UI product page, Queries → Matching |
 | Database | `make sql` (live, read-only), `make dbweb` (browser), `make db` (snapshot for IntelliJ) |
 | Daily report now | `make report` |

@@ -605,9 +605,30 @@ def create_app(cfg: Config, *, background: bool = True) -> FastAPI:
     @app.get("/api/coupons", dependencies=[Depends(viewer)])
     def coupons_api(site: str | None = None, code: str | None = None, limit: int = Query(200, ge=1, le=1000)):
         with closing(read_conn()) as rc:
+            if not code:  # the Coupons tab
+                return webui.coupon_list(rc, utcnow(), limit)
             codes = webui.coupon_codes(rc, site, code, limit)
-            products = webui.coupon_products(rc, site, code, limit) if site and code else None
+            products = webui.coupon_products(rc, site, code, limit) if site else None
         return {"coupons": codes, "products": products}
+
+    @app.get("/api/coupons/{site}/{code}", dependencies=[Depends(viewer)])
+    def coupon_api(site: str, code: str, request: Request):
+        with closing(read_conn()) as rc:
+            found = coupon_messages.detail(rc, cfg, site, code, utcnow())
+        if found is None:
+            raise HTTPException(404, "no such coupon")
+        return {**found, "admin": is_admin(request)}
+
+    @app.post("/api/coupons/{site}/{code}/send", dependencies=[Depends(admin)])
+    def coupon_send(site: str, code: str, request: Request):
+        """Queue this coupon's post now, whatever the minimums say. Under review it still needs Approve."""
+        with closing(db.connect(cfg.db_path)) as wc, wc:
+            try:
+                alert_id = coupon_messages.send_by_hand(wc, cfg, site, code, utcnow())
+            except coupon_messages.CouponRefused as e:
+                raise HTTPException(404 if "no such" in str(e) else 409, str(e))
+        log.info("coupon %s %s sent to review by %s", site, code, admin_user(request) or "?")
+        return {"ok": True, "alert_id": alert_id}
 
     @app.get("/api/subscribers", dependencies=[Depends(viewer)])
     def subscribers_api(request: Request):

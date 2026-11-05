@@ -161,6 +161,27 @@ def coupon_codes(conn: sqlite3.Connection, site: str | None = None, code: str | 
            ORDER BY c.last_seen_at DESC, c.id DESC LIMIT ?""", (site, site, code, code, limit))]
 
 
+COUPON_LIST_DAYS = 30  # the Coupons tab shows codes seen this recently
+
+
+def coupon_list(conn: sqlite3.Connection, now: datetime, limit: int = 1000) -> dict:
+    """The Coupons tab: codes seen lately, best discount first, and the numbers its cards show. A bank's code can be on tens of
+    thousands of products, so the counts are one pass over the partial index rather than one count per code."""
+    day = iso(now - timedelta(days=1))
+    in_stock = {(r["site"], r["coupon_code"]): r["n"] for r in conn.execute(
+        "SELECT site, coupon_code, COUNT(*) n FROM products WHERE coupon_code IS NOT NULL AND in_stock = 1 GROUP BY 1, 2")}
+    rows = [{**dict(r), "in_stock": in_stock.get((r["site"], r["code"]), 0)} for r in conn.execute(
+        """SELECT * FROM coupons WHERE last_seen_at >= ? ORDER BY COALESCE(best_discount, -1) DESC, last_seen_at DESC, id DESC LIMIT ?""",
+        (iso(now - timedelta(days=COUPON_LIST_DAYS)), limit))]
+    live = [r for r in rows if r["state"] not in ("bank", "ended")]
+    return {"coupons": rows, "summary": {
+        "active": sum(r["last_seen_at"] >= iso(now - timedelta(days=2)) for r in live),
+        "new_today": sum(r["first_seen_at"] >= day for r in live),
+        "would_post": sum(r["state"] == "would_send" for r in live),
+        "products": sum(r["in_stock"] for r in live),
+    }}
+
+
 def coupon_products(conn: sqlite3.Connection, site: str, code: str, limit: int = 100, exclude: int | None = None) -> list[dict]:
     """In-stock products showing a code, cheapest first."""
     return [dict(r) for r in conn.execute(
@@ -490,12 +511,19 @@ body.loading #bar{opacity:1;width:70%}
 </nav>
 <div class='toast' id='toast' role='status'></div>
 <script>
-const TABS = ['Overview', 'Deals', 'Products', 'Shops', 'Devices', 'Uptime', 'Errors', 'Jobs', 'Logs', 'Queries'], ADMIN = ['Settings', 'Subscribers', 'Rules'];
+const TABS = ['Overview', 'Deals', 'Coupons', 'Products', 'Shops', 'Devices', 'Uptime', 'Errors', 'Jobs', 'Logs', 'Queries'], ADMIN = ['Settings', 'Subscribers', 'Rules'];
 const LABEL = {Rules: 'Rules & watches', Settings: 'Shop settings'};
 // Every shop from deals/shops.py (name, label, badge, kind, kind_label, url, home_only, doc), in its order.
 const SHOPS = __SHOPS__, SHOP_KINDS = [...new Set(SHOPS.map(s => s.kind))];
 const KINDS = {coupon_drop: ['Coupon', 'ok'], coupon: ['Coupon message', 'new'], price_drop: ['Price drop', 'info'], all_time_low: ['All-time low', 'ok'], early_drop: ['Early drop', 'idle'],
   new_product: ['New product', 'new'], price_error: ['Price error', 'fail'], manual: ['Sent by hand', 'new'], system: ['System', 'warn']};
+// What the rule decided about a coupon, in words (coupons.state).
+const COUPON_STATE = {new: ['Waiting', 'idle'], unread: ['Page never read', 'warn'], sent: ['Posted', 'ok'], would_send: ['Would post', 'new'], below_floor: ['Under the minimum', 'idle'],
+  over_limit: ['Over the daily limit', 'warn'], bank: ['Bank offer', 'idle'], ended: ['Ended', 'idle']};
+const couponState = c => c.state === 'new' && c.kind === 'promo' && !c.read_at ? ['Waiting for its page', 'idle'] : COUPON_STATE[c.state] || [c.state, 'idle'];
+const couponDate = d => d ? new Date(d + 'T12:00:00Z').toLocaleDateString('en-GB', {day: 'numeric', month: 'short'}) : '';
+const couponName = c => c.typed ? `<code>${esc(c.code)}</code>` : `<span class='muted'>${c.kind === 'promo' ? 'Not read yet' : 'No code'}</span>`;
+let cz = {site: '', state: '', q: ''};
 let tab = 'Overview', timer = null, ov = null, toastTimer = null;
 const $ = s => document.querySelector(s);
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -677,6 +705,33 @@ const views = {
           <div class='cardfoot'><span>Showing ${Math.min(rows.length, dz.shown)} of ${rows.length}</span>${rows.length > dz.shown ? `<button class='btn' type='button' onclick='dz.shown+=50;render()'>Show 50 more</button>` : ''}</div></section>
         <aside class='card' aria-label='Selected alert' style='flex:1 1 360px;min-width:0;padding:18px;display:flex;flex-direction:column;gap:14px'>${detail}</aside>
       </div>`;
+  },
+
+  // ---------------------------------------------------------------- Coupons
+  async Coupons() {
+    const [, site, code] = location.hash.split(':');
+    if (site && code) return couponPage(site, decodeURIComponent(code));
+    every(60000, render);
+    const d = await api('/api/coupons?limit=1000'), s = d.summary, q = cz.q.trim().toLowerCase();
+    const card = (k, v, sub) => `<div class='card kpi'><div class='k'>${k}</div><div class='v'>${v}</div><div class='s'>${sub}</div></div>`;
+    // Bank offers and ended coupons only when asked for: one bank's code can sit on most of Amazon's cards.
+    const rows = d.coupons.filter(c => { const label = couponState(c)[0];
+      return inShop(c.site, cz.site) && (cz.state ? label === cz.state : !['Bank offer', 'Ended'].includes(label))
+        && (!q || (c.code + ' ' + c.title).toLowerCase().includes(q)); });
+    const row = c => { const [label, cls] = couponState(c), to = `#Coupons:${c.site}:${encodeURIComponent(c.code)}`;
+      return `<tr class='click' data-to='${esc(to)}' onclick='location.hash=this.dataset.to'><td><a class='rowlink' href='${esc(to)}'>${couponName(c)}</a></td><td class='nw'>${esc(shop(c.site))}</td>
+        <td>${esc(c.title) || '—'}</td><td class='num r'>${c.in_stock.toLocaleString()}</td><td class='num r'>${c.best_discount == null ? '—' : changePct(c.best_discount)}</td>
+        <td class='nw'>${pill(cls, label)}</td><td class='nw'>${esc(couponDate(c.ends_at))}</td><td class='nw muted'>${ago(c.last_seen_at)} ago</td></tr>`; };
+    return head('Coupons', 'Coupons and promotions the shops show on their products, and what the rule decided about each · refreshes every minute') +
+      `<section class='cards'>${card('Active', s.active.toLocaleString(), 'seen in the last 2 days')}${card('New today', s.new_today.toLocaleString(), 'first seen in the last 24 h')}
+        ${card('Would post', s.would_post.toLocaleString(), 'passed the minimums')}${card('Products', s.products.toLocaleString(), 'in stock with one of these')}</section>
+      <form class='row' role='search' onsubmit='return false'>
+        <label class='sr' for='cq'>Search coupons</label><input id='cq' class='field grow' style='flex:1 1 220px' type='search' placeholder='Search codes and offers' value='${esc(cz.q)}' onchange='cz.q=this.value;render()'>
+        <label class='sr' for='cs'>Shop</label><select id='cs' class='field' onchange='cz.site=this.value;render()'>${shopOptions(cz.site)}</select>
+        <label class='sr' for='ct'>Decision</label><select id='ct' class='field' onchange='cz.state=this.value;render()'>${options(['Waiting', 'Waiting for its page', ...Object.values(COUPON_STATE).map(x => x[0]).slice(1)].map(x => [x, x]), cz.state, 'All but bank and ended')}</select></form>
+      <section class='card' style='overflow:hidden'><div class='scroll'><table><tr><th>Code</th><th>Shop</th><th>Offer</th><th class='r'>Products</th><th class='r'>Best discount</th><th>Decision</th><th>Ends</th><th>Last seen</th></tr>
+        ${rows.map(row).join('') || `<tr><td colspan='8'><div class='empty'>${d.coupons.length ? 'Nothing matches these filters' : 'No coupons seen yet'}</div></td></tr>`}</table></div>
+        <div class='cardfoot'><span>Showing ${rows.length} of ${d.coupons.length}</span></div></section>`;
   },
 
   // ---------------------------------------------------------------- Products
@@ -1096,6 +1151,37 @@ async function pollLogs() {
   if (!d.events.length || tab !== 'Logs') return;
   lastLog = d.events.reduce((m, e) => Math.max(m, e.id), lastLog);
   $('#logrows').insertAdjacentHTML('afterbegin', d.events.slice().reverse().map(logRow).join(''));
+}
+async function couponPage(site, code) {
+  const d = await api(`/api/coupons/${encodeURIComponent(site)}/${encodeURIComponent(code)}`), c = d.coupon, [label, cls] = couponState(c);
+  const check = (ok, text) => `<div>${ok ? '✓' : '✗'} ${esc(text)}</div>`;
+  const page = /^https:/.test(c.group_url || '') ? `<a class='btn' href='${esc(c.group_url)}' target='_blank' rel='noopener'>All its products on ${esc(shop(c.site))} ↗</a>` : '';
+  const button = d.admin && !d.refused ? `<button class='btn pri' type='button' data-site='${esc(c.site)}' data-code='${esc(c.code)}' data-review='${d.review ? 1 : 0}' onclick='sendCoupon(this)'>${d.review ? 'Send to review' : 'Send to subscribers'}</button>` : '';
+  return `<nav aria-label='Breadcrumb' style='font-size:13px'><a href='#Coupons'>Coupons</a> <span class='muted'>/ ${esc(shop(c.site))}</span></nav>
+    <header class='head'><div><h1>${esc(c.title) || 'Not read yet'}</h1><div class='row' style='gap:6px'>${pill(cls, label)}${pill('idle', shop(c.site))}${c.typed ? pill('idle', 'Code ' + c.code) : ''}${d.brand ? pill('idle', d.brand) : ''}</div></div></header>
+    <div class='grid2'>
+      <section class='card' style='padding:18px;display:flex;flex-direction:column;gap:12px'>
+        <div class='sub' style='font-weight:500'>The post${d.preview ? '' : ' (not until its page is read)'}</div>
+        ${d.preview ? `<div class='bubble' dir='rtl'>${esc(plain(d.preview))}</div>` : ''}
+        ${c.group_url ? `<div class='sub'>With a screenshot of the shop's page and a button to it, when a worker can take one.</div>` : ''}
+        <div class='row'>${button}${page}</div>
+        ${d.refused ? `<div class='sub'>Can't be sent: ${esc(d.refused)}.</div>` : d.admin ? `<div class='sub'>${d.review ? 'It still needs Approve in the review group.' : 'This goes straight to the subscribers.'} Sending by hand passes over the minimums.</div>` : ''}
+      </section>
+      <section class='card' style='padding:18px;display:flex;flex-direction:column;gap:8px'>
+        <div class='sub' style='font-weight:500'>Why: ${esc(label)}</div>
+        ${check(d.count >= d.min_products, `${d.count.toLocaleString()} watched product${d.count === 1 ? '' : 's'} in stock (needs ${d.min_products})`)}
+        ${check(d.best >= d.min_discount, `Best discount ${d.best ? changePct(d.best) : 'unknown'}, against its product's usual price (needs ${pct(d.min_discount)})`)}
+        ${c.ends_at ? `<div class='sub'>Runs until ${esc(couponDate(c.ends_at))}</div>` : ''}
+        <div class='sub'>First seen ${ago(c.first_seen_at)} ago · last seen ${ago(c.last_seen_at)} ago${d.posts_on ? '' : ' · automatic posts are off'}</div>
+      </section>
+    </div>
+    <section class='card' style='overflow:hidden'><div class='cardhead'><h2>Its products</h2><span class='sub'>best discount first; up to 20</span></div><div class='scroll'><table><tr><th>Product</th><th class='r'>On the shelf</th><th class='r'>With the coupon</th><th class='r'>Usual</th><th class='r'>Discount</th></tr>
+      ${d.products.map(p => `<tr class='click' onclick='openProduct(${p.id})'><td><a class='rowlink' href='#Products:${p.id}'>${esc(p.title)}</a></td><td class='num r'>${money(p.shelf)}</td><td class='num r'>${money(p.after)}</td><td class='num r'>${money(p.usual)}</td><td class='num r'>${p.discount == null ? '—' : changePct(p.discount)}</td></tr>`).join('') || `<tr><td colspan='5'><div class='empty'>No product in stock shows it</div></td></tr>`}</table></div></section>`;
+}
+async function sendCoupon(b) {
+  if (!confirm(b.dataset.review === '1' ? 'Send this coupon to the review group on Telegram now?' : 'Send this coupon to every subscriber on Telegram now?')) return;
+  try { const r = await api(`/api/coupons/${encodeURIComponent(b.dataset.site)}/${encodeURIComponent(b.dataset.code)}/send`, 'POST'); toast(`Post #${r.alert_id} is on its way`); render(); }
+  catch (e) { toast(e.message); }
 }
 async function productPage(id) {
   const d = await api('/api/products/' + id), p = d.product, s = d.stats;
