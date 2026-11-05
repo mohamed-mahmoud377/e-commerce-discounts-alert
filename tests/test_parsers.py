@@ -838,3 +838,214 @@ def test_hardwaremarket_categories_deals_lane_and_block(monkeypatch):
     with pytest.raises(Blocked, match="HTTP 403"):
         site.fetch_page(Slice.from_key("category:all"), 1)
     assert len(urls) == 2
+
+
+def test_raya_products():
+    from deals.sites.raya_eg import build_query, parse_products
+    result = parse_products(fixture_json("raya_tvs.json.gz")["data"], 1)
+    assert result.total == 70 and not result.has_next and len(result.listings) == 70
+    by_sku = {x.sku: x for x in result.listings}
+    jac = by_sku["50JB734-Teba HA"]
+    assert (jac.price, jac.list_price, jac.list_price_kind, jac.in_stock, jac.brand, jac.stock_left) == (
+        2019300, 2524125, "list", True, "JAC", 1)
+    assert jac.url == "https://www.rayashop.com/en/jac-50-inch-4k-uhd-smart-led-tv-50jb734"
+    assert by_sku["58US1500E"].brand == "TORNADO"
+    query = build_query(Slice("category", "534", 3000, None), 2)
+    assert 'category_id: {eq: "534"}, price: {from: "3000"}' in query and "currentPage: 2" in query
+    assert 'search: "lg tv", filter: {price: {to: "9000"}}' in build_query(Slice("search", "lg tv", None, 9000), 1)
+
+
+def test_raya_skips_prebooking_deposits():
+    """Ten 'Pre Booking' phones at exactly 10,000 EGP: the shop counts them, we don't record them."""
+    from deals.sites.raya_eg import parse_products
+    result = parse_products(fixture_json("raya_deposits.json.gz")["data"], 1)
+    assert result.total == 10 and result.listings == []
+
+
+def _response(status_code, body, content_type="application/json"):
+    class Response:
+        def __init__(self):
+            self.status_code, self._body = status_code, body
+            self.headers = {"content-type": content_type}
+            self.text = json.dumps(body)
+
+        def json(self):
+            return self._body
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise RuntimeError(f"HTTP {self.status_code}")
+    return Response()
+
+
+def test_raya_unknown_category_and_block(monkeypatch):
+    from deals.models import Blocked, UnknownTarget
+    from deals.sites.raya_eg import RayaEG
+    site = RayaEG()
+    answers = [_response(200, {"data": {"products": {"total_count": 0, "items": []}, "category": []}}),
+               _response(403, {}), _response(200, {"errors": [{"message": "Cannot query field"}]})]
+    monkeypatch.setattr(site._session, "post", lambda *a, **k: answers.pop(0))
+    with pytest.raises(UnknownTarget):
+        site.fetch_page(Slice("category", "99999"), 1)
+    with pytest.raises(Blocked):
+        site.fetch_page(Slice("category", "534"), 1)
+    with pytest.raises(ValueError, match="API changed"):
+        site.fetch_page(Slice("category", "534"), 1)
+    with pytest.raises(UnknownTarget):  # not a number: no request at all
+        site.fetch_page(Slice("category", "tvs"), 1)
+    with pytest.raises(UnknownTarget):
+        site.fetch_page(Slice("deals", "534"), 1)
+
+
+def test_vodafone_products():
+    from deals.sites.vodafone_eg import VodafoneEG, parse_products, search_url
+    result = parse_products(fixture_json("vodafone_phones.json.gz"))
+    assert result.total == 136 and not result.has_next and len(result.listings) == 136
+    assert all(x.in_stock for x in result.listings)  # only what is in stock is asked for
+    by_sku = {x.sku: x for x in result.listings}
+    # a phone with no `sku` in the JSON is still read: the key is the product's id
+    bundle = by_sku["01K05CP63M0QP100468WQJ0YWS"]
+    assert (bundle.title, bundle.price, bundle.list_price, bundle.list_price_kind) == (
+        "HONOR X9C Smart + Earbuds X6 - White", 1445000, None, None)
+    a07 = by_sku["01M4N5VZ7SXFV91AQK9YWV1K33"]
+    assert a07.url == "https://eshop.vodafone.com.eg/en/prod/samsung-galaxy-a07s-4g-64gb" and a07.brand == "Samsung"
+    assert any(x.list_price and x.list_price_kind == "list" and x.list_price > x.price for x in result.listings)
+    url = search_url("/smart-phones", 3)
+    assert "%2Fsmart-phones" in url and "page=2" in url and "hideOutOfStock" in url and "sort=sku%2Casc" in url
+    assert VodafoneEG()._session is not None
+
+
+def test_vodafone_unknown_category_and_block(monkeypatch):
+    from deals.models import Blocked, UnknownTarget
+    from deals.sites.vodafone_eg import VodafoneEG
+    site = VodafoneEG()
+    answers = [_response(404, {}), _response(403, {})]
+    monkeypatch.setattr(site._session, "get", lambda *a, **k: answers.pop(0))
+    with pytest.raises(UnknownTarget):
+        site.fetch_page(Slice("category", "nope"), 1)
+    with pytest.raises(Blocked):
+        site.fetch_page(Slice("category", "tv"), 1)
+    with pytest.raises(UnknownTarget):
+        site.fetch_page(Slice("search", "tv"), 1)
+
+
+def test_dokkantech_products():
+    from deals.sites.dokkantech_eg import parse_products
+    result = parse_products(fixture_json("dokkantech_keyboards.json.gz"), 54)
+    assert result.total == 54 and not result.has_next and len(result.listings) == 68
+    by_sku = {x.sku: x for x in result.listings}
+    assert all(x.site == "dokkantech_eg" for x in result.listings)
+    legion = by_sku["8848478568597"]
+    assert (legion.price, legion.list_price, legion.list_price_kind, legion.brand) == (449900, 499900, "list", "Legion")
+    assert legion.url == ("https://www.dokkantech.com/products/"
+                          "lenovo-legion-k510-mini-pro-gaming-mechanical-keyboard-arabic-english")
+    # "Box" looks like packaging but is a price: each box is its own listing, the sold-out one stays visible
+    asia, mena = by_sku["8634306953365:asia-box-english"], by_sku["8634306953365:mena-box-arabic"]
+    assert (asia.price, asia.in_stock, mena.price, mena.in_stock) == (449900, True, 499900, False)
+    assert "?variant=" in asia.url
+
+
+def test_dokkantech_unknown_collection_and_block(monkeypatch):
+    from deals.models import Blocked, UnknownTarget
+    from deals.sites.dokkantech_eg import DokkanTechEG
+    site = DokkanTechEG()
+    answers = [_response(404, {}), _response(430, {}), _response(200, {}, "text/html")]
+    monkeypatch.setattr(site._session, "get", lambda *a, **k: answers.pop(0))
+    with pytest.raises(UnknownTarget):
+        site.fetch_page(Slice("category", "nope"), 1)
+    with pytest.raises(Blocked):
+        site.fetch_page(Slice("category", "mouse"), 1)
+    with pytest.raises(Blocked):  # a challenge page is not JSON
+        site.fetch_page(Slice("category", "mouse"), 2)
+    with pytest.raises(UnknownTarget):
+        site.fetch_page(Slice("search", "mouse"), 1)
+
+
+def test_etisal_products():
+    from deals.sites.etisal_eg import parse_products, query
+    result = parse_products(fixture_json("etisal_wearables.json.gz"), 1)
+    assert result.total == 53 and result.has_next and len(result.listings) == 10
+    bip = {x.sku: x for x in result.listings}["7086"]
+    assert (bip.price, bip.list_price, bip.list_price_kind, bip.in_stock, bip.brand, bip.stock_left) == (
+        449900, 655900, "list", True, "Amazfit", 1)
+    assert bip.gtins == ("6978099570152",)  # its SKU is the barcode
+    assert bip.url == "https://etisalstore.com/en/amazfit-bip-max-smart-watch-207-inch-amoled-carbon-gray"
+    assert not parse_products(fixture_json("etisal_wearables.json.gz"), 6).has_next  # 6 pages
+    assert query(Slice("category", "1372", 1200, 2000), 3) == "page=3&category_id=1372&price_from=1200&price_to=2000"
+    assert query(Slice("category", "s1382"), 1) == "page=1&sub_categories%5B%5D=1382"
+
+
+def test_etisal_token_unknown_category_and_block(monkeypatch):
+    from deals.models import Blocked, UnknownTarget
+    from deals.sites.etisal_eg import EtisalEG
+    site = EtisalEG()
+    calls = []
+    home = _response(200, {"data": [{"id": 1081}]})
+    products = _response(200, {"data": {"total": 0, "total_products": 0, "products": []}})
+
+    def get(url, **kw):
+        calls.append((url, kw["headers"].get("authorization")))
+        if "initialize" in url:
+            r = _response(200, {})
+            r.text = '{"token":"eyJabc.def.ghi"}'
+            return r
+        return home if "home/categories" in url else products
+
+    monkeypatch.setattr(site._session, "get", get)
+    assert site.fetch_page(Slice("category", "1081"), 1).total == 0
+    assert site.fetch_page(Slice("category", "s1382"), 1).total == 0  # sub-categories can't be checked
+    assert sum("initialize" in c[0] for c in calls) == 1  # one guest customer per session
+    assert calls[-1][1] == "Bearer eyJabc.def.ghi"
+    with pytest.raises(UnknownTarget):
+        site.fetch_page(Slice("category", "99999"), 1)
+    with pytest.raises(UnknownTarget):
+        site.fetch_page(Slice("category", "laptops"), 1)
+    with pytest.raises(UnknownTarget):
+        site.fetch_page(Slice("deals", "1081"), 1)
+    monkeypatch.setattr(site._session, "get", lambda *a, **k: _response(403, {}))
+    with pytest.raises(Blocked):
+        site.fetch_page(Slice("category", "1081"), 1)
+
+
+def test_orange_products():
+    from deals.sites.orange_eg import parse_products
+    result = parse_products(fixture_json("orange_tablets.json.gz"), 1)
+    assert result.total == 17 and not result.has_next and len(result.listings) == 17
+    by_sku = {x.sku: x for x in result.listings}
+    pro = by_sku["289"]  # sold out ("غير متوفر" on its page) but still listed with its price
+    assert (pro.title, pro.price, pro.list_price, pro.list_price_kind, pro.in_stock) == (
+        "iPad Pro 11 Inch M5", 6199900, 7099900, "list", False)
+    assert pro.url == "https://eshop.orange.eg/en/tablets/p/ipad-pro-11-inch-m5"
+    assert (by_sku["507"].price, by_sku["507"].list_price, by_sku["507"].in_stock) == (5649900, None, True)
+    assert sum(not x.in_stock for x in result.listings) == 3
+
+
+def test_orange_empty_unknown_and_block(monkeypatch):
+    from deals.models import Blocked, UnknownTarget
+    from deals.sites.orange_eg import OrangeEG
+    site = OrangeEG()
+    calls = []
+
+    def http(path, headers, data=None):
+        calls.append(path)
+        if path == "/Auth/token":
+            return 200, {"Data": {"AccessToken": "tok"}}
+        if "seName=nope" in path:
+            return 400, {"Success": False, "Message": "Not Found => Category details", "Data": None}
+        if "GetCategoryDetails" in path:
+            return 200, {"Data": {"Id": 1033}}
+        return 400, {"Success": False, "Message": "Not Found => Homepage Feature products", "Data": None}
+
+    monkeypatch.setattr(site, "_http", http)
+    empty = site.fetch_page(Slice("category", "smart-phones"), 1)
+    assert (empty.total, empty.listings, empty.has_next) == (0, [], False)  # empty, not an alarm
+    assert site.fetch_page(Slice("category", "smart-phones"), 2).total is None  # past the end
+    assert sum("GetCategoryDetails" in c for c in calls) == 1 and sum(c == "/Auth/token" for c in calls) == 1
+    with pytest.raises(UnknownTarget):
+        site.fetch_page(Slice("category", "nope"), 1)
+    with pytest.raises(UnknownTarget):
+        site.fetch_page(Slice("search", "phone"), 1)
+    monkeypatch.setattr(site, "_token", None)
+    monkeypatch.setattr(site, "_http", lambda *a, **k: (200, {"Data": {}}))
+    with pytest.raises(Blocked):  # no token: refused
+        site.fetch_page(Slice("category", "x"), 1)

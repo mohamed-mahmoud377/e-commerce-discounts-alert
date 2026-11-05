@@ -9,7 +9,7 @@ the science behind the rules below).
 
 ## Overview
 
-The system crawls whole categories on amazon.eg, noon.com (Egypt), jumia.com.eg, cairosales.com, 2b.com.eg, btech.com, dream2000.com, carrefouregypt.com, dubaiphone.net, hardwaremarket.net and Amazon Now (amazon.eg's 20-minute store), stores every product's price
+The system crawls whole categories on amazon.eg, noon.com (Egypt), jumia.com.eg, cairosales.com, 2b.com.eg, btech.com, dream2000.com, carrefouregypt.com, dubaiphone.net, hardwaremarket.net, rayashop.com, eshop.vodafone.com.eg, dokkantech.com, etisalstore.com, eshop.orange.eg and Amazon Now (amazon.eg's 20-minute store), stores every product's price
 history, and sends an Arabic Telegram alert when a price is genuinely low compared with that product's
 own history. It tracks about 50,000 products on Amazon and noon plus about 14,000 on Jumia, in 19 groups: TVs, refrigerators, air conditioners, gaming consoles,
 phones, tablets, laptops, desktops, monitors, PC components, headphones, wearables (smartwatches and fitness
@@ -36,7 +36,7 @@ crawling from their own internet connections.
 | --- | --- | --- |
 | Coordinator (`deals serve`) | Droplet 207.154.206.127 | Owns the SQLite database, hands out crawl jobs, stores results, detects deals, runs the Telegram bot, watches for problems, takes daily backups |
 | Worker (`deals worker`) | Your Mac, the droplet, any friend's PC | Asks for a job, downloads the shop pages, sends the products back. Holds no database |
-| Site adapters (`sites/amazon_eg.py`, `sites/noon_eg.py`, `sites/jumia_eg.py`, `sites/cairosales_eg.py`, `sites/twob_eg.py`, `sites/btech_eg.py`, `sites/dream2000_eg.py`, `sites/carrefour_eg.py`, `sites/dubaiphone_eg.py`, `sites/hardwaremarket_eg.py`) | Inside each worker | Know how to fetch and read one listing page of each shop |
+| Site adapters (`sites/amazon_eg.py`, `sites/noon_eg.py`, `sites/jumia_eg.py`, `sites/cairosales_eg.py`, `sites/twob_eg.py`, `sites/btech_eg.py`, `sites/dream2000_eg.py`, `sites/carrefour_eg.py`, `sites/dubaiphone_eg.py`, `sites/hardwaremarket_eg.py`, `sites/raya_eg.py`, `sites/vodafone_eg.py`, `sites/dokkantech_eg.py`, `sites/etisal_eg.py`, `sites/orange_eg.py`) | Inside each worker | Know how to fetch and read one listing page of each shop |
 | Telegram bot (@Jerrys_deals_bot) | Inside the coordinator | Sends deal alerts to approved subscribers and system warnings to you |
 
 Workers only make outgoing requests to the coordinator, so nothing needs to be opened on your Mac or on a
@@ -45,7 +45,7 @@ Jumia, Cairo Sales, 2B and B.TECH's API always); the droplet's worker is a fallb
 
 ```mermaid
 flowchart TB
-    shops["amazon.eg, noon.com, jumia.com.eg,<br/>cairosales.com, 2b.com.eg, btech.com, dream2000.com,<br/>carrefouregypt.com, dubaiphone.net, hardwaremarket.net<br/>category listing pages and APIs"]
+    shops["amazon.eg, noon.com, jumia.com.eg,<br/>cairosales.com, 2b.com.eg, btech.com, dream2000.com,<br/>carrefouregypt.com, dubaiphone.net, hardwaremarket.net,<br/>rayashop.com, eshop.vodafone.com.eg, dokkantech.com,<br/>etisalstore.com, eshop.orange.eg<br/>category listing pages and APIs"]
     shops --> mac["Your Mac (launchd)<br/>all five shops<br/>does most of the crawling"]
     shops --> dw["Droplet worker<br/>amazon only<br/>fallback: often refused"]
     shops --> fr["Friend's PC (optional)<br/>any shop it can reach"]
@@ -191,7 +191,7 @@ Adding a friend's computer as a worker (more crawling capacity from another conn
 1. On the server, create a token with `deals token`, add it under `[workers]` as `ahmed = "..."`, restart
    the coordinator.
 2. On their computer: clone the repo, do setup steps 1 and 2, then run
-   `DEALS_COORDINATOR=http://207.154.206.127:8787 DEALS_TOKEN=... DEALS_SITES=noon_eg,amazon_eg,jumia_eg,cairosales_eg,2b_eg,btech_eg,dream2000_eg,carrefour_eg,dubaiphone_eg,hardwaremarket_eg,amazon_now_eg .venv/bin/deals worker`.
+   `DEALS_COORDINATOR=http://207.154.206.127:8787 DEALS_TOKEN=... DEALS_SITES=noon_eg,amazon_eg,jumia_eg,cairosales_eg,2b_eg,btech_eg,dream2000_eg,carrefour_eg,dubaiphone_eg,hardwaremarket_eg,amazon_now_eg,raya_eg,vodafone_eg,dokkantech_eg,etisal_eg,orange_eg .venv/bin/deals worker`.
 
 Running everything on one machine without the server (for experiments): `cp config.example.toml config.toml`,
 then `.venv/bin/deals local` starts a coordinator and a worker in one process with a local database.
@@ -279,6 +279,22 @@ and `_fields` trims a page from 4 MB to 100 KB. Cloudflare passes any home conne
 droplet. 98% of products show a crossed-out "regular" price, so it is only the shop's claim. Details:
 [HARDWAREMARKET.md](HARDWAREMARKET.md).
 
+**rayashop.com.** Raya is a marketplace on Magento: a public GraphQL API on a Fastly host, 100 products a page, an exact
+count (stopping at 9,999), a price filter on the current price, sold-out products hidden. It answers from the droplet too.
+Nearly everything shows a crossed-out price, often exactly the price x 1.25, so it is not evidence. [RAYA.md](RAYA.md).
+
+**eshop.vodafone.com.eg.** A catalog search API, 921 products in stock of 4,085 listed, and no stock flag: only what is
+in stock is asked for. It resets every second HTTP/2 request, so the session speaks HTTP/1.1. [VODAFONE.md](VODAFONE.md).
+
+**dokkantech.com.** Shopify like Dream 2000, tech accessories. Its collection counts are wrong in both directions, and
+its "Box" option is a price, so each box is a listing. [DOKKANTECH.md](DOKKANTECH.md).
+
+**etisalstore.com.** An Angular shop with a guest-token API, 10 products a page, 478 products, most with a barcode as
+SKU; 95% show a discount that "ends" in 2027. [ETISAL.md](ETISAL.md).
+
+**eshop.orange.eg.** nopCommerce with a guest-token API, 100 products a page. Its API closes the connection on
+`curl_cffi` whatever it impersonates, so this one adapter uses urllib. [ORANGE.md](ORANGE.md).
+
 **Amazon Now.** amazon.eg's 20-minute grocery store (from July 2026) is the ordinary amazon.eg search under its own
 browse root, node `211761638031`, so the amazon_eg parser and cookies serve it unchanged. It is a shop of its own
 because an ASIN on Amazon Now is a separate offer at its own price (Juhayna 6×1 L: EGP 275.95 from Amazon, 289.75
@@ -301,6 +317,11 @@ delivery location: the Mac's is served, the droplet's lists nothing. Details: [A
 | dubaiphone.net | Works with Chrome's fingerprint; plain curl gets Vercel's challenge (tested 30 October) | Always refused (Vercel challenge, HTTP 429, any fingerprint) |
 | hardwaremarket.net | Works, plain curl too (tested 30 October) | Always refused (Cloudflare challenge, HTTP 403) |
 | 2b.com.eg | Works with Chrome's fingerprint, HTML and GraphQL (tested 27 October) | Always refused (Cloudflare challenge) |
+| rayashop.com | Works (tested 5 November) | Works: the API is on Fastly |
+| eshop.vodafone.com.eg | Works over HTTP/1.1 (tested 5 November) | Works |
+| dokkantech.com | Works, plain curl too (tested 5 November) | Works (Shopify) |
+| etisalstore.com | Works with Chrome's fingerprint (tested 5 November) | Works |
+| eshop.orange.eg | Works with urllib or plain curl, never `curl_cffi` (tested 5 November) | Works, same clients |
 | Amazon Now (amazon.eg) | Works, the default delivery location is served (tested 3 November) | Pages load but list nothing: the droplet's location has no Amazon Now store |
 
 **What is read from each product card** (no extra requests):
@@ -454,6 +475,8 @@ crawled like any other slice (same group, same interval and cap, same filters):
 | Cairo Sales, 2B | none found | | |
 | Carrefour | `filter=deal:true` ("Today's Deals") exists but is not used: every Carrefour root is a few pages, so the whole root costs what its deal feed would | | TVs 64 of 168 |
 | Hardware Market | `deals:<category id>` (the Store API sorted by last modified, one page of 50; a price edit moves a product to the top) | the category's most recently changed products | 50 a request |
+| Raya | not used: offer categories exist (`flash-sale` 1437, `daily-deals-offers` 3722) but would need a watch group of their own | | 22, 106 |
+| Vodafone, Dokkan Tech, Etisal, Orange | none needed: small catalogues, passes of a minute or two | | |
 | Dubai Phone | none needed: every root is one or two pages, read past Vercel's 10-minute cache (`flash-sale` holds 2 earbuds under every minimum) | | |
 
 A product seen on a deal feed is the same product as on its category page (same key), so a drop seen there
@@ -818,8 +841,8 @@ Above each deal alert comes a photo of the product's own page on the shop, in Ar
 the price block (price, discount, crossed-out price) and the seller line ("shipped and sold by Amazon.eg"),
 cropped to the title, the main image and the boxes: a friend sees the deal as the shop shows it. Every shop
 has its boxes (`SPECS` in `shots.py`, 3 Nov 2026). The seller box is there where the shop names one: Amazon,
-Amazon Now, noon, Jumia, B.TECH and Carrefour (marketplaces); 2B, Cairo Sales, Dubai Phone, Hardware Market
-and Dream 2000 sell their own stock and get the price box alone.
+Amazon Now, noon, Jumia, B.TECH, Carrefour and Raya (marketplaces); 2B, Cairo Sales, Dubai Phone, Hardware Market,
+Dream 2000, Vodafone, Dokkan Tech, Etisal and Orange sell their own stock and get the price box alone.
 
 | Shop | Page | Price box | Seller box | Context | Time (Mac) |
 |---|---|---|---|---|---|
@@ -833,6 +856,11 @@ and Dream 2000 sell their own stock and get the price box alone.
 | hardwaremarket_eg | English only | `.summary p.price` | | title, image | 8 s |
 | dream2000_eg | no `/en`, `?variant=` | `[id^="Price__"][id$="__main"]` | | title, image | 8 s |
 | carrefour_eg | `/mafegy/ar/` | the row around `div.force-ltr` | the bold seller name card | title, image | 5 s |
+| raya_eg | `/ar/` | `div.ProductInfoColumn div.justify-between:has(span.currency)` | `ul:has(a[href*="/seller/"])` | title, image | 5 s |
+| vodafone_eg | `/ar/prod/` | `vf-product-main-info .price-wrapper` | | title, image; a page with CSS `zoom` (frames divide by it) | 3 s |
+| dokkantech_eg | `/ar/` | `.product-info__price` | | title, image | 3 s |
+| etisal_eg | `/ar/` | `div.product-detail-price` | | title, image; `settle=3` (Angular redraws the page) | 5 to 6 s |
+| orange_eg | `/ar/` | `div:has(> div > span.product-price-current)` | | title, image | 4 s |
 
 The shop details (why each selector, what loads late) are in each shop's doc and, for Amazon and noon, in
 docs/CATEGORIES.md. Times include starting the browser and a 2 s wait for the page's last images.

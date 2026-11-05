@@ -315,6 +315,27 @@ Mobile Accessories `4395`; `all` is the whole shop. A category includes its chil
 counts are stale (WooCommerce's cached term counts): Mouse says 259, while 795 products are tagged and 249 are in
 stock. `deals categories hardwaremarket_eg <id>` lists the children. Details: [HARDWAREMARKET.md](HARDWAREMARKET.md).
 
+## rayashop.com category ids
+
+Magento ids, `deals categories raya_eg <id>` lists the children with counts (5 Nov 2026). Mobiles & Tablets `316`: Smartphones `643`, Tablets `641`, Accessories `3110` (Smart watches `363`, Headphones `285`, Chargers `369`, Power banks `282`, Cables `284`, Screen protectors `280`, 3,599 of them).
+Televisions `533`: TVs `534`. Large Appliances `292`: ACs `298`, Refrigerators `293`, Freezers `294`, Washing machines `295`, Cookers `326`, Dishwashers `296`, Water heaters `297`, Built-in `1561`. Kitchen `3116`: Air fryers `3463`, Blenders `2148`, Mixers `356`, Processors `2200`, Coffee machines `358`, Microwaves `313`, Ovens `335`, Kettles `334`, Grills `372`, Sandwich makers `371`. Small `300`: Irons `302`, Vacuums `301`, Dispensers `305`, Filters `359`, Fans `303`. Laptops & PCs `272`: Laptops `270`, Desktops `271`, Accessories `3121` (Monitors `273`, Keyboards `330`, Mice `329`), Storage `3124`, Hardware `4677`. Electronics `263`: Consoles `338`, Joysticks `757`, Gaming accessories `346`. Offers: Flash sale `1437`, Daily deals `3722`, Mega deals `4771`. Details: [RAYA.md](RAYA.md).
+
+## eshop.vodafone.com.eg category names
+
+URL names, from `/ecommerce/api/catalog-browse/main-menu`: `smart-phones`, `tv`, `soundbars`, `laptops`, `tablets`, `gaming` (`consoles`, `monitors`, `controllers`, `gaming-accessories` with `mouse`, `keyboard`, `headsets`; `games`), `headphones`, `true-wireless`, `in-ear`, `portable-speakers`, `wearables`, `chargers`, `powerbanks`, `cables`, `air-conditioners`, `water-dispenser`, `home-appliances`, `smart-home`, `deals`. Details: [VODAFONE.md](VODAFONE.md).
+
+## dokkantech.com collection handles
+
+Every one: `https://www.dokkantech.com/collections.json?limit=250`. Sample before use: `wearables-2` is headphones. `mouse`, `keyboards`, `gaming-mouses`, `gaming-keyboards`, `gaming-gamepad`, `wearables-2` (audio), `wearables` (watches), `monitors-tv`, `computer-component`, `cooling`, `data-storage`, `charger`, `power-banks`, `car-charger`. Details: [DOKKANTECH.md](DOKKANTECH.md).
+
+## etisalstore.com category ids
+
+From `/api/customer/home/categories`: Mobiles & Tablets `1081`, Mobile Accessories `1283`, Portable Audio `1334`, Wearables `1372`, Computing `1183`, Televisions `1160`, ACs `1525`, Food Preparation `1531`, Small Appliances `1570`, Large Appliances `1544`, Smart Home `1324`, Home Appliances `1460`, Car `1633`, Electronics `1643`. Sub-categories are by brand and need `s` in front: tablets `s1382`, `s1383`; monitors `s1388`. A product's `category.sub_categories` names them. Details: [ETISAL.md](ETISAL.md).
+
+## eshop.orange.eg category names
+
+From `/en/sitemap.xml`, with ids from `GetCategoryDetails`: `smart-phones` 1033, `accessories` 1034 (`chargers-cables` 1058, `power-banks` 1062, `headphones-earbuds` 1059, `speakers` 1063, `wearables` 1065, `gaming-accessories` 1066), `home-appliances` 1042 (`small-appliances` 1075, `large-appliances` 1076), `smart-tvs` 1039, `laptops` 1038, `tablets` 1037, `gaming-world` 1041 (`consoles` 1073, `games` 1074), `computer-supplies` 1035 (`monitors` 1069, `mouse` 1077, `printers` 1070), `special-offers` 1086 (really air conditioners), `renewed-devices` 1036, `black-friday` 1085. Details: [ORANGE.md](ORANGE.md).
+
 ## Amazon Now browse nodes
 
 The Amazon Now root is `211761638031`; the adapter puts it in front of every query, so the children are ordinary

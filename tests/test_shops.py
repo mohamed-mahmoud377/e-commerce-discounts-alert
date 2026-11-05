@@ -39,6 +39,11 @@ LISTING_PAGES = {
     "dubaiphone_eg": lambda: _parse("dubaiphone_eg", "parse_listing")(fixture_text("dubaiphone_mobiles.rsc.gz")),
     "hardwaremarket_eg": lambda: _parse("hardwaremarket_eg", "parse_products")(
         fixture_json("hardwaremarket_headsets.json.gz"), None, None, 1),
+    "raya_eg": lambda: _parse("raya_eg", "parse_products")(fixture_json("raya_tvs.json.gz")["data"], 1),
+    "vodafone_eg": lambda: _parse("vodafone_eg", "parse_products")(fixture_json("vodafone_phones.json.gz")),
+    "dokkantech_eg": lambda: _parse("dokkantech_eg", "parse_products")(fixture_json("dokkantech_keyboards.json.gz")),
+    "etisal_eg": lambda: _parse("etisal_eg", "parse_products")(fixture_json("etisal_wearables.json.gz"), 1),
+    "orange_eg": lambda: _parse("orange_eg", "parse_products")(fixture_json("orange_tablets.json.gz"), 1),
 }
 
 
@@ -95,6 +100,6 @@ def test_every_shop_is_in_the_worker_script_and_setup_docs():
 
 def test_a_shop_filter_can_be_a_kind():
     assert expand("") is None and expand(None) is None and expand("noon_eg") == ["noon_eg"]
-    assert expand("kind:marketplace") == ["amazon_eg", "noon_eg", "jumia_eg"]
+    assert expand("kind:marketplace") == ["amazon_eg", "noon_eg", "jumia_eg", "raya_eg"]
     assert set(expand("kind:grocery")) == {"carrefour_eg", "amazon_now_eg"}
     assert expand("kind:nope") == []

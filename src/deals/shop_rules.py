@@ -121,6 +121,46 @@ RULES: tuple[ShopRule, ...] = (
         "Sessions Amazon distrusts get pages of random products with no result count",
         "Such a page is treated as a block (fresh cookies, then the IP is paused), not as products",
         "26 Oct 2026", "26 Oct 2026", where="sites/amazon_eg.py, worker.py"),
+    ShopRule(
+        "raya-no-new-listing-alerts", "raya_eg", "no_claim_alerts",
+        "Nearly every product shows a crossed-out price, most often exactly the price x 1.25",
+        "No new-listing alerts from the crossed-out price; Raya's products alert only from our own history",
+        "5 Nov 2026: a crossed-out price on 295 of 295 TVs and 290 of 300 phones, median 20% off; 37 of 200 TVs at "
+        "exactly 20% (Rivacase backpack 1,000 'was' 1,250; iPhone 18 Pro Max 129,999 'was' 162,498.75, a price "
+        "nobody would set)",
+        "5 Nov 2026"),
+    ShopRule(
+        "etisal-no-new-listing-alerts", "etisal_eg", "no_claim_alerts",
+        "Nearly every product shows a crossed-out price, with a discount that 'ends' on 31 Dec 2027",
+        "No new-listing alerts from the crossed-out price; Etisal's products alert only from our own history",
+        "5 Nov 2026: a discount price on 452 of its 478 products (95%), mean 21% off, each discount_end_date "
+        "2027-12-31 or 2026-12-30",
+        "5 Nov 2026"),
+    ShopRule(
+        "raya-prebooking-deposits", "raya_eg", "note",
+        "'Pre Booking' products are priced at the deposit: 10,000 EGP for a Galaxy Z Fold8 Ultra",
+        "The adapter skips them: a deposit is not a price, and the real listing replacing it would look like a change",
+        "5 Nov 2026: 10 'Pre Booking - Samsung Galaxy Z Fold8' SKUs at exactly 10,000 EGP among the phones",
+        "5 Nov 2026", where="sites/raya_eg.py"),
+    ShopRule(
+        "vodafone-only-in-stock-read", "vodafone_eg", "note",
+        "Without hideOutOfStock the store lists 4,085 products with old prices and no stock flag; 921 are in stock",
+        "The adapter asks for what is in stock only, as the site does: a product that sells out disappears",
+        "5 Nov 2026: 52 of 395 TVs and 136 of 429 phones are in stock",
+        "5 Nov 2026", where="sites/vodafone_eg.py"),
+    ShopRule(
+        "orange-sizes-hide-behind-one-price", "orange_eg", "note",
+        "A product with several storage sizes lists only its cheapest price, while its page opens on any size",
+        "Orange's phones, tablets, laptops and consoles aren't watched until each size is read on its own",
+        "5 Nov 2026: Redmi Note 15 5G listed at 17,999 (8/256 GB), its page opens at 23,999 (12/512 GB). Sizes at "
+        "different prices on 53 of 98 phones, 9 of 17 tablets, 1 of 12 laptops; 0 of 28 TVs",
+        "5 Nov 2026", where="config.example.toml"),
+    ShopRule(
+        "dokkantech-wrong-counts", "dokkantech_eg", "note",
+        "A collection's products_count is not what its products.json lists",
+        "The adapter pages until a short page and never relies on the count; expect last_count != expected_total",
+        "5 Nov 2026: 'all' counts 590 and lists 1,612; 'audio' counts 268 and lists 205; 'mouse' counts 124 and lists 124",
+        "5 Nov 2026", where="sites/dokkantech_eg.py"),
     *(ShopRule(f"{site.replace('_eg', '').replace('_', '-')}-low-stock", site, "low_stock_noise",
                "'Only N left' is shown on so many listings that it proves nothing",
                "Never counts as evidence for a new listing's discount", why, found, where="pricing.py")
@@ -129,7 +169,9 @@ RULES: tuple[ShopRule, ...] = (
           ("amazon_now_eg", "3 Nov 2026: Amazon's own stock counter, like amazon.eg", "3 Nov 2026"),
           ("jumia_eg", "26 Oct 2026: 45% of cards say 3 or fewer", "26 Oct 2026"),
           ("2b_eg", "27 Oct 2026: 'only N left' on 57% of its TVs", "27 Oct 2026"),
-          ("carrefour_eg", "28 Oct 2026: low stock of 1 to 3 on 42% of its TVs", "28 Oct 2026"))),
+          ("carrefour_eg", "28 Oct 2026: low stock of 1 to 3 on 42% of its TVs", "28 Oct 2026"),
+          ("raya_eg", "5 Nov 2026: 'only 3 or fewer left' on 64% of its TVs, 29% of its phones", "5 Nov 2026"),
+          ("etisal_eg", "5 Nov 2026: 3 or fewer left on 57% of its phones, 37% of its accessories", "5 Nov 2026"))),
 )
 
 BY_ID = {r.id: r for r in RULES}

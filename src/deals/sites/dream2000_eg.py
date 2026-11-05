@@ -63,11 +63,13 @@ class Dream2000EG:
         return r.json()
 
 
-def parse_products(data: dict, total: int | None = None) -> PageResult:
+def parse_products(data: dict, total: int | None = None, site: str = Dream2000EG.name, base: str = BASE,
+                   ignored: set[str] = IGNORED_OPTIONS) -> PageResult:
+    """A page of any Shopify shop's products.json: Dokkan Tech reads its pages with this too."""
     products = data.get("products") or []
     listings: dict[str, Listing] = {}
     for product in products:
-        for listing in product_listings(product):
+        for listing in product_listings(product, site, base, ignored):
             listings.setdefault(listing.sku, listing)
     return PageResult(
         listings=list(listings.values()),
@@ -76,10 +78,11 @@ def parse_products(data: dict, total: int | None = None) -> PageResult:
     )
 
 
-def product_listings(product: dict) -> list[Listing]:
+def product_listings(product: dict, site: str = Dream2000EG.name, base: str = BASE,
+                     ignored: set[str] = IGNORED_OPTIONS) -> list[Listing]:
     """One listing per group of variants that differ in something other than colour."""
     options = product.get("options") or []
-    kept = [i for i, o in enumerate(options) if (o.get("name") or "").strip().lower() not in IGNORED_OPTIONS]
+    kept = [i for i, o in enumerate(options) if (o.get("name") or "").strip().lower() not in ignored]
     groups: dict[tuple[str, ...], list[dict]] = {}
     for variant in product.get("variants") or []:
         values = tuple((variant.get(f"option{i + 1}") or "").strip() for i in kept)
@@ -92,11 +95,11 @@ def product_listings(product: dict) -> list[Listing]:
         compare = _minor(cheapest.get("compare_at_price"))
         suffix = " / ".join(v for v in values if v)
         out.append(Listing(
-            site=Dream2000EG.name,
+            site=site,
             sku=str(product["id"]) + (f":{_slug(suffix)}" if suffix else ""),
             title=(product.get("title") or "").strip() + (f" ({suffix})" if suffix else ""),
             # the page opens on this group's variant (its price, for the link and the alert's screenshot)
-            url=f"{BASE}/products/{product.get('handle', '')}"
+            url=f"{base}/products/{product.get('handle', '')}"
                 + (f"?variant={cheapest['id']}" if suffix and cheapest.get("id") else ""),
             price=price,
             # Shopify's "compare at" price is the shop's own claim (set on 83% of the catalogue).

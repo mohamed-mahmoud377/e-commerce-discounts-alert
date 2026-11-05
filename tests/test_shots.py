@@ -39,6 +39,11 @@ SAVED = [
     ("hardwaremarket_eg", "hardwaremarket_product_rendered.html.gz", ("1.999,00", "2.999,00"), None),
     ("dream2000_eg", "dream2000_product_rendered.html.gz", ("25,499.00", "28,900.00"), None),
     ("carrefour_eg", "carrefour_product_rendered.html.gz", ("6,849", "16,999.00", "خصم 60%"), "Electro Zone"),
+    ("raya_eg", "raya_product_rendered.html.gz", ("4,555", "5,694", "1,139"), "Raya Shop"),
+    ("vodafone_eg", "vodafone_product_rendered.html.gz", ("50,999", "55,799"), None),
+    ("dokkantech_eg", "dokkantech_product_rendered.html.gz", ("1,349",), None),
+    ("etisal_eg", "etisal_product_rendered.html.gz", ("20,799", "27,579", "6,780"), None),
+    ("orange_eg", "orange_product_rendered.html.gz", ("25,655",), None),
 ]
 
 

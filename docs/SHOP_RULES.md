@@ -34,7 +34,13 @@ even if one were somehow stored.
 | Jumia | `jumia-seller-crossed-out` | note | The crossed-out price is set by the seller (88% of cards) | Treated as an RRP-like claim | 26 Oct 2026 |
 | noon | `noon-sellers` | note | One product, several sellers at very different prices | Each seller's offer is its own product (`SKU@seller`); no alert while another seller is cheaper | 26 Oct 2026 |
 | amazon.eg | `amazon-decoy-pages` | note | Distrusted sessions get pages of random products with no result count | Treated as a block | 26 Oct 2026 |
-| amazon.eg, Amazon Now, Jumia, 2B, Carrefour | `*-low-stock` | low_stock_noise | "Only N left" on 42% to 57% of listings | Not evidence | 25 to 28 Oct, 3 Nov 2026 |
+| amazon.eg, Amazon Now, Jumia, 2B, Carrefour, Raya, Etisal | `*-low-stock` | low_stock_noise | "Only N left" on 37% to 64% of listings | Not evidence | 25 to 28 Oct, 3 Nov 2026 |
+| Raya | `raya-no-new-listing-alerts` | no_claim_alerts | A crossed-out price on 97% to 100%, often exactly the price x 1.25 | No new-listing alert from it | 5 Nov 2026 |
+| Etisal | `etisal-no-new-listing-alerts` | no_claim_alerts | A "discount" on 95% of products that ends in 2027 | No new-listing alert from it | 5 Nov 2026 |
+| Raya | `raya-prebooking-deposits` | note | "Pre Booking" phones at a 10,000 EGP deposit | Skipped in the adapter | 5 Nov 2026 |
+| Vodafone | `vodafone-only-in-stock-read` | note | 4,085 listed, 921 in stock, no stock flag | Only what is in stock is asked for | 5 Nov 2026 |
+| Orange | `orange-sizes-hide-behind-one-price` | note | A product with several sizes lists its cheapest price; the page opens on any size (53 of 98 phones) | Its phones, tablets, laptops and consoles aren't watched | 5 Nov 2026 |
+| Dokkan Tech | `dokkantech-wrong-counts` | note | `products_count` wrong in both directions | Pages until a short page | 5 Nov 2026 |
 
 The evidence for each (real products and numbers) is in the `why` field of the rule and on the Rules page.
 

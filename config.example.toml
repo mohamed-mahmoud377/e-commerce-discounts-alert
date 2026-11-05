@@ -115,6 +115,26 @@ max_delay = 2.0
 min_delay = 3.0
 max_delay = 5.0
 
+[sites.raya_eg]  # Magento GraphQL API (100 products per request) on a Fastly host; works from anywhere
+min_delay = 2.0
+max_delay = 4.0
+
+[sites.vodafone_eg]  # catalog search API (200 products per request), HTTP/1.1 only; works from anywhere
+min_delay = 2.0
+max_delay = 4.0
+
+[sites.dokkantech_eg]  # Shopify collection JSON (250 products per request); works from anywhere
+min_delay = 2.0
+max_delay = 4.0
+
+[sites.etisal_eg]  # customer API (10 products per request, guest token); works from anywhere
+min_delay = 2.0
+max_delay = 4.0
+
+[sites.orange_eg]  # catalog API (100 products, about 1 MB, guest token), urllib only; works from anywhere
+min_delay = 2.0
+max_delay = 4.0
+
 # ---------------------------------------------------------------------------
 # What to track. Each [[watch]] is a product group with one root per site:
 #   amazon_eg = "category:<browse node id>"
@@ -126,6 +146,11 @@ max_delay = 5.0
 #   dream2000_eg = "category:<handle>"  (the Shopify collection handle, e.g. mobiles; no search; docs/DREAM2000.md)
 #   carrefour_eg = "category:<id>"  (the id after /c/ in the URL, case-sensitive, e.g. NFEGY4080000; docs/CARREFOUR.md)
 #   dubaiphone_eg = "category:<slug>"  (the slug after /category/, e.g. mobiles-all-2; Mac only; docs/DUBAIPHONE.md)
+#   raya_eg = "category:<id>"  (Magento's numeric id, e.g. 643 = Smartphones; "search:<words>" too; docs/RAYA.md)
+#   vodafone_eg = "category:<url name>"  (e.g. smart-phones, tv; docs/VODAFONE.md)
+#   dokkantech_eg = "category:<handle>"  (the Shopify collection handle, e.g. mouse; docs/DOKKANTECH.md)
+#   etisal_eg = "category:<id>" or "category:s<sub-category id>"  (e.g. 1081, s1382; docs/ETISAL.md)
+#   orange_eg = "category:<url name>"  (e.g. smart-phones, headphones-earbuds; docs/ORANGE.md)
 #   hardwaremarket_eg = "category:<id>"  (WooCommerce id or slug, e.g. 39 = Headsets; "deals:<id>" = its 50 most
 #                       recently modified products, a fast lane; Mac only; docs/HARDWAREMARKET.md)
 #   amazon_now_eg = "category:<browse node id>"  (amazon.eg node; the Amazon Now root 211761638031 is added to every
@@ -170,6 +195,10 @@ btech_eg = "category:tvs-projectors/televisions"
 dream2000_eg = "category:tvs"
 carrefour_eg = "category:NFEGY4080000"  # TVs & Projectors (139 TVs, projectors, mounts below the minimum)
 dubaiphone_eg = "category:tvs"
+raya_eg = "category:534"
+vodafone_eg = "category:tv"
+etisal_eg = "category:1160"
+orange_eg = "category:smart-tvs"
 
 [[watch]]
 name = "Refrigerators"
@@ -195,6 +224,7 @@ cairosales_eg = ["category:refrigerators", "category:freezers"]
 btech_eg = ["category:large-home-appliances/refrigerators", "category:large-home-appliances/deep-freezers"]
 dream2000_eg = ["category:refrigerator-and-deep-freezer", "category:deep-freezer-1"]
 carrefour_eg = ["category:NFEGY4100500", "category:NFEGY4100400"]  # fridges, freezers
+raya_eg = ["category:293", "category:294"]
 
 [[watch]]
 name = "Air conditioners"
@@ -218,6 +248,10 @@ btech_eg = "category:large-home-appliances/air-conditioners"
 dream2000_eg = "category:air-conditioners"  # "air-conditioner" was removed by the shop (4 Nov 2026)
 carrefour_eg = "category:NFEGY4040112"  # split ACs, inside Coolers, Heaters & Air Treatment
 dubaiphone_eg = "category:air-conditioner"
+raya_eg = "category:298"
+vodafone_eg = "category:air-conditioners"
+etisal_eg = "category:1525"
+orange_eg = "category:special-offers"
 
 [[watch]]
 name = "Gaming consoles"
@@ -279,6 +313,8 @@ exclude_words = ["pre-owned", "pre owned", "used ", "refurbished",  # B.TECH sel
                  "dualsense", "joy-con", "joy con", "pro controller", "portable ssd", "storage expansion",
                  "expansion card", "earbuds", "earphones", "speaker", "disc drive"]
 dubaiphone_eg = "category:ps-consoles"  # one PS5; "games" mixes it with e-scooters
+raya_eg = "category:338"
+vodafone_eg = "category:consoles"
 
 [[watch]]
 name = "Phones"
@@ -302,6 +338,9 @@ btech_eg = "category:mobiles-tablets/mobile-phones"
 dream2000_eg = "category:mobiles"
 carrefour_eg = "category:NFEGY1220200"  # smartphones (not the smartwatches next to them)
 dubaiphone_eg = "category:mobiles-all-2"  # Smart Phone (pre-orders and 1 EGP placeholders are skipped)
+raya_eg = "category:643"
+vodafone_eg = "category:smart-phones"
+etisal_eg = "category:1081"
 
 [[watch]]
 name = "Tablets"
@@ -325,6 +364,9 @@ btech_eg = "category:mobiles-tablets/tablets"
 dream2000_eg = "category:tablets"
 carrefour_eg = "category:NFEGY1230000"
 dubaiphone_eg = "category:tablets"
+raya_eg = "category:641"
+vodafone_eg = "category:tablets"
+etisal_eg = ["category:s1382", "category:s1383"]
 
 [[watch]]
 name = "Laptops"
@@ -348,6 +390,8 @@ btech_eg = "category:laptop-pc/laptops"  # pre-owned laptops (376) are a separat
 dream2000_eg = "category:laptop"
 carrefour_eg = "category:NFEGY4070500"
 dubaiphone_eg = "category:all-laptops"
+raya_eg = "category:270"
+vodafone_eg = "category:laptops"
 
 [[watch]]
 name = "Desktops"
@@ -365,6 +409,7 @@ cairosales_eg = "category:computer-accessories/desktop-computers"
 2b_eg = "category:159"
 btech_eg = "category:laptop-pc/pcs"
 dream2000_eg = "category:computer"
+raya_eg = "category:271"
 
 [[watch]]
 name = "Monitors"
@@ -388,6 +433,11 @@ btech_eg = "category:laptop-pc/monitors"
 dream2000_eg = ["category:monitors", "category:gaming-monitors"]
 carrefour_eg = "category:NFEGY4070600"
 dubaiphone_eg = "category:monitors"
+raya_eg = "category:273"
+vodafone_eg = "category:monitors"
+dokkantech_eg = "category:monitors-tv"
+etisal_eg = "category:s1388"
+orange_eg = "category:monitors"
 
 [[watch]]
 name = "PC components"
@@ -414,6 +464,8 @@ exclude_words = ["monitor arm", "monitor mount", "monitor stand", "monitor holde
                  "stabiliser", "battery backup", "battery 12v", "12v battery", "ultracell", "csb battery",
                  "dvd", "blu ray", "blu-ray", "cd-rw", "حامل", "ذراع"]
 hardwaremarket_eg = ["category:433", "category:120"]  # Hardware (GPUs, PSUs, storage, cases), Fans & Cooling
+raya_eg = ["category:3124", "category:4677"]
+dokkantech_eg = ["category:computer-component", "category:cooling", "category:data-storage"]
 
 [[watch]]
 name = "Headphones"
@@ -447,6 +499,11 @@ dream2000_eg = [
 carrefour_eg = "category:NFEGY1210300"
 dubaiphone_eg = ["category:headphones", "category:tws", "category:gaming-headset", "category:earphones"]
 hardwaremarket_eg = ["category:39", "deals:39"]  # Headsets, plus its 50 most recently modified (fast lane)
+raya_eg = "category:285"
+vodafone_eg = ["category:headphones", "category:true-wireless", "category:headsets", "category:in-ear"]
+dokkantech_eg = "category:wearables-2"
+etisal_eg = "category:1334"
+orange_eg = "category:headphones-earbuds"
 
 [[watch]]
 name = "Kitchen machines"
@@ -531,6 +588,10 @@ dream2000_eg = [
 ]
 carrefour_eg = ["category:NFEGY4040200", "category:NFEGY4040400", "category:NFEGY4040600"]  # food preparation (fryers, blenders, juicers), kettles & coffee, microwaves & ovens
 dubaiphone_eg = ["category:air-fryer", "category:kettle-coffee-maker", "category:blenders-mixers", "category:microwaves", "category:oven", "category:waffle-sandwich-maker"]
+raya_eg = ["category:3463", "category:358", "category:2148", "category:356", "category:2200", "category:313", "category:335"]
+vodafone_eg = "category:home-appliances"
+etisal_eg = ["category:1531", "category:1570"]
+orange_eg = "category:small-appliances"
 
 # The rest of the small appliances (kettles, irons, toasters, grinders...): low priority.
 [[watch]]
@@ -630,6 +691,8 @@ dream2000_eg = [
 ]
 carrefour_eg = ["category:NFEGY4040300", "category:NFEGY4040700", "category:NFEGY4040113"]  # irons, toasters & grills, water dispensers
 dubaiphone_eg = "category:irons"
+raya_eg = ["category:334", "category:372", "category:371", "category:305", "category:359", "category:302"]
+vodafone_eg = "category:water-dispenser"
 
 [[watch]]
 name = "Cooking & dishwashers"
@@ -672,6 +735,8 @@ carrefour_eg = [
     "category:NFEGY4100150",  # other built-in
 ]
 
+raya_eg = ["category:326", "category:296", "category:1561"]
+orange_eg = "category:large-appliances"
 
 # Gaming mice, keyboards, gamepads, microphones and webcams: Hardware Market's whole trade (and Dubai Phone's
 # keyboards and mice). Amazon, noon and Jumia aren't crawled for these (thousands of cheap listings).
@@ -690,6 +755,10 @@ hardwaremarket_eg = [
     "deals:15",       # ... and keyboards
 ]
 dubaiphone_eg = ["category:keyboard-mouse", "category:gaming-mouse-and-keyboard"]
+raya_eg = ["category:329", "category:330", "category:346", "category:757"]
+vodafone_eg = ["category:gaming-accessories", "category:controllers"]
+dokkantech_eg = ["category:mouse", "category:keyboards", "category:gaming-gamepad"]
+orange_eg = ["category:gaming-accessories", "category:mouse"]
 
 [[watch]]
 name = "Wearables"
@@ -714,6 +783,11 @@ btech_eg = "category:wearables"  # smart watches and fitness trackers with their
 dream2000_eg = "category:wearables"
 carrefour_eg = "category:NFEGY1220300"  # Smart Watches & Wearables
 dubaiphone_eg = ["category:smart-watch-2", "category:smart-band", "category:apple-watch"]
+raya_eg = "category:363"
+vodafone_eg = "category:wearables"
+dokkantech_eg = "category:wearables"
+etisal_eg = "category:1372"
+orange_eg = "category:wearables"
 
 [[watch]]
 name = "Chargers & power banks"
@@ -744,6 +818,11 @@ dream2000_eg = ["category:chargers", "category:power-bank", "category:wireless-c
 carrefour_eg = ["category:NFEGY1210200", "category:NFEGY1210700"]  # chargers, cables & convertors; power banks
 dubaiphone_eg = ["category:power-bank", "category:cables-docks"]  # Chargers & Docks
 hardwaremarket_eg = ["category:4396", "category:4470"]  # Chargers, Power Banks
+raya_eg = ["category:369", "category:282"]
+vodafone_eg = ["category:chargers", "category:powerbanks"]
+dokkantech_eg = ["category:charger", "category:power-banks", "category:car-charger"]
+etisal_eg = "category:1283"
+orange_eg = ["category:chargers-cables", "category:power-banks"]
 
 # Jumia's flash-sales page: the only place its flash prices are marked (category cards show the same
 # price with no marker), mixed categories, about 400 products (86 above 1,500 EGP). Crawled as its own

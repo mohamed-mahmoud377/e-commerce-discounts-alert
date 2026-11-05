@@ -350,3 +350,18 @@ Answer `work-on-deals`' impact questions: worst-case time to notice per group, w
 old workers and old config. Say plainly what is unverified, including the 1-day and 3-day checks if they are still ahead, and which teammates still must pull.
 
 Update memory, which the repo can't hold: `site-access-findings` (one line on how it is reached) and `deployment-state` (who crawls it, config backup name).
+
+## What each shop taught (add to this)
+
+Lessons from Raya, Vodafone, Dokkan Tech, Etisal and Orange (5 Nov 2026), each one nearly shipped wrong or cost an hour:
+
+- **Stage 2's gate catches what nothing else does: do it.** Comparing 5 random products with their real pages found Orange's sizes. Compare the price, and read every mismatch; two of the three shops flagged were only rounding (Raya's 6,298.75 shows as 6,299) or display (Dokkan's "199.00" reads `19900`).
+- **"One key, one price" fails silently on a listing that shows one price per product.** If a product page has size options, read one product's details: does the listing's price match every size? Orange's listing shows only the cheapest (53 of 98 phones). Measure the share per category; watch the clean categories, leave the rest and tell the user the cost of doing them per size.
+- **An option that looks like packaging can be a price.** Dokkan's `Box` (Asia, MENA): 41 of 66 differ. Before adding an option to `IGNORED_OPTIONS`, count how many products price it differently. Fold nothing you haven't counted.
+- **A refusal isn't always a block. Before writing a shop off, try the droplet and a second client.** Orange closes `/api` on `curl_cffi` whatever it impersonates, from every IP, yet answers urllib: the same failure from the droplet shows it's the client. Vodafone resets every second HTTP/2 request: `http_version="v1"` fixes it. Note Stage 1's rule still holds: stop at a 403, 429 or challenge.
+- **Don't trust names or counts.** Dokkan's `wearables-2` is headphones, Orange's `special-offers` is air conditioners: sample titles (5 lines of code). Shopify's `products_count` can be wrong in both directions: stop paging on a short page.
+- **Unknown parameters are often ignored silently.** Etisal returned the whole shop for `min_price=`, `category=` and `sub_category=`, with HTTP 200. Check that the *count changes* for each parameter you rely on.
+- **SPA with a hidden API:** load the listing once in Playwright and log `xhr`/`fetch` responses; the request's headers show what the API wants. With introspection off, a Magento API names its fields in its errors ("Cannot query field").
+- **Guest tokens can create a customer at the shop:** look in the JWT (`sub`, `CustomerId`), keep it for the session, and say so in the doc.
+- **Screenshots: look at several, not one.** Etisal failed on 3 of 6 and passed on the others: `Spec.settle` waits out a page that redraws itself after hydration. A frame drawn in the wrong place while the rectangles are right means CSS `zoom` on `<html>` (Vodafone 0.82); `_DRAW` handles it now. Measure repeatedly through `Shooter.shoot`: image sizes that differ between runs of one page show the problem without opening them.
+- **Before asking the user, finish what doesn't depend on the answer.** Fashion shops (no group, `robots.txt` forbids their listing pages) went into `docs/research/fashion-shops.md`, and the other five shipped.

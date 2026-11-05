@@ -160,6 +160,13 @@ Lines worth reacting to:
 | `blocked: hardwaremarket_eg: HTTP 403` | Cloudflare's challenge: expected from any cloud IP | Pauses by itself; keep `hardwaremarket_eg` off cloud workers; see [HARDWAREMARKET.md](HARDWAREMARKET.md) |
 | `hardwaremarket_eg: no category 'x'` | Unknown WooCommerce category id or slug | `deals categories hardwaremarket_eg <id>` or the category list URL in the message |
 | `blocked: amazon_now_eg: Amazon Now lists nothing here (delivery location not served)` | That worker's delivery location has no Amazon Now dark store (expected on the droplet and cloud machines) | Pauses by itself; keep `amazon_now_eg` out of that worker's `DEALS_SITES`; see [AMAZON_NOW.md](AMAZON_NOW.md) |
+| `raya_eg: GraphQL error` | The API changed a field | [RAYA.md](RAYA.md); `deals crawl raya_eg ...` on the Mac |
+| `vodafone_eg: no category '/x'` | A menu url changed | `main-menu`, [VODAFONE.md](VODAFONE.md) |
+| `curl: (92) HTTP/2 stream` on `vodafone_eg` | The session stopped using HTTP/1.1 | [VODAFONE.md](VODAFONE.md) |
+| `blocked: dokkantech_eg: HTTP 430` | Shopify's block | Pauses by itself; lower the rate if it repeats |
+| `etisal_eg: no guest token` | `home/initialize` changed | [ETISAL.md](ETISAL.md) |
+| `blocked: orange_eg: HTTP ... asking for a guest token` | `Auth/token` refused | [ORANGE.md](ORANGE.md); check with plain curl from the same machine |
+| `Connection closed abruptly` on `orange_eg` | The adapter must use urllib | [ORANGE.md](ORANGE.md) |
 | `lease lost` | The device was too slow (over 5 min between pages) and the job went to another device | Fine occasionally |
 
 ## Telegram warnings

@@ -27,6 +27,7 @@ class Spec:
     hide: tuple[str, ...] = ()  # in-page banners to remove (fixed and sticky ones are always hidden)
     block: tuple[str, ...] = ()  # URL patterns not to load (a heavy icon font the screenshot would wait for)
     ready: str = "body"  # the page has rendered the product once this is visible
+    settle: float = 0  # seconds more for a page that redraws itself after that (Etisal's Angular hydration)
     locale: str = "ar-EG"
     arabic: tuple[str, str] | None = None  # (English part, Arabic part) of the URL, replaced once
 
@@ -98,6 +99,30 @@ SPECS: dict[str, Spec] = {
                                 ("main div.flex-col:has(> div.flex-col > span > strong)",)),
                          context=("main h1", '[data-testid="productimage-container"]'),
                          ready="main div:has(> div.force-ltr)", arabic=("/mafegy/en/", "/mafegy/ar/")),
+    # Nuxt, Tailwind classes only. The price row holds the price, the crossed-out price and "توفر"; the seller
+    # is the list holding the /seller/ link (a marketplace). The gallery's first picture is MagicZoom's.
+    "raya_eg": Spec(boxes=(("div.ProductInfoColumn div.justify-between:has(span.currency)",),
+                           ('ul:has(a[href*="/seller/"])',)),
+                    context=("h1.text-primary-700", "a.MagicZoom img.object-contain"),
+                    ready="div.ProductInfoColumn span.currency", arabic=("/en/", "/ar/")),
+    # Angular. A sticky header holds a second copy of the price and appears over the product: go through the main
+    # info block and hide it.
+    "vodafone_eg": Spec(boxes=(("vf-product-main-info .price-wrapper",),),
+                        context=("h1.product-name", "img.main-image"), hide=("#product-header",),
+                        ready="vf-product-main-info .price-wrapper", arabic=("/en/prod/", "/ar/prod/")),
+    # Shopify, English by default and Arabic under /ar/. Sells its own stock.
+    "dokkantech_eg": Spec(boxes=((".product-info__price",),),
+                          context=("h1.product-title", "img.product-image"),
+                          ready=".product-info__price", arabic=("dokkantech.com/", "dokkantech.com/ar/")),
+    # Angular (SuperCommerce). The price box has the price, the crossed-out price and "وفر". The server's page
+    # is redrawn while Angular takes over: a shot taken then is a squashed mix of the top and the bottom of the page.
+    "etisal_eg": Spec(boxes=(("div.product-detail-price",),),
+                      context=("h1.product-name", ".img-zoom-container img"),
+                      ready="div.product-detail-price span.price-value", arabic=("/en/", "/ar/"), settle=3),
+    # Angular, Tailwind. Its h1 says "غير متوفر" when it is sold out. The price header holds the title too.
+    "orange_eg": Spec(boxes=(("div:has(> div > span.product-price-current)", "span.product-price-current"),),
+                      context=("h1", ".gallery-slide img"),
+                      ready="span.product-price-current", arabic=("/en/", "/ar/")),
 }
 
 VIEWPORT = {"width": 1280, "height": 1000}  # the desktop layout, like the shop's own page on a computer
@@ -156,12 +181,14 @@ _LOADED = """(context) => context.every(s => {
   return e && (!i || (i.complete && i.naturalWidth > 1));
 })"""
 
-# Draws a red frame over each rectangle (page coordinates), above everything and ignoring clicks.
+# Draws a red frame over each rectangle (page coordinates), above everything and ignoring clicks. A page zoomed
+# with CSS (Vodafone's <html> has zoom: 0.82) shrinks the frame's numbers too, so they are divided by its zoom.
 _DRAW = """(rects) => {
+  const z = parseFloat(getComputedStyle(document.documentElement).zoom) * parseFloat(getComputedStyle(document.body).zoom) || 1;
   for (const [x, y, w, h] of rects) {
     const d = document.createElement('div');
     d.className = 'deals-shot-box';
-    d.style.cssText = `position:absolute;left:${x}px;top:${y}px;width:${w}px;height:${h}px;` +
+    d.style.cssText = `position:absolute;left:${x / z}px;top:${y / z}px;width:${w / z}px;height:${h / z}px;` +
       'border:3px solid #e3001b;border-radius:6px;box-sizing:border-box;z-index:2147483647;pointer-events:none';
     document.body.appendChild(d);
   }
@@ -281,6 +308,8 @@ class Shooter(threading.Thread):
                     wait()
                 except Exception:
                     pass
+            if spec.settle:
+                page.wait_for_timeout(spec.settle * 1000)
             return annotate(page, spec)
         finally:
             ctx.close()

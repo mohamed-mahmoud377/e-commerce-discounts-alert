@@ -75,6 +75,23 @@ SHOPS: dict[str, Shop] = {s.name: s for s in (
          (("Everything (the Amazon Now root)", "211761638031"), ("Grocery", "18020637031"),
           ("Health & Household", "18021875031"), ("Beauty", "18017988031"), ("Baby", "18017931031"),
           ("Electronics", "18018102031"))),
+    Shop("raya_eg", "Raya", "راية شوب", "RA", "marketplace", "https://www.rayashop.com", False, "RAYA.md",
+         (("Mobiles & Tablets", "316"), ("Televisions", "533"), ("Large Appliances", "292"),
+          ("Kitchen Appliances", "3116"), ("Small Appliances", "300"), ("Laptops & PCs", "272"), ("Electronics", "263"))),
+    Shop("vodafone_eg", "Vodafone", "فودافون", "VF", "electronics", "https://eshop.vodafone.com.eg", False, "VODAFONE.md",
+         (("Smart Phones", "smart-phones"), ("TVs", "tv"), ("Laptops", "laptops"), ("Tablets", "tablets"),
+          ("Gaming", "gaming"), ("Accessories", "phones-accessories"), ("Home Appliances", "home-appliances"))),
+    Shop("dokkantech_eg", "Dokkan Tech", "دكان تك", "DT", "electronics", "https://www.dokkantech.com", False,
+         "DOKKANTECH.md",
+         (("Everything", "all"), ("Audio", "audio"), ("Gaming", "gaming"), ("Computer Accessories", "computer-accessories"),
+          ("Wearables", "wearables"), ("Phone Accessories", "phoneaccessories"))),
+    Shop("etisal_eg", "Etisal", "اتصال ستور", "ES", "electronics", "https://etisalstore.com", False, "ETISAL.md",
+         (("Mobiles & Tablets", "1081"), ("Mobile Accessories", "1283"), ("Portable Audio", "1334"),
+          ("Wearables", "1372"), ("Computing", "1183"), ("Televisions", "1160"), ("Small Appliances", "1570"),
+          ("Food Preparation", "1531"))),
+    Shop("orange_eg", "Orange", "أورنج", "OR", "electronics", "https://eshop.orange.eg", False, "ORANGE.md",
+         (("Accessories", "accessories"), ("Home Appliances", "home-appliances"), ("Smart TVs", "smart-tvs"),
+          ("Computer Supplies", "computer-supplies"), ("Smart Phones (not watched, several prices)", "smart-phones"))),
 )}
 
 

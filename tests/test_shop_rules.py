@@ -183,3 +183,10 @@ def test_noon_new_listings_never_alert_from_the_sellers_claim(cfg, conn):
         db.record(conn, jumia("N440L@shop-a", 13_999, list_egp=30_000, site="noon_eg"), now=t + timedelta(days=3))
     deal = check_product(conn, cfg, rec.product_id, bootstrap=False, now=t + timedelta(days=3))
     assert deal and deal.kind == "price_drop" and deal.reference == 1_899_900
+
+
+def test_raya_and_etisal_claims_and_stock_counts_prove_nothing():
+    for site in ("raya_eg", "etisal_eg"):
+        assert shop_rules.rules_for(site, "no_claim_alerts"), site
+        assert shop_rules.low_stock_is_noise(site), site
+    assert not shop_rules.rules_for("orange_eg", "no_claim_alerts")  # 17% crossed out: nothing to distrust yet
