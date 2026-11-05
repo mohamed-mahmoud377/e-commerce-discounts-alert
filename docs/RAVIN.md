@@ -56,9 +56,9 @@ The page's code wasn't reverse-engineered further than that. To see a campaign's
 
 ## How we crawl it
 
-Group **Fashion** (from 500 EGP, every 120 minutes, at most 180, `min_drop` 0.35), root `category:all`.
+Group **Fashion** (from 500 EGP, every 30 minutes, at most 45, `min_drop` 0.35, since 5 Nov 2026), root `category:all`.
 
-**Sums:** 18 pages a pass at 2 to 4 s and about 2 s each: about 2 minutes, inside the 180-minute cap, adding about 9 pages an hour from the droplet and the Mac, 13 MB an hour. 2,786 of the 4,412 are at or over the minimum. No block history apart from the one 429.
+**Sums:** 18 pages a pass at 2 to 4 s and about 2 s each: about 2 minutes, inside the 45-minute cap, about 24 pages an hour from the droplet and the Mac, 35 MB an hour. 2,786 of the 4,412 are at or over the minimum. No block history apart from the one 429.
 
 ## Running and checking it
 

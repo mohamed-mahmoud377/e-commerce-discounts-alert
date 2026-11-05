@@ -48,7 +48,7 @@ It allows the bare category pages but **disallows `*PageIndex=*`, `*MinPrice=*`,
 
 ## How we crawl it
 
-Group **Fashion** (from 500 EGP, 35% `min_drop`, every 120 minutes, at most 180):
+Group **Fashion** (from 500 EGP, 35% `min_drop`, every 30 minutes, at most 45, since 5 Nov 2026):
 
 | Root | Products from 500 EGP | Pages |
 | --- | --- | --- |
@@ -58,7 +58,7 @@ Group **Fashion** (from 500 EGP, 35% `min_drop`, every 120 minutes, at most 180)
 | boys-clothing-t-200046 | 786 | 8 |
 | femei-incaltaminte-t-33 (women's shoes; redirects to women-shoes-t-33) | 128 | 2 |
 
-**About 130 pages a pass and 14 minutes of one worker. About 65 pages an hour, from home IPs only.** About 12,700 products. Baby clothes (1,100 from 500 EGP) and men's shoes aren't watched.
+**About 130 pages a pass and 11 to 14 minutes of one worker. About 170 pages an hour when every slice is quiet, about 340 MB, from home IPs only.** About 12,700 products. Baby clothes (1,100 from 500 EGP) and men's shoes aren't watched.
 
 ## Running and checking it
 

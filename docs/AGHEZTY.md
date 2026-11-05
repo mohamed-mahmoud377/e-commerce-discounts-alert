@@ -67,7 +67,7 @@ Counts on 5 Nov 2026: Large-Appliances 2,074 (Refrigerator 617, washing-machines
 
 The price filter narrows the roots at the source: `|price:<group's minimum>-` goes in the URL. **Fast lane:** `deals:flash-sale`, the offers' one page of 28, every 10 minutes, under Home & more (those 28 take that group's label when it reads them last).
 
-**Sums:** 503 pages, about 6,000 products. At 2 to 4 s between pages and about 1.5 s each, one pass of everything takes 38 minutes on one IP, 19 minutes on the droplet and the Mac together. On their base schedules the groups ask for about 810 pages an hour, inside what the two can read (about 1,600), and less as quiet slices back off to their caps. So about 400 pages, 120 MB, an hour from each IP. A drop is noticed within the group's cap, or the fast lane's 10 minutes for offers. No block history.
+**Sums:** 503 pages, about 6,000 products. At 2 to 4 s between pages and about 1.5 s each, one pass of everything takes 38 minutes on one IP, 19 minutes on the droplet and the Mac together. On their base schedules the groups ask for about 1,380 pages an hour since Home & more went to every 15 minutes (5 Nov 2026; about 810 before), inside what the two can read (about 1,600), and less as quiet slices back off to their caps. So up to about 700 pages, 210 MB, an hour from each IP. A drop is noticed within the group's cap, or the fast lane's 10 minutes for offers. No block history.
 
 ## Running and checking it
 

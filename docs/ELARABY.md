@@ -66,7 +66,7 @@ Root `2`; docs/CATEGORIES.md has the ids. **All of it is watched.** A walk of th
 | **Watches** (new) | 1,000 | 64 (1,055) |
 | **Home & more** (new) | 200 | 85, 233, 88, 190, 191, 187, 334, 1927, 93, 76, 79, 210, 65, 110, 107, 320, 1651, 343, 63, 217, 360, 1827, 1497: every leaf the groups above don't read, checked against the whole catalogue |
 
-**Don't use parents here.** A product takes the group of the last root that read it (`grp = COALESCE(?, grp)` in `db.record`), so `317` in Home & more moved every fridge out of Refrigerators on 5 Nov 2026. About 55 pages a pass at most, under 4 minutes of one worker at 2 to 4 s. **About 80 pages an hour**, shared by the droplet and home workers. No block history.
+**Don't use parents here.** A product takes the group of the last root that read it (`grp = COALESCE(?, grp)` in `db.record`), so `317` in Home & more moved every fridge out of Refrigerators on 5 Nov 2026. About 55 pages a pass at most, under 4 minutes of one worker at 2 to 4 s. Every 15 minutes, cap 30, since 5 Nov 2026: **about 130 pages an hour** measured on the two groups (34 pages a pass), shared by the droplet and home workers. No block history.
 
 ## Running and checking it
 

@@ -46,9 +46,9 @@ No "all women" page: `/en-eg/woman` is a landing page without products, and the 
 
 ## How we crawl it
 
-Group **Fashion** (from 500 EGP, 35% `min_drop`, every 120 minutes, at most 180): 5 roots, about 9,100 products from 500 EGP (woman-discount 2,850, woman-new-season 2,055, man-discount 1,594, man-new-season 1,383, kids-discount 1,227). `max_slice_total` 1,000, so the planner splits the big ones by price.
+Group **Fashion** (from 500 EGP, 35% `min_drop`, every 30 minutes, at most 45, since 5 Nov 2026): 5 roots, about 9,100 products from 500 EGP (woman-discount 2,850, woman-new-season 2,055, man-discount 1,594, man-new-season 1,383, kids-discount 1,227). `max_slice_total` 1,000, so the planner splits the big ones by price.
 
-**About 380 pages a pass, about 35 minutes of one worker at 2 to 4 s; about 190 pages an hour, shared by the droplet and home workers.** Well inside the cap. Akamai can refuse a client without warning: no block history yet.
+**About 410 pages a pass, 24 to 35 minutes of one worker at 2 to 4 s; about 550 pages an hour when every slice is quiet, shared by the droplet and home workers.** On one worker alone a pass would take most of the 45-minute cap, so this shop relies on having two. Akamai can refuse a client without warning: no block history yet.
 
 ## Running and checking it
 

@@ -459,7 +459,7 @@ What the coordinator enforces when handing out jobs:
 - **Leases expire.** If a worker crashes, sleeps or loses Wi-Fi, its lease runs out after 5 minutes and the
   job goes to the next worker that asks. Late results from an expired lease are refused.
 
-**Adaptive revisits.** Each slice starts at its group's `interval_minutes` (20 to 180 minutes). After every crawl:
+**Adaptive revisits.** Each slice starts at its group's `interval_minutes` (10 to 60 minutes). After every crawl:
 
 - if a price dropped by 3% or more, a product came back in stock or a new product appeared, the interval
   halves, down to 10 minutes;
@@ -475,7 +475,7 @@ at 30 minutes on every shop (nothing had changed for a while, so the slices had 
 day the priority groups cap the backoff: 15 minutes for air conditioners, gaming consoles, phones and tablets,
 30 for TVs, refrigerators, laptops and monitors. Later that day the two slowest groups got caps too: Cooking &
 dishwashers 90 minutes (was 3 x 120 = 6 h) and Kitchen appliances 120 minutes (was 3 x 180 = 9 h), both
-starting at 60. Kitchen machines, headphones, PC components and desktops keep the 3x rule.
+starting at 60. Kitchen machines, headphones, PC components and desktops keep the 3x rule. On 5 Nov 2026 the user found the four newest groups too slow (every 120, cap 180: Azzam Watches had last been read 66 minutes earlier and was not due for another 2 hours): Watches and Home & more became every 15, cap 30; Fashion and Beauty every 30, cap 45, as DeFacto and LC Waikiki cost the most to read.
 
 **Only drops speed a slice up (since 28 October 2026).** Until then *any* change halved the interval. But on
 noon price rises outnumbered drops 4 to 1 (the pound's October slide) and 42% of Amazon's changes were under 2%
@@ -549,6 +549,8 @@ backed off to its 3x ceiling because nothing had changed for a while), with the 
 | Kitchen machines (fryers, coffee, blenders, microwaves) | 30 | 10 to 90 min | unchanged | ~1.5 h |
 | Cooking & dishwashers | 60 (was 120) | 48 to 293 min | 10 to 90 min (was up to 360) | ~1.5 h (was ~6 h) |
 | Other kitchen appliances (kettles, irons, toasters...) | 60 (was 180) | 16 to 540 min | 10 to 120 min (was up to 540) | ~2 h (was ~9 h) |
+| Watches, Home & more (5 Nov 2026) | 15 (was 120) | | 10 to 30 min (was up to 180) | ~30 min (was ~3 h) |
+| Fashion, Beauty (5 Nov 2026) | 30 (was 120) | | 10 to 45 min (was up to 180) | ~45 min (was ~3 h) |
 
 How long do big drops actually last? In the 24 hours before 27 October 06:30 UTC there were 133 drops of 20%
 or more (Amazon 32, Jumia 41, noon 60). On noon none had reverted; on Amazon 6 of 32 reverted, 3 of them

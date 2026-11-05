@@ -31,7 +31,7 @@ Crossed-out price on 284 of 7,275 (4%), median 15%, none at 60%: kind `list`, no
 
 ## How we crawl it
 
-The whole shop in **Watches** (minimum 1,000 EGP, every 120 minutes, cap 180). 30 pages, under 2 minutes a pass at 2 to 4 s: **about 15 pages an hour**, shared by the droplet and the Mac. No block history.
+The whole shop in **Watches** (minimum 1,000 EGP, every 15 minutes, cap 30, since 5 Nov 2026). 30 pages, under 2 minutes a pass at 2 to 4 s: **about 60 pages an hour**, shared by the droplet and the Mac. No block history.
 
 ## Running and checking it
 

@@ -977,13 +977,13 @@ max_interval_minutes = 60
 min_price = 50
 amazon_now_eg = "category:211761638031"
 
-# Clothes (from 5 Nov 2026). Whole seasons go on sale at once, so this group asks for a bigger drop, and its crawl is
-# slower: nothing here sells out in minutes. docs/LCWAIKIKI.md, docs/DEFACTO.md.
+# Clothes (from 5 Nov 2026). Whole seasons go on sale at once, so this group asks for a bigger drop. Cap 45, not 30: DeFacto and
+# LC Waikiki are the dearest shops to read (about 410 and 129 pages a pass). docs/LCWAIKIKI.md, docs/DEFACTO.md.
 [[watch]]
 name = "Fashion"
 label = "ملابس وأزياء"
-interval_minutes = 120
-max_interval_minutes = 180
+interval_minutes = 30
+max_interval_minutes = 45
 min_price = 500
 ravin_eg = ["category:all"]
 wayup_eg = ["category:all-sale", "category:all-new-in"]
@@ -991,12 +991,12 @@ min_drop = 0.35
 lcwaikiki_eg = ["category:women-clothing-t-10", "category:men-clothing-t-9", "category:girls-clothing-t-100046", "category:boys-clothing-t-200046", "category:femei-incaltaminte-t-33"]
 defacto_eg = ["category:woman-discount", "category:woman-new-season", "category:man-discount", "category:man-new-season", "category:kids-discount"]
 
-# El Araby's watches and clocks (from 5 Nov 2026): Seiko and Alba, no hurry. docs/ELARABY.md.
+# El Araby's watches and clocks (from 5 Nov 2026): Seiko and Alba. docs/ELARABY.md.
 [[watch]]
 name = "Watches"
 label = "ساعات"
-interval_minutes = 120
-max_interval_minutes = 180
+interval_minutes = 15
+max_interval_minutes = 30
 min_price = 1000
 gcshop_eg = "category:all"
 azzam_eg = "category:all"
@@ -1007,8 +1007,8 @@ elaraby_eg = "category:64"
 [[watch]]
 name = "Home & more"
 label = "أجهزة منزلية وأخرى"
-interval_minutes = 120
-max_interval_minutes = 180
+interval_minutes = 15
+max_interval_minutes = 30
 min_price = 200
 aghezty_eg = ["category:washing-machines", "category:Dryers", "category:Vacuum-Steam-Cleaners", "category:iron", "category:Water-Dispenser", "category:Water-Heater", "category:Heaters", "category:Fan", "category:Ventilating-Fans", "category:Air-purifier", "category:Sound-system", "category:Bluetooth-Speakers", "category:personal-care", "deals:flash-sale"]
 samsung_eg = ["category:08010000", "category:08070000"]
@@ -1022,8 +1022,8 @@ elaraby_eg = ["category:85", "category:233", "category:88", "category:190", "cat
 [[watch]]
 name = "Beauty"
 label = "عطور وتجميل"
-interval_minutes = 120
-max_interval_minutes = 180
+interval_minutes = 30
+max_interval_minutes = 45
 min_price = 300
 mazaya_eg = ["category:4", "category:81", "category:42", "category:862", "category:542"]
 faces_eg = ["category:perfume", "category:makeup", "category:skincare", "category:hair", "category:body", "category:gifts", "category:men-products", "category:home-fragrance", "deals:extra-sale"]

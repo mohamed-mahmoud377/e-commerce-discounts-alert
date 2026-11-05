@@ -31,7 +31,7 @@ Crossed-out price on 3,107 of 3,447 in stock (90%), median 10%, **none as much a
 
 ## How we crawl it
 
-The whole shop in **Watches** (minimum 1,000 EGP, every 120 minutes, cap 180), including its 657 non-watches above 1,000 EGP: a Zippo lighter's alert says "ساعات". Reading only watches would need one root per brand, overlapping. 34 pages, about 2 minutes a pass at 2 to 4 s: **about 15 pages an hour**, shared by the droplet and the Mac. No block history.
+The whole shop in **Watches** (minimum 1,000 EGP, every 15 minutes, cap 30, since 5 Nov 2026), including its 657 non-watches above 1,000 EGP: a Zippo lighter's alert says "ساعات". Reading only watches would need one root per brand, overlapping. 34 pages, about 2 minutes a pass at 2 to 4 s: **about 70 pages an hour**, shared by the droplet and the Mac. No block history.
 
 ## Running and checking it
 
@@ -42,7 +42,7 @@ The whole shop in **Watches** (minimum 1,000 EGP, every 120 minutes, cap 180), i
 
 ## Troubleshooting
 
-`HTTP 430` is Shopify's own block. `gc-stores-hotdeals` (53) is a small deals collection, not read separately: the whole shop passes every few hours.
+`HTTP 430` is Shopify's own block. `gc-stores-hotdeals` (53) is a small deals collection, not read separately: the whole shop passes at least every 30 minutes.
 
 ## Alert screenshots
 

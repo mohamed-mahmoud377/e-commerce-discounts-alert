@@ -67,7 +67,7 @@ The site's menu links are on any page. **A category's id isn't always its URL:**
 
 ## How we crawl it
 
-Group **Beauty** (from 300 EGP, every 120 minutes, at most 180), shared with Mazaya:
+Group **Beauty** (from 300 EGP, every 30 minutes, at most 45, since 5 Nov 2026), shared with Mazaya:
 
 | Root | Products | Pages |
 | --- | --- | --- |
@@ -80,7 +80,7 @@ Group **Beauty** (from 300 EGP, every 120 minutes, at most 180), shared with Maz
 | home-fragrance | 40 | 1 |
 | men-products | 31 | 1 |
 
-**89 pages a pass.** The adapter reads every page and the coordinator applies the 300 EGP minimum to new products, since a filter can't. At Pace 2x, 4 to 8 s plus about 1 s a page, a pass takes **about 11 minutes**, well inside the cap. Fast lane: `deals:extra-sale`, the sale's first 48, at most every 10 minutes. Together **about 50 pages an hour, about 43 MB**, from the Mac and the droplet, with no block history. Whatever overlaps is in one group, so no label flips.
+**89 pages a pass.** The adapter reads every page and the coordinator applies the 300 EGP minimum to new products, since a filter can't. At Pace 2x, 4 to 8 s plus about 1 s a page, a pass takes **about 11 minutes**, well inside the cap. Fast lane: `deals:extra-sale`, the sale's first 48, at most every 10 minutes. Together **about 140 pages an hour, about 120 MB**, from the Mac and the droplet, with no block history. Whatever overlaps is in one group, so no label flips.
 
 ### Coverage, measured 5 Nov 2026
 

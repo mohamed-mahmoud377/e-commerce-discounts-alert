@@ -37,7 +37,7 @@ Crossed-out price on 537 of 833 perfumes in stock (64%), median 15%, none at 60%
 
 ## How we crawl it
 
-A group of its own, **Beauty** ("عطور وتجميل"), minimum 300 EGP, every 120 minutes, cap 180: categories 4, 81, 42, 862, 542. About 30 pages a pass, 4 minutes at 4 to 8 s: **about 15 pages an hour**, shared by the droplet and the Mac. Whatever overlaps is in the same group, so no label flips. No fast lane yet; `/en/deals` has a "Has Deal" filter worth trying later.
+A group of its own, **Beauty** ("عطور وتجميل"), minimum 300 EGP, every 30 minutes, cap 45, since 5 Nov 2026: categories 4, 81, 42, 862, 542. About 30 pages a pass, 2 to 4 minutes at 4 to 8 s: **about 40 pages an hour**, shared by the droplet and the Mac. Whatever overlaps is in the same group, so no label flips. No fast lane yet; `/en/deals` has a "Has Deal" filter worth trying later.
 
 ## Running and checking it
 
