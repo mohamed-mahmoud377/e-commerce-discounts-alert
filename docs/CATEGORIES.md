@@ -404,3 +404,7 @@ Shopify handles: `/collections.json?limit=250`, but read docs/WAYUP.md first: th
 ## mazaya.eg category ids
 
 Magento ids (`deals categories` isn't wired for it; `categories(filters:{parent_id:{eq:"2"}})` lists them). Perfumes `4` (Men `39`, Women `40`, Unisex `509`), Makeup `81`, Skin Care `42`, Bundles & sets `862`, Gifts `542`, Niche brands `783`. The API wants them in base64 (`NA==` for `4`); the adapter does that.
+
+## faces.eg category ids
+
+The id is the page's slug (`input.category-id` on the page confirms it). Roots: `perfume`, `makeup`, `skincare`, `hair`, `body`, `gifts`, `men-products`, `home-fragrance`. Sale feed: `deals:extra-sale`. docs/FACES.md.

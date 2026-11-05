@@ -2,7 +2,7 @@
 
 This page is written to be followed literally, by a person or by an AI assistant acting for them. It sets up
 one computer as a **worker** for an existing deals server: the computer downloads shop pages (amazon.eg,
-noon.com, jumia.com.eg, cairosales.com, 2b.com.eg, btech.com, dream2000.com, carrefouregypt.com, dubaiphone.net, hardwaremarket.net, rayashop.com, eshop.vodafone.com.eg, dokkantech.com, etisalstore.com, eshop.orange.eg, lcwaikiki.eg, defacto.com.eg and elarabygroup.com, miamicenters.com, sigma-computer.com, elnekhelytechnology.com, wayupsports.com, gcshopeg.com, azzamwatches.com, mazaya.eg) and sends the products it finds to the server. It keeps no data, sends no messages, and changes
+noon.com, jumia.com.eg, cairosales.com, 2b.com.eg, btech.com, dream2000.com, carrefouregypt.com, dubaiphone.net, hardwaremarket.net, rayashop.com, eshop.vodafone.com.eg, dokkantech.com, etisalstore.com, eshop.orange.eg, lcwaikiki.eg, defacto.com.eg and elarabygroup.com, miamicenters.com, sigma-computer.com, elnekhelytechnology.com, wayupsports.com, gcshopeg.com, azzamwatches.com, mazaya.eg, faces.eg) and sends the products it finds to the server. It keeps no data, sends no messages, and changes
 nothing on the server. Background explanation is in [GETTING_STARTED.md](GETTING_STARTED.md), path A.
 Amazon Now (`amazon_now_eg`) is left out of the shop lists below on purpose: what it lists depends on the
 computer's delivery location ([AMAZON_NOW.md](AMAZON_NOW.md)).
@@ -67,7 +67,7 @@ Replace the two values and run (one command, four lines):
 ```bash
 DEALS_COORDINATOR=SERVER \
 DEALS_TOKEN=TOKEN \
-DEALS_SITES=noon_eg,amazon_eg,jumia_eg,cairosales_eg,2b_eg,btech_eg,dream2000_eg,carrefour_eg,dubaiphone_eg,hardwaremarket_eg,amazon_now_eg,raya_eg,vodafone_eg,dokkantech_eg,etisal_eg,orange_eg,lcwaikiki_eg,defacto_eg,elaraby_eg,miami_eg,sigma_eg,elnekhely_eg,wayup_eg,gcshop_eg,azzam_eg,mazaya_eg \
+DEALS_SITES=noon_eg,amazon_eg,jumia_eg,cairosales_eg,2b_eg,btech_eg,dream2000_eg,carrefour_eg,dubaiphone_eg,hardwaremarket_eg,amazon_now_eg,raya_eg,vodafone_eg,dokkantech_eg,etisal_eg,orange_eg,lcwaikiki_eg,defacto_eg,elaraby_eg,miami_eg,sigma_eg,elnekhely_eg,wayup_eg,gcshop_eg,azzam_eg,mazaya_eg,faces_eg \
 .venv/bin/deals worker
 ```
 
@@ -116,7 +116,7 @@ that name.
    ```
    DEALS_COORDINATOR=SERVER
    DEALS_TOKEN=TOKEN
-   DEALS_SITES=noon_eg,amazon_eg,jumia_eg,cairosales_eg,2b_eg,btech_eg,dream2000_eg,carrefour_eg,dubaiphone_eg,hardwaremarket_eg,amazon_now_eg,raya_eg,vodafone_eg,dokkantech_eg,etisal_eg,orange_eg,lcwaikiki_eg,defacto_eg,elaraby_eg,miami_eg,sigma_eg,elnekhely_eg,wayup_eg,gcshop_eg,azzam_eg,mazaya_eg
+   DEALS_SITES=noon_eg,amazon_eg,jumia_eg,cairosales_eg,2b_eg,btech_eg,dream2000_eg,carrefour_eg,dubaiphone_eg,hardwaremarket_eg,amazon_now_eg,raya_eg,vodafone_eg,dokkantech_eg,etisal_eg,orange_eg,lcwaikiki_eg,defacto_eg,elaraby_eg,miami_eg,sigma_eg,elnekhely_eg,wayup_eg,gcshop_eg,azzam_eg,mazaya_eg,faces_eg
    DEALS_DATA_DIR=/Users/<you>/e-commerce-discounts-alert/data
    ```
 
@@ -145,7 +145,7 @@ Everyday commands on macOS: `make worker-log` (follow the log), `make restart-ma
    WorkingDirectory=%h/e-commerce-discounts-alert
    Environment=DEALS_COORDINATOR=SERVER
    Environment=DEALS_TOKEN=TOKEN
-   Environment=DEALS_SITES=noon_eg,amazon_eg,jumia_eg,cairosales_eg,2b_eg,btech_eg,dream2000_eg,carrefour_eg,dubaiphone_eg,hardwaremarket_eg,amazon_now_eg,raya_eg,vodafone_eg,dokkantech_eg,etisal_eg,orange_eg,lcwaikiki_eg,defacto_eg,elaraby_eg,miami_eg,sigma_eg,elnekhely_eg,wayup_eg,gcshop_eg,azzam_eg,mazaya_eg
+   Environment=DEALS_SITES=noon_eg,amazon_eg,jumia_eg,cairosales_eg,2b_eg,btech_eg,dream2000_eg,carrefour_eg,dubaiphone_eg,hardwaremarket_eg,amazon_now_eg,raya_eg,vodafone_eg,dokkantech_eg,etisal_eg,orange_eg,lcwaikiki_eg,defacto_eg,elaraby_eg,miami_eg,sigma_eg,elnekhely_eg,wayup_eg,gcshop_eg,azzam_eg,mazaya_eg,faces_eg
    Environment=DEALS_DATA_DIR=%h/e-commerce-discounts-alert/data
    ExecStart=%h/e-commerce-discounts-alert/.venv/bin/deals worker
    Restart=always

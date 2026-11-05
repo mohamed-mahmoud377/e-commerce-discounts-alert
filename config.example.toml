@@ -175,6 +175,10 @@ max_delay = 4.0
 min_delay = 2.0
 max_delay = 4.0
 
+[sites.faces_eg]  # Salesforce Commerce Cloud grid (48 products per request, about 850 KB); works from anywhere; robots.txt disallows it: docs/FACES.md
+min_delay = 2.0
+max_delay = 4.0
+
 # ---------------------------------------------------------------------------
 # What to track. Each [[watch]] is a product group with one root per site:
 #   amazon_eg = "category:<browse node id>"
@@ -965,3 +969,4 @@ interval_minutes = 120
 max_interval_minutes = 180
 min_price = 300
 mazaya_eg = ["category:4", "category:81", "category:42", "category:862", "category:542"]
+faces_eg = ["category:perfume", "category:makeup", "category:skincare", "category:hair", "category:body", "category:gifts", "category:men-products", "category:home-fragrance", "deals:extra-sale"]

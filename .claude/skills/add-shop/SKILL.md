@@ -7,7 +7,7 @@ description: The complete walkthrough for adding a new shop or store to the deal
 
 Adding a shop is one adapter, one table row, one config block and one doc. **Core code does not change.** The
 real work is learning how the shop behaves, because a wrong assumption about it means false alerts or a blocked
-home IP. Twenty-six shops were added this way. Their docs in `docs/` are worked examples.
+home IP. Twenty-seven shops were added this way. Their docs in `docs/` are worked examples.
 
 Work through the stages in order. Each ends in a gate: don't start the next stage until it holds. Everything
 below was checked against the code on 5 Nov 2026 by rehearsing a fake shop. If the code disagrees, trust the code
@@ -256,7 +256,7 @@ To find every list that must grow:
 
 ```bash
 grep -rnE "Hardware ?Market|hardwaremarket" README.md CLAUDE.md docs .claude/skills/work-on-deals --include='*.md' | grep -v '^docs/HARDWAREMARKET'
-grep -rnE "\b(twenty-six|26) shops|all twenty-six" README.md CLAUDE.md docs src
+grep -rnE "\b(twenty-seven|27) shops|all twenty-seven" README.md CLAUDE.md docs src
 ```
 
 | File | What |
@@ -390,6 +390,8 @@ Lessons from Raya, Vodafone, Dokkan Tech, Etisal and Orange (5 Nov 2026), each o
 - **A blank screenshot of a fixed small size means the crop went wrong.** Azzam's two Arabic shots were the same 9 KB, white: a carousel made the right-to-left page 11,280 px wide. Check `document.documentElement.scrollWidth`; the English page was fine, so it stays English.
 - **Live config naming a shop must never get ahead of what is pushed.** A deploy from `main` without the shop's code makes the coordinator refuse to start. So: commit and push the code first, then the config.
 - **A shop's page may not be able to show one variant.** Mazaya's link opens on its default size or shade, so a sized listing's screenshot can show another's price. Note it in the doc; the alert's own number stays right.
+- **A 500 can mean a missing header, not a broken shop.** Faces' grid answers HTTP 500 to everything without `X-Requested-With`, and 200 with it. Before giving up on an address the page's own JavaScript calls, send what the browser sends.
+- **Check a parser against the shop's second source of the same fact.** Faces' tiles carry an empty crossed-out block ahead of the real price; reading the first `.value` made an in-stock product look sold out, and the first 5 random products didn't show it. Comparing every tile with the analytics JSON beside it found it in seconds, and found the JSON's own trap (another size's price).
 - **Shop settings give a careful start:** Pace 2x and "Kept, not sent" need no config, and are the terms for a shop whose `robots.txt` the user chose to overrule (Mazaya).
 - **Walk the biggest root, not a convenient one, and run Stage 9's count query soon.** Sigma's laptops (587) read perfectly; its 1,876 Hardware root stopped at exactly 1,000 with no sign anywhere but `last_count` against `expected_total`. A found count of exactly 1,000 or 10,000 is a cap until proven otherwise.
 - **Other sessions change the live config too.** Check the newest `config.toml.bak-*` and re-read the file right before editing, and read `shop_settings` before assuming what you set still holds: a logged-in admin may have changed it.

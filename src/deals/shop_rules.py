@@ -163,6 +163,20 @@ RULES: tuple[ShopRule, ...] = (
         "8 of 87 makeup products have shades at different prices",
         "5 Nov 2026", where="sites/mazaya_eg.py"),
     ShopRule(
+        "faces-no-new-listing-alerts", "faces_eg", "no_claim_alerts",
+        "A third of what is in stock is discounted, with a standing sale of 554 products",
+        "No new-listing alerts from the crossed-out price; its products alert only from our own history",
+        "5 Nov 2026: a crossed-out price on 379 of 1,238 perfumes (median 20%) and 491 of 1,360 makeup products "
+        "(median 30%, 15 of them at 60% or more)",
+        "5 Nov 2026"),
+    ShopRule(
+        "faces-from-price-is-the-cheapest-size", "faces_eg", "note",
+        "A product with sizes at different prices lists only the cheapest, as 'from', with no crossed-out price",
+        "One listing at that price and '(cheapest size)' in its title. Never the analytics price, which is another size's",
+        "5 Nov 2026: 108 of 560 men's perfumes. Sauvage EDP says from 6,760 and its analytics say 14,230 less 7,470; "
+        "Chopard Love's 100ml is on sale at 8,372.50 from 9,850 while its tile shows 6,035 for the 50ml",
+        "5 Nov 2026", where="sites/faces_eg.py"),
+    ShopRule(
         "wayup-no-new-listing-alerts", "wayup_eg", "no_claim_alerts",
         "Most of what is in stock is discounted, and its sale pages hold over 12,000 products",
         "No new-listing alerts from the crossed-out price; its products alert only from our own history",

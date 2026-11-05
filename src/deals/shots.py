@@ -162,6 +162,10 @@ SPECS: dict[str, Spec] = {
     "mazaya_eg": Spec(boxes=((".text-primary-800:has(.currency)",),),
                       context=("h1.product-name", ".zoom-container img"),
                       ready="h1.product-name", settle=1, arabic=("mazaya.eg/en/", "mazaya.eg/ar/")),
+    # Salesforce Commerce Cloud: the selected size's price. A "from" product opens on its biggest size (docs/FACES.md).
+    "faces_eg": Spec(boxes=((".js-price-container",),),
+                     context=(".product-brand", ".js-name-container", ".product-carousel"),
+                     ready=".js-name-container", arabic=("/en/p/", "/ar/p/")),
 }
 
 VIEWPORT = {"width": 1280, "height": 1000}  # the desktop layout, like the shop's own page on a computer

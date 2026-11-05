@@ -54,6 +54,7 @@ LISTING_PAGES = {
     "gcshop_eg": lambda: _parse("gcshop_eg", "parse_products")(fixture_json("gcshop_products.json.gz")),
     "azzam_eg": lambda: _parse("azzam_eg", "parse_products")(fixture_json("azzam_products.json.gz")),
     "mazaya_eg": lambda: _parse("mazaya_eg", "parse_products")(fixture_json("mazaya_perfumes.json.gz")["data"]),
+    "faces_eg": lambda: _parse("faces_eg", "parse_grid")(fixture_text("faces_men.html.gz")),
 }
 
 

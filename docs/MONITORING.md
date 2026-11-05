@@ -177,6 +177,8 @@ Lines worth reacting to:
 | `blocked: elnekhely_eg: HTTP 403` | Cloudflare: expected from any cloud IP | Pauses by itself; keep `elnekhely_eg` off cloud workers; [ELNEKHELY.md](ELNEKHELY.md) |
 | `blocked: miami_eg: HTTP 403` | Cloudflare refused this connection | Pauses by itself; its pages cost it 5 s to build, so slow it if it repeats; [MIAMI.md](MIAMI.md) |
 | `blocked: mazaya_eg: HTTP 403` or a non-JSON answer | `robots.txt` disallows the API we read, so this may be the shop enforcing it | Pauses by itself; if it repeats, switch it off in Shop settings rather than fight it; [MAZAYA.md](MAZAYA.md) |
+| `blocked: faces_eg: HTTP 403` | `robots.txt` disallows the address we read, so this may be the shop enforcing it | Pauses by itself; if it repeats, switch it off in Shop settings rather than fight it; [FACES.md](FACES.md) |
+| `faces_eg: no item count in the grid` or HTTP 500 from it | The grid changed, or the request lost its `X-Requested-With` header | [FACES.md](FACES.md) |
 | `mazaya_eg: GraphQL error` | A field changed | [MAZAYA.md](MAZAYA.md) |
 | `sigma_eg: no product data in the page` | The Next.js payload changed | Save a new page, fix against it; [SIGMA.md](SIGMA.md) |
 | `last_count` far from `expected_total` on `gcshop_eg`, `azzam_eg`, `wayup_eg` | Shopify's `products_count` is wrong there | Normal; [GCSHOP.md](GCSHOP.md) |

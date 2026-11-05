@@ -1440,3 +1440,56 @@ def test_sigma_warns_about_a_root_over_its_hidden_cap(caplog):
     assert site.fetch_page(S.from_key("category:small"), 1).total == 587 and "sub-categories" not in caplog.text
     site._session = _Session(_Answer(text=page.replace('\\"false\\":393', '\\"false\\":1682'), ctype="text/html"))
     assert site.fetch_page(S.from_key("category:big"), 1).total == 1876 and "watch its sub-categories" in caplog.text
+
+
+def test_faces_reads_tiles_from_its_grid():
+    from deals.sites.faces_eg import parse_grid
+    result = parse_grid(fixture_text("faces_men.html.gz"))
+    by = {x.sku: x for x in result.listings}
+    assert result.total == 559 and result.has_next and len(result.listings) == 48
+    assert parse_grid(fixture_text("faces_men.html.gz"), page=12).has_next is False  # paging stops on the count
+    # several sizes: the cheapest size's price, never the analytics' 14,230 less 7,470 as a discount
+    sauvage = by["PM_DIOR_Sauvage_EDP"]
+    assert (sauvage.price, sauvage.list_price, sauvage.brand) == (676_000, None, "Dior") and sauvage.in_stock
+    assert sauvage.title == "Dior Sauvage Eau de Parfum (cheapest size)"
+    assert sauvage.url == "https://www.faces.eg/en/p/dior-sauvage-eau-de-parfum-PM_DIOR_Sauvage_EDP.html"
+    # on sale
+    victory = next(x for x in result.listings if "Invictus Victory Elixir" in x.title)
+    assert (victory.price, victory.list_price, victory.list_price_kind) == (271_600, 339_500, "list")
+    # an empty crossed-out block ahead of the real price
+    prada = by["PM_PRADA_LHomme_Prada_Intense_EDP"]
+    assert (prada.price, prada.list_price) == (920_000, None) and prada.in_stock
+
+
+def test_faces_sold_out_and_barcodes():
+    from deals.sites.faces_eg import parse_grid
+    result = parse_grid(fixture_text("faces_body.html.gz"))
+    assert result.total == 55
+    out = [x for x in result.listings if not x.in_stock]
+    assert len(out) >= 3 and all(x.price is None and x.list_price is None for x in out)
+    cloud = next(x for x in result.listings if x.sku == "577017088106")
+    assert (cloud.price, cloud.list_price) == (26_250, 35_000)
+    assert all(len(g) >= 13 for x in result.listings for g in x.gtins)
+
+
+def test_faces_urls_feed_and_refusals():
+    from deals.models import Blocked, UnknownTarget
+    from deals.sites.faces_eg import FacesEG, page_url
+    # the group's minimum can arrive on any root: the filter can't serve it, the coordinator applies it
+    assert page_url(Slice.from_key("category:perfume|price:300-"), 3).endswith("Search-UpdateGrid?cgid=perfume&start=96&sz=48")
+    site = FacesEG()
+    site._session = _Session(_Answer(text=fixture_text("faces_men.html.gz")))
+    feed = site.fetch_page(Slice.from_key("deals:extra-sale"), 1)
+    assert not feed.has_next and feed.total == len(feed.listings) == 48  # one page, however big the sale
+    empty_footer = '<div class="js-grid-footer"><input type="hidden" class="permalink" value="/en/search" /></div>'
+    site._session = _Session(_Answer(text=empty_footer))
+    with pytest.raises(UnknownTarget):
+        site.fetch_page(Slice.from_key("category:nope"), 1)
+    known = empty_footer.replace("</div>", '<input type="hidden" class="category-id" value="x" /></div>')
+    site._session = _Session(_Answer(text=known))
+    assert site.fetch_page(Slice.from_key("category:x"), 1).total == 0  # really empty
+    site._session = _Session(_Answer(status=403))
+    with pytest.raises(Blocked):
+        site.fetch_page(Slice.from_key("category:x"), 1)
+    with pytest.raises(UnknownTarget):
+        site.fetch_page(Slice.from_key("search:dior"), 1)

@@ -121,6 +121,9 @@ SHOPS: dict[str, Shop] = {s.name: s for s in (
          (("Everything", "all"), ("Luxury", "luxury"), ("Fashion brands", "fashion-brands"))),
     Shop("mazaya_eg", "Mazaya", "مزايا", "MZ", "beauty", "https://mazaya.eg/en", False, "MAZAYA.md",
          (("Perfumes", "4"), ("Makeup", "81"), ("Skin Care", "42"), ("Bundles & sets", "862"), ("Gifts", "542"))),
+    Shop("faces_eg", "Faces", "فيسز", "FC", "beauty", "https://www.faces.eg/en", False, "FACES.md",
+         (("Perfume", "perfume"), ("Makeup", "makeup"), ("Skincare", "skincare"), ("Hair", "hair"), ("Body", "body"),
+          ("Gifts", "gifts"), ("Men", "men-products"), ("Home fragrance", "home-fragrance"), ("Sale", "extra-sale"))),
 )}
 
 
