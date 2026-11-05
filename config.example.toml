@@ -147,6 +147,30 @@ max_delay = 4.0
 min_delay = 2.0
 max_delay = 4.0
 
+[sites.miami_eg]  # WooCommerce Store API (100 products per request, about 5 s to build each); works from anywhere
+min_delay = 2.0
+max_delay = 4.0
+
+[sites.sigma_eg]  # its own search pages (16 products, ~470 KB a page); works from anywhere
+min_delay = 2.0
+max_delay = 4.0
+
+[sites.elnekhely_eg]  # OpenCart category pages (100 products, ~1.7 MB a page); home connections only (Cloudflare)
+min_delay = 2.0
+max_delay = 4.0
+
+[sites.wayup_eg]  # Shopify JSON (250 products per request, 25,000 a root at most); works from anywhere
+min_delay = 2.0
+max_delay = 4.0
+
+[sites.gcshop_eg]  # Shopify JSON (250 products per request); works from anywhere
+min_delay = 2.0
+max_delay = 4.0
+
+[sites.azzam_eg]  # Shopify JSON (250 products per request); works from anywhere
+min_delay = 2.0
+max_delay = 4.0
+
 # ---------------------------------------------------------------------------
 # What to track. Each [[watch]] is a product group with one root per site:
 #   amazon_eg = "category:<browse node id>"
@@ -277,6 +301,7 @@ label = "أجهزة ألعاب (بلايستيشن، إكس بوكس، سويت�
 interval_minutes = 10
 max_interval_minutes = 15   # quiet slices never back off past this: a flash sale is noticed within it
 min_price = 8000        # consoles and bundles; games and controllers are cheaper
+miami_eg = "category:513"
 # amazon.eg: the platform nodes (PlayStation 5 21868828031, Xbox Series 21868824031...) mix
 # consoles with games and accessories and the planner recurses into their Games children,
 # so only console-only nodes and console searches are used.
@@ -341,6 +366,7 @@ label = "موبايلات"
 interval_minutes = 10
 max_interval_minutes = 15   # quiet slices never back off past this: a flash sale is noticed within it
 min_price = 2500
+miami_eg = ["category:52", "category:110", "category:91", "category:9326", "category:9327"]
 amazon_eg = [
     "category:21832883031",
     "category:21832883031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
@@ -367,6 +393,7 @@ label = "تابلت وآيباد"
 interval_minutes = 10
 max_interval_minutes = 15   # quiet slices never back off past this: a flash sale is noticed within it
 min_price = 5000
+miami_eg = "category:95"
 amazon_eg = [
     "category:21832915031",
     "category:21832915031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
@@ -393,6 +420,9 @@ label = "لابتوبات"
 interval_minutes = 20
 max_interval_minutes = 30   # quiet slices never back off past this: a flash sale is noticed within it
 min_price = 8000
+miami_eg = "category:200"
+sigma_eg = "category:9f5039de-5c80-46f3-9fe4-6e8f94189b8c"
+elnekhely_eg = "category:laptop"
 amazon_eg = [
     "category:21832907031",
     "category:21832907031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
@@ -418,6 +448,8 @@ name = "Desktops"
 label = "كمبيوترات مكتبية"
 interval_minutes = 60
 min_price = 8000
+sigma_eg = ["category:9f503a1d-8d45-4d97-ad76-c068afaa39db", "category:9f83a3f5-420b-424c-a522-6f8eeee34fc6"]
+elnekhely_eg = "category:original-pc"
 amazon_eg = [
     "category:21832914031",
     "category:21832914031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
@@ -437,6 +469,8 @@ label = "شاشات كمبيوتر"
 interval_minutes = 20
 max_interval_minutes = 30   # quiet slices never back off past this: a flash sale is noticed within it
 min_price = 2500
+sigma_eg = "category:9f503a01-79d7-4a25-b3f3-63b0fd5b3094"
+elnekhely_eg = "category:monitors"
 amazon_eg = [
     "category:21832909031",
     "category:21832909031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
@@ -464,6 +498,8 @@ name = "PC components"
 label = "مكونات كمبيوتر"
 interval_minutes = 60
 min_price = 1500
+sigma_eg = ["category:9f5039af-f5d2-4396-9ba2-8ac40277c373", "category:9f5039ed-8dd4-4a9b-a8ce-caf20ed29436"]
+elnekhely_eg = ["category:graphics-card", "category:processors", "category:motherboards", "category:ram", "category:ssd", "category:cases", "category:power-supply", "category:fans-coolers"]
 amazon_eg = [
     "category:21832913031",
     "category:21832913031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
@@ -492,6 +528,8 @@ name = "Headphones"
 label = "سماعات"
 interval_minutes = 60
 min_price = 800
+miami_eg = "category:166"
+sigma_eg = "category:9f503e54-740f-44fd-b338-99f9adb951e9"
 amazon_eg = [
     "category:21832887031",
     "category:21832887031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
@@ -768,6 +806,8 @@ elaraby_eg = ["category:89", "category:90", "category:249", "category:91", "cate
 name = "Gaming peripherals"
 label = "ماوس وكيبورد وإكسسوارات جيمنج"
 min_price = 1000
+sigma_eg = ["category:9f503c8c-64f6-4011-b0c5-7c5b5e50a7fc", "category:9f503c98-0894-41f1-9cef-4977cdba8bf6", "category:9f503e63-3465-4e67-ae2f-6797593959b1", "category:9f503e6f-d5c6-4fad-80ce-34e10e030ebe"]
+elnekhely_eg = "category:accessories"
 interval_minutes = 30
 max_interval_minutes = 60
 hardwaremarket_eg = [
@@ -789,6 +829,7 @@ name = "Wearables"
 label = "ساعات ذكية وأساور رياضية"
 interval_minutes = 60
 min_price = 1200        # real smartwatches and bands; straps, chargers and no-name watches are cheaper
+miami_eg = ["category:103", "category:1627", "category:199"]
 amazon_eg = [
     "category:21832958031",  # Smartwatches
     "category:21858460031",  # Activity Trackers (fitness bands: Huawei Band, Whoop)
@@ -818,6 +859,8 @@ name = "Chargers & power banks"
 label = "شواحن وباور بانك"
 interval_minutes = 60
 min_price = 500         # branded chargers and power banks; no-name chargers and cables are cheaper
+miami_eg = ["category:196", "category:108"]
+sigma_eg = "category:9f503a44-42a6-41ee-8534-2e6aa19399e2"
 amazon_eg = [
     "category:21833004031",  # Chargers: mains, car, wireless, charging stations, power banks
     "category:21833004031,p_n_deal_type:26901036031",  # fast lane: Amazon's own "all discounts" filter on this node
@@ -882,6 +925,7 @@ label = "ملابس وأزياء"
 interval_minutes = 120
 max_interval_minutes = 180
 min_price = 500
+wayup_eg = "category:all-sale"  # all-new-in too, once memory allows: docs/WAYUP.md
 min_drop = 0.35
 lcwaikiki_eg = ["category:women-clothing-t-10", "category:men-clothing-t-9", "category:girls-clothing-t-100046", "category:boys-clothing-t-200046", "category:femei-incaltaminte-t-33"]
 defacto_eg = ["category:woman-discount", "category:woman-new-season", "category:man-discount", "category:man-new-season", "category:kids-discount"]
@@ -893,6 +937,8 @@ label = "ساعات"
 interval_minutes = 120
 max_interval_minutes = 180
 min_price = 1000
+gcshop_eg = "category:all"
+azzam_eg = "category:all"
 elaraby_eg = "category:64"
 
 # El Araby's other categories (from 5 Nov 2026), so nothing it sells is left out: washing machines, vacuums, fans, heaters,
@@ -903,4 +949,6 @@ label = "أجهزة منزلية وأخرى"
 interval_minutes = 120
 max_interval_minutes = 180
 min_price = 200
+miami_eg = ["category:1639", "category:701", "category:2737"]
+sigma_eg = ["category:9f503e88-a70c-45a2-b6b1-4c7a3f7e52f3", "category:9f503e96-65b6-40ff-873f-ea2e2502e931", "category:9f503ea3-06b0-452a-8c04-946b3a206474", "category:9f503a53-6867-4fe3-a6ff-cef657dac290", "category:9f732b3d-d6a4-44d8-9a2b-cdc0e329b3d5"]
 elaraby_eg = ["category:317", "category:186", "category:1927", "category:93", "category:309", "category:65", "category:66", "category:320", "category:1966", "category:217", "category:360", "category:1652", "category:1497"]

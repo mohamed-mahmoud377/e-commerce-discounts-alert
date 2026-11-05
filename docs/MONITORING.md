@@ -172,6 +172,11 @@ Lines worth reacting to:
 | `blocked: defacto_eg: HTTP 403` | Akamai | Pauses by itself; slow it down if it repeats; [DEFACTO.md](DEFACTO.md) |
 | `defacto_eg: no product cards and no count` | Layout changed | Save a new page; [DEFACTO.md](DEFACTO.md) |
 | `elaraby_eg: GraphQL error` | A field changed | [ELARABY.md](ELARABY.md) |
+| `blocked: wayup_eg: HTTP 430` (also `gcshop_eg`, `azzam_eg`) | Shopify's own block | Pauses by itself; slow it from the web UI's Shop settings (Pace) if it repeats |
+| `blocked: elnekhely_eg: HTTP 403` | Cloudflare: expected from any cloud IP | Pauses by itself; keep `elnekhely_eg` off cloud workers; [ELNEKHELY.md](ELNEKHELY.md) |
+| `blocked: miami_eg: HTTP 403` | Cloudflare refused this connection | Pauses by itself; its pages cost it 5 s to build, so slow it if it repeats; [MIAMI.md](MIAMI.md) |
+| `sigma_eg: no product data in the page` | The Next.js payload changed | Save a new page, fix against it; [SIGMA.md](SIGMA.md) |
+| `last_count` far from `expected_total` on `gcshop_eg`, `azzam_eg`, `wayup_eg` | Shopify's `products_count` is wrong there | Normal; [GCSHOP.md](GCSHOP.md) |
 | Screenshot timeouts on `elaraby_eg` now and then | Its pages answer 404 at random | Nothing: the alert goes out as text; [ELARABY.md](ELARABY.md) |
 | `lease lost` | The device was too slow (over 5 min between pages) and the job went to another device | Fine occasionally |
 

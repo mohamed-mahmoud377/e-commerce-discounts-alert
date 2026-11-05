@@ -56,6 +56,11 @@ def test_jumia_placeholders_become_no_price():
         assert rule is None and cleaned == listing
 
 
+def test_wayup_one_pound_is_a_placeholder():
+    assert shop_rules.clean(jumia(site="wayup_eg", price_egp=1))[0].price is None
+    assert shop_rules.clean(jumia(site="wayup_eg", price_egp=454))[1] is None  # its cheapest real goods
+
+
 def test_dubaiphone_one_pound_is_a_placeholder():
     assert shop_rules.clean(jumia(site="dubaiphone_eg", price_egp=1))[0].price is None
     assert shop_rules.clean(jumia(site="dubaiphone_eg", price_egp=35))[1] is None
@@ -186,6 +191,7 @@ def test_noon_new_listings_never_alert_from_the_sellers_claim(cfg, conn):
 
 
 def test_raya_and_etisal_claims_and_stock_counts_prove_nothing():
+    assert shop_rules.rules_for("wayup_eg", "no_claim_alerts")  # 86% crossed out: nothing but our own history counts
     for site in ("raya_eg", "etisal_eg", "lcwaikiki_eg", "defacto_eg"):
         assert shop_rules.rules_for(site, "no_claim_alerts"), site
         assert shop_rules.low_stock_is_noise(site), site

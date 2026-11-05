@@ -11,7 +11,7 @@ owns one job.
 | Module | Lines | Owns | Calls |
 | --- | --- | --- | --- |
 | `models.py` | 103 | The shared data shapes: `Listing` (one product on one page), `Slice` (a category plus optional price range, with its text key), `PageResult`, `Category`, badge names, the `Blocked` and `UnknownTarget` errors | nothing |
-| `shops.py` | 103 | Every shop's identity in one table, `SHOPS` (since 4 Nov 2026): key, English label, Arabic name (`alerts.SITE_NAME` is built from it), badge, kind (`KINDS`: marketplace, electronics, grocery), home page, `home_only`, its doc, the category roots `deals categories` prints, `slug_codes` (matching); `expand()` turns a shop filter (`''`, a shop, `kind:<kind>`) into shop names; `for_ui()` is the list the web UI draws every shop select, table and badge from. No HTTP imports, so the coordinator reads it without the adapters | nothing |
+| `shops.py` | 103 | Every shop's identity in one table, `SHOPS` (since 4 Nov 2026): key, English label, Arabic name (`alerts.SITE_NAME` is built from it), badge, kind (`KINDS`: marketplace, electronics, grocery, fashion, watches), home page, `home_only`, its doc, the category roots `deals categories` prints, `slug_codes` (matching); `expand()` turns a shop filter (`''`, a shop, `kind:<kind>`) into shop names; `for_ui()` is the list the web UI draws every shop select, table and badge from. No HTTP imports, so the coordinator reads it without the adapters | nothing |
 | `config.py` | 184 | Reading `config.toml` into `Config`, `AlertRules`, `Schedule`, `SiteSettings`, `Watch` | models |
 | `sites/amazon_eg.py` | 198 | Fetching and parsing amazon.eg listing pages; cookies from headless Chromium | models, base |
 | `sites/noon_eg.py` | 139 | Fetching and parsing noon's catalog JSON; per-seller keys | models |
@@ -31,6 +31,11 @@ owns one job.
 | `sites/lcwaikiki_eg.py` | 106 | LC Waikiki's `catalogModel` JSON in its category pages (100 a page); sale price from `CampaignBadges`, `ProductFound`, `MinPrice` only, never split | models |
 | `sites/defacto_eg.py` | 99 | DeFacto's `data-documents` JSON on product cards (24 to 36 a page), `filter=price:`, paging ends on an empty page; promo cards skipped | models |
 | `sites/elaraby_eg.py` | 134 | El Araby's Magento GraphQL (100 a POST, inclusive price filter on the current price; no `from: 0`), brand from the title, price 0 is none | models |
+| `sites/shopify.py` | 69 | What the newer Shopify shops share: `ShopifyShop` (collection JSON, `category:all` = `/products.json`, stops at page 100, always gives the planner a number); Dream 2000's parser | models, dream2000_eg |
+| `sites/wayup_eg.py`, `gcshop_eg.py`, `azzam_eg.py` | 17 each | Their base URL and which options fold (WayUp: size; GC Shop: size, band colour; Azzam: none) | shopify, dream2000_eg |
+| `sites/miami_eg.py` | 121 | Miami Center's WooCommerce Store API, in **whole pounds** (scaled by `currency_minor_unit`); category ids checked; pre-orders skipped | models |
+| `sites/sigma_eg.py` | 115 | Sigma's search pages (RSC payload, 16 a page, always `sortBy=createdAt`); category ids checked against its API | models |
+| `sites/elnekhely_eg.py` | 82 | Elnekhely's OpenCart HTML cards (100 a page, "Showing ... of N"); home connections only | models, base |
 | `sites/amazon_now_eg.py` | 35 | Amazon Now: amazon_eg's search pages with the Amazon Now root node `211761638031` in front of every query (without it a node lists the regular offers), product links to the Now offer, no `deals:` feed; 0 results for the whole store raises `Blocked` (delivery location not served) | amazon_eg |
 | `sites/base.py` | 35 | The `Site` interface every shop implements; money and count parsing | models |
 | `planner.py` | 93 | Splitting a root into slices under the shop's limit, by price ranges only | models |
@@ -45,7 +50,7 @@ owns one job.
 | `health.py` | 231 | Health checks (including `parser <shop>`: a page of in-stock listings without prices in the last hour) and the daily report | db, alerts |
 | `matching.py` | 1297 | The same product on different shops: model codes read from titles once (`product_codes`), the hourly grouping streamed through SQL into `models` / `product_models` (in a `nice 19` subprocess), `same_model()` for the views. See [MATCHING.md](MATCHING.md) | db |
 | `details.py` | 150 | Product page parsers per shop (barcode, model number, specs) and `fetch_details`, which never retries a challenge | models |
-| `shots.py` | 337 | The alert screenshot, worker side: per-shop `SPECS` for all nineteen shops (`arabic` URL swap, `boxes` to frame in red, `context` for the crop, `ready` element, `settle`, `hide` and `block`), `crop()` (pure geometry), `annotate()` (hide overlays, draw the frames, cut out a JPEG) and the `Shooter` thread with its one headless Chromium (full build, new headless mode, a normal Chrome user agent) | playwright |
+| `shots.py` | 337 | The alert screenshot, worker side: per-shop `SPECS` for all twenty-five shops (`arabic` URL swap, `boxes` to frame in red, `context` for the crop, `ready` element, `settle`, `hide` and `block`), `crop()` (pure geometry), `annotate()` (hide overlays, draw the frames, cut out a JPEG) and the `Shooter` thread with its one headless Chromium (full build, new headless mode, a normal Chrome user agent) | playwright |
 | `shotq.py` | 125 | The alert screenshot, coordinator side: `add()` a `shots` row when a screenshot worker crawls the shop, `lease()` it in a reply, `record()` the upload; `IMAGES`, the in-memory store the alert sender reads (nothing on disk) | config, shots |
 | `detailq.py` | 170 | The coordinator's side of product pages: offer one to an idle worker (paced, capped, paused after a refusal), record what it gave, refill the queue | db, config |
 | `monitor.py` | 166 | Device states, events (logs), the dashboard page | db, scheduler |
@@ -284,7 +289,7 @@ not the droplet, where a browser per alert is too heavy and most shops refuse th
 | Thread | Does |
 | --- | --- |
 | main | Starts the others, waits, handles Ctrl+C / SIGTERM by setting the stop event |
-| one per shop (`amazon_eg`, `noon_eg`, `jumia_eg`, `cairosales_eg`, `2b_eg`, `btech_eg`, `dream2000_eg`, `carrefour_eg`, `dubaiphone_eg`, `hardwaremarket_eg`, `amazon_now_eg`, `raya_eg`, `vodafone_eg`, `dokkantech_eg`, `etisal_eg`, `orange_eg`, `lcwaikiki_eg`, `defacto_eg`, `elaraby_eg`) | `_loop`: lease, crawl or plan, pause, repeat. Each holds its own shop adapter and HTTP session |
+| one per shop (`amazon_eg`, `noon_eg`, `jumia_eg`, `cairosales_eg`, `2b_eg`, `btech_eg`, `dream2000_eg`, `carrefour_eg`, `dubaiphone_eg`, `hardwaremarket_eg`, `amazon_now_eg`, `raya_eg`, `vodafone_eg`, `dokkantech_eg`, `etisal_eg`, `orange_eg`, `lcwaikiki_eg`, `defacto_eg`, `elaraby_eg`, `miami_eg`, `sigma_eg`, `elnekhely_eg`, `wayup_eg`, `gcshop_eg`, `azzam_eg`) | `_loop`: lease, crawl or plan, pause, repeat. Each holds its own shop adapter and HTTP session |
 | `screenshots` | Only with `DEALS_SCREENSHOTS=1`: takes the alert screenshots handed out in replies, one at a time, with one headless Chromium closed after 5 idle minutes; uploads each with three quick tries and forgets it |
 | `log-shipper` | Every 10 s posts up to 500 buffered log lines to `/api/logs`; keeps up to 1,000 while the server is unreachable |
 
@@ -295,7 +300,7 @@ not the droplet, where a browser per alert is too heavy and most shops refuse th
 | Shop request timeout | 30 s |
 | Page retries on network errors | after 5, 20, 60 s, then the job is reported failed |
 | Coordinator calls | retried forever with backoff 2 s doubling to 60 s; stops only when shutting down. Logged as INFO for the first 60 s of an outage, WARNING after, plus "reachable again" |
-| Pause between pages and between jobs | random within the shop's `min_delay`..`max_delay` (Amazon 2-4 s, noon 1-2 s, Jumia 1.5-3 s, Cairo Sales 1.5-3 s, 2B 1-2 s, B.TECH 1-2 s, Dream 2000 1-2 s, Dubai Phone 1-2 s, Hardware Market 1-2 s, Carrefour 2-4 s, Amazon Now 3-5 s, Raya, Vodafone, Dokkan Tech, Etisal, Orange, DeFacto and El Araby 2-4 s, LC Waikiki 3-5 s) |
+| Pause between pages and between jobs | random within the shop's `min_delay`..`max_delay` (Amazon 2-4 s, noon 1-2 s, Jumia 1.5-3 s, Cairo Sales 1.5-3 s, 2B 1-2 s, B.TECH 1-2 s, Dream 2000 1-2 s, Dubai Phone 1-2 s, Hardware Market 1-2 s, Carrefour 2-4 s, Amazon Now 3-5 s, Raya, Vodafone, Dokkan Tech, Etisal, Orange, DeFacto, El Araby, Miami, Sigma, Elnekhely, WayUp, GC Shop and Azzam 2-4 s, LC Waikiki 3-5 s) |
 | Nothing due | waits the `retry_after` the coordinator sends (5-60 s) |
 | Lease | 5 min, renewed by each page post |
 
@@ -372,7 +377,7 @@ commented template.
 | `[[watch]] require_words`, `exclude_words` | none | Title filters for new products (case-insensitive substrings): the title must contain one of `require_words` and none of `exclude_words`; a title containing "console" is not excluded (bundles) unless it also contains " for " (an accessory for a console). The title is padded with spaces, so a word with a trailing space (`"stand "`) also matches at its end but not inside "Standard"; a controller count ("1 Controllers", B.TECH console titles) is ignored when looking for exclude words. For noisy sources such as searches |
 | `[[watch]] min_price` | none | EGP floor for crawling and alerting |
 | `[[watch]] min_drop` | none | This group's own price-drop threshold |
-| `[[watch]] amazon_eg`, `noon_eg`, `jumia_eg`, `cairosales_eg`, `2b_eg`, `btech_eg`, `dream2000_eg`, `carrefour_eg`, `dubaiphone_eg`, `hardwaremarket_eg`, `amazon_now_eg`, `raya_eg`, `vodafone_eg`, `dokkantech_eg`, `etisal_eg`, `orange_eg`, `lcwaikiki_eg`, `defacto_eg`, `elaraby_eg` | | One root or a list: `category:<id>` or `search:<words>`, optionally `\|price:<min>-<max>` (Jumia and Cairo Sales ids are URL slugs, e.g. `televisions`, `tvs-screens/oled`; 2B ids are Magento's numbers, e.g. `131`; Carrefour ids are case-sensitive codes, e.g. `NFEGY4080000`). Deal-feed roots (fast lanes) use the shop's own filter syntax inside the id: Amazon `category:<node>,p_n_deal_type:26901036031` and `deals:<node>` (the Today's Deals JSON API), noon `category:<path>?f[min_offer_price]=7_days`, Jumia `category:flash-sales` (see GUIDE, Algorithm 3) |
+| `[[watch]] amazon_eg`, `noon_eg`, `jumia_eg`, `cairosales_eg`, `2b_eg`, `btech_eg`, `dream2000_eg`, `carrefour_eg`, `dubaiphone_eg`, `hardwaremarket_eg`, `amazon_now_eg`, `raya_eg`, `vodafone_eg`, `dokkantech_eg`, `etisal_eg`, `orange_eg`, `lcwaikiki_eg`, `defacto_eg`, `elaraby_eg`, `miami_eg`, `sigma_eg`, `elnekhely_eg`, `wayup_eg`, `gcshop_eg`, `azzam_eg` | | One root or a list: `category:<id>` or `search:<words>`, optionally `\|price:<min>-<max>` (Jumia and Cairo Sales ids are URL slugs, e.g. `televisions`, `tvs-screens/oled`; 2B ids are Magento's numbers, e.g. `131`; Carrefour ids are case-sensitive codes, e.g. `NFEGY4080000`). Deal-feed roots (fast lanes) use the shop's own filter syntax inside the id: Amazon `category:<node>,p_n_deal_type:26901036031` and `deals:<node>` (the Today's Deals JSON API), noon `category:<path>?f[min_offer_price]=7_days`, Jumia `category:flash-sales` (see GUIDE, Algorithm 3) |
 
 Changing a watch's `min_price` or roots creates new plan jobs and deletes the old ones with their slices;
 product history is kept.

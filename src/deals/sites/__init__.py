@@ -17,6 +17,12 @@ from deals.sites.orange_eg import OrangeEG
 from deals.sites.raya_eg import RayaEG
 from deals.sites.twob_eg import TwoBEG
 from deals.sites.vodafone_eg import VodafoneEG
+from deals.sites.azzam_eg import AzzamEG
+from deals.sites.elnekhely_eg import ElnekhelyEG
+from deals.sites.gcshop_eg import GcShopEG
+from deals.sites.miami_eg import MiamiEG
+from deals.sites.sigma_eg import SigmaEG
+from deals.sites.wayup_eg import WayUpEG
 
 SITES = {
     AmazonEG.name: AmazonEG,
@@ -38,4 +44,10 @@ SITES = {
     LcWaikikiEG.name: LcWaikikiEG,
     DeFactoEG.name: DeFactoEG,
     ElarabyEG.name: ElarabyEG,
+    MiamiEG.name: MiamiEG,
+    SigmaEG.name: SigmaEG,
+    ElnekhelyEG.name: ElnekhelyEG,
+    WayUpEG.name: WayUpEG,
+    GcShopEG.name: GcShopEG,
+    AzzamEG.name: AzzamEG,
 }

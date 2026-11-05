@@ -15,7 +15,7 @@ promises. Check each one before you start and again before you ship:
 2. **Alert only on real discounts.** The reference price is the product's own time-weighted history, never
    the shop's crossed-out price. A false alert costs more than a late one.
 3. **Don't get blocked.** The home IPs are the only way into noon, Jumia, Cairo Sales, 2B, B.TECH, Dubai
-   Phone and Hardware Market. Any change that adds requests has to state the extra pages per hour for each
+   Phone, Hardware Market, LC Waikiki and Elnekhely. Any change that adds requests has to state the extra pages per hour for each
    shop and the current block history (`blocks` table, `make devices`). Prefer moving requests around over
    adding new ones.
 

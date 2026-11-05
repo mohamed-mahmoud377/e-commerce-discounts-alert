@@ -47,6 +47,12 @@ LISTING_PAGES = {
     "lcwaikiki_eg": lambda: _parse("lcwaikiki_eg", "parse_listing")(fixture_text("lcwaikiki_shoes.html.gz")),
     "defacto_eg": lambda: _parse("defacto_eg", "parse_listing")(fixture_text("defacto_woman_discount.html.gz")),
     "elaraby_eg": lambda: _parse("elaraby_eg", "parse_products")(fixture_json("elaraby_televisions.json.gz")["data"], 1),
+    "miami_eg": lambda: _parse("miami_eg", "parse_products")(fixture_json("miami_tablets.json.gz"), None, None, 1),
+    "sigma_eg": lambda: _parse("sigma_eg", "parse_listing")(fixture_text("sigma_laptops.html.gz")),
+    "elnekhely_eg": lambda: _parse("elnekhely_eg", "parse_listing")(fixture_text("elnekhely_gpu.html.gz")),
+    "wayup_eg": lambda: _parse("wayup_eg", "parse_products")(fixture_json("wayup_sale.json.gz")),
+    "gcshop_eg": lambda: _parse("gcshop_eg", "parse_products")(fixture_json("gcshop_products.json.gz")),
+    "azzam_eg": lambda: _parse("azzam_eg", "parse_products")(fixture_json("azzam_products.json.gz")),
 }
 
 

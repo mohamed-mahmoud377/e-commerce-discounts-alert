@@ -384,3 +384,19 @@ because it matched an RTX 4080 and PC cases).
   page per device including politeness delays, so a full pass is about 20 minutes of three devices. With
   four 10-minute groups plus the rest, the Amazon queue regularly has about 20 slices due; the lease order
   was changed to relative lateness so the 10-minute groups are not starved by big slow groups.
+
+## miamicenters.com category ids
+
+WooCommerce ids (`deals categories miami_eg <id>` lists the children). Mobiles & Tablets `52` (Mobile `58`, Tablets `99`); `110` phones; Apple `822` (iPhone `91`, `9326`, `9327`; iPad `95`; Mac `200`; AirPods `166`; Apple Watch `199`); Wearable `103` by brand; Smart watches `1627`; Buds `685`; Audio `701`; Home appliances `1639`; Accessories `107` (Chargers `196`, Covers `109`, Cables `736`); Power banks `108`; Consoles `513`; Scooters `2737`.
+
+## sigma-computer.com category ids
+
+UUIDs, from `https://api.sigma-computer.com/api/stores/v1/categories`. Hardware Components `9f5039af-f5d2-4396-9ba2-8ac40277c373`, Laptops `9f5039de-5c80-46f3-9fe4-6e8f94189b8c`, Storage `9f5039ed-8dd4-4a9b-a8ce-caf20ed29436`, Monitor `9f503a01-79d7-4a25-b3f3-63b0fd5b3094`, Accessories `9f503a0f-5b3e-4efe-8722-ffbafc51114c`, Desktop `9f503a1d-8d45-4d97-ad76-c068afaa39db`, Mobile Accessories `9f503a44-42a6-41ee-8534-2e6aa19399e2`, Furniture `9f503a53-6867-4fe3-a6ff-cef657dac290`, Bundles `9f83a3f5-420b-424c-a522-6f8eeee34fc6`.
+
+## elnekhelytechnology.com categories
+
+Slugs, from `/sitemap-category.xml`: `graphics-card`, `processors`, `motherboards`, `ram`, `ssd`, `cases`, `power-supply`, `fans-coolers`, `laptop`, `monitors`, `accessories`, `original-pc`.
+
+## wayupsports.com, gcshopeg.com, azzamwatches.com
+
+Shopify handles: `/collections.json?limit=250`, but read docs/WAYUP.md first: the counts are wrong. WayUp: `all-sale`, `all-new-in`, `all-footwear`, `all-apparel`. GC Shop and Azzam: `category:all` is the whole shop.

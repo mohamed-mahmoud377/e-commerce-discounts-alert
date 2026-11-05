@@ -136,6 +136,28 @@ SPECS: dict[str, Spec] = {
     "elaraby_eg": Spec(boxes=((".product-info-main .product-info-price",),),
                        context=("h1.page-title", ".fotorama__stage__frame.fotorama__active img"),
                        ready=".product-info-main .product-info-price", arabic=("/en/", "/ar/")),
+    # WooCommerce with Elementor; its own price widget. The theme's .price is the mini cart's "0 EGP".
+    "miami_eg": Spec(boxes=((".miamicenters-price-container",),),
+                     context=("h1.product_title", "img.wp-post-image"),
+                     ready=".miamicenters-price-container", arabic=("miamicenters.com/", "miamicenters.com/ar/")),
+    # Next.js with Tailwind classes: the price under the title, whose big digits are its only text-3xl; the sidebar repeats it.
+    "sigma_eg": Spec(boxes=(("article section div.flex.items-center:has(span.text-3xl)", "article aside div.flex.items-center"),),
+                     context=("article h1", "article img.object-contain"),
+                     ready="article h1", arabic=("/en/", "/ar/")),
+    # OpenCart's Journal theme; English only.
+    "elnekhely_eg": Spec(boxes=(("div.product-price-group div.price-wrapper",),),
+                         context=("h1.page-title", ".swiper-slide-visible img"), hide=(".notification-wrapper",),
+                         ready="div.product-price-group"),
+    "wayup_eg": Spec(boxes=((".product-info__price",),),
+                     context=("h1.product-info__title", ".product-gallery img"),
+                     ready=".product-info__price", arabic=("wayupsports.com/", "wayupsports.com/ar/")),
+    # Shopify's Dawn-like theme; English only (/ar/ is a 404). Related products have prices too: the first one is the product's.
+    "gcshop_eg": Spec(boxes=((".price",),),
+                      context=("h1", ".carousel-cell.is-selected img.product__image"), ready=".price"),
+    # English: on its Arabic page the gallery's carousel makes the page 11,280 px wide, and the crop comes out blank.
+    "azzam_eg": Spec(boxes=((".price-list--product",),),
+                     context=("h1.product-title", ".product-gallery__media.is-initial img"),
+                     ready=".price-list--product"),
 }
 
 VIEWPORT = {"width": 1280, "height": 1000}  # the desktop layout, like the shop's own page on a computer

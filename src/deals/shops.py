@@ -7,7 +7,7 @@ everything else it needs (adapter, screenshot spec, parser fixture, doc, config 
 from dataclasses import dataclass
 
 # Kinds, in the order the web UI groups shops.
-KINDS = {"marketplace": "Marketplaces", "electronics": "Electronics shops", "grocery": "Supermarkets", "fashion": "Fashion"}
+KINDS = {"marketplace": "Marketplaces", "electronics": "Electronics shops", "grocery": "Supermarkets", "fashion": "Fashion", "watches": "Watches"}
 
 
 @dataclass(frozen=True)
@@ -102,6 +102,23 @@ SHOPS: dict[str, Shop] = {s.name: s for s in (
          (("Home Appliances", "60"), ("TVs and Audio", "329"), ("Air Conditioners", "62"), ("Watches", "64"),
           ("Lighting", "65"), ("Spare Parts", "217"), ("Accessories", "1966"), ("Business Products", "66")),
          slug_codes=True),
+    Shop("miami_eg", "Miami Center", "ميامي سنتر", "MI", "electronics", "https://miamicenters.com", False, "MIAMI.md",
+         (("Mobiles & Tablets", "52"), ("Apple", "822"), ("Buds", "685"), ("Smart Watches", "1627"), ("Audio", "701"),
+          ("Home Appliances", "1639"), ("Accessories", "107"), ("Consoles", "513"))),
+    Shop("sigma_eg", "Sigma Computer", "سيجما", "SG", "electronics", "https://www.sigma-computer.com/en", False, "SIGMA.md",
+         (("Hardware Components", "9f5039af-f5d2-4396-9ba2-8ac40277c373"), ("Laptops", "9f5039de-5c80-46f3-9fe4-6e8f94189b8c"),
+          ("Storage", "9f5039ed-8dd4-4a9b-a8ce-caf20ed29436"), ("Monitors", "9f503a01-79d7-4a25-b3f3-63b0fd5b3094"),
+          ("Accessories", "9f503a0f-5b3e-4efe-8722-ffbafc51114c"), ("Desktops", "9f503a1d-8d45-4d97-ad76-c068afaa39db"))),
+    Shop("elnekhely_eg", "Elnekhely", "النخيلي تكنولوجي", "EN", "electronics", "https://www.elnekhelytechnology.com", True,
+         "ELNEKHELY.md",
+         (("Graphics Cards", "graphics-card"), ("Processors", "processors"), ("Motherboards", "motherboards"),
+          ("RAM", "ram"), ("SSD", "ssd"), ("Laptops", "laptop"), ("Monitors", "monitors"), ("Accessories", "accessories"))),
+    Shop("wayup_eg", "WayUp Sports", "واي أب سبورتس", "WU", "fashion", "https://wayupsports.com", False, "WAYUP.md",
+         (("On sale", "all-sale"), ("New in", "all-new-in"), ("Footwear", "all-footwear"), ("Apparel", "all-apparel"))),
+    Shop("gcshop_eg", "GC Shop", "جي سي شوب", "GC", "watches", "https://gcshopeg.com", False, "GCSHOP.md",
+         (("Everything", "all"), ("Casio", "casio"), ("Citizen", "citizen"), ("Hot deals", "gc-stores-hotdeals"))),
+    Shop("azzam_eg", "Azzam Watches", "عزام للساعات", "AZ", "watches", "https://azzamwatches.com", False, "AZZAM.md",
+         (("Everything", "all"), ("Luxury", "luxury"), ("Fashion brands", "fashion-brands"))),
 )}
 
 

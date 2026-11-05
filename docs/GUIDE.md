@@ -9,7 +9,7 @@ the science behind the rules below).
 
 ## Overview
 
-The system crawls whole categories on amazon.eg, noon.com (Egypt), jumia.com.eg, cairosales.com, 2b.com.eg, btech.com, dream2000.com, carrefouregypt.com, dubaiphone.net, hardwaremarket.net, rayashop.com, eshop.vodafone.com.eg, dokkantech.com, etisalstore.com, eshop.orange.eg, lcwaikiki.eg, defacto.com.eg, elarabygroup.com and Amazon Now (amazon.eg's 20-minute store), stores every product's price
+The system crawls whole categories on amazon.eg, noon.com (Egypt), jumia.com.eg, cairosales.com, 2b.com.eg, btech.com, dream2000.com, carrefouregypt.com, dubaiphone.net, hardwaremarket.net, rayashop.com, eshop.vodafone.com.eg, dokkantech.com, etisalstore.com, eshop.orange.eg, lcwaikiki.eg, defacto.com.eg, elarabygroup.com, miamicenters.com, sigma-computer.com, elnekhelytechnology.com, wayupsports.com, gcshopeg.com, azzamwatches.com and Amazon Now (amazon.eg's 20-minute store), stores every product's price
 history, and sends an Arabic Telegram alert when a price is genuinely low compared with that product's
 own history. It tracks about 50,000 products on Amazon and noon plus about 14,000 on Jumia, in 19 groups: TVs, refrigerators, air conditioners, gaming consoles,
 phones, tablets, laptops, desktops, monitors, PC components, headphones, wearables (smartwatches and fitness
@@ -36,7 +36,7 @@ crawling from their own internet connections.
 | --- | --- | --- |
 | Coordinator (`deals serve`) | Droplet 207.154.206.127 | Owns the SQLite database, hands out crawl jobs, stores results, detects deals, runs the Telegram bot, watches for problems, takes daily backups |
 | Worker (`deals worker`) | Your Mac, the droplet, any friend's PC | Asks for a job, downloads the shop pages, sends the products back. Holds no database |
-| Site adapters (`sites/amazon_eg.py`, `sites/noon_eg.py`, `sites/jumia_eg.py`, `sites/cairosales_eg.py`, `sites/twob_eg.py`, `sites/btech_eg.py`, `sites/dream2000_eg.py`, `sites/carrefour_eg.py`, `sites/dubaiphone_eg.py`, `sites/hardwaremarket_eg.py`, `sites/raya_eg.py`, `sites/vodafone_eg.py`, `sites/dokkantech_eg.py`, `sites/etisal_eg.py`, `sites/orange_eg.py`, `sites/lcwaikiki_eg.py`, `sites/defacto_eg.py`, `sites/elaraby_eg.py`) | Inside each worker | Know how to fetch and read one listing page of each shop |
+| Site adapters (`sites/amazon_eg.py`, `sites/noon_eg.py`, `sites/jumia_eg.py`, `sites/cairosales_eg.py`, `sites/twob_eg.py`, `sites/btech_eg.py`, `sites/dream2000_eg.py`, `sites/carrefour_eg.py`, `sites/dubaiphone_eg.py`, `sites/hardwaremarket_eg.py`, `sites/raya_eg.py`, `sites/vodafone_eg.py`, `sites/dokkantech_eg.py`, `sites/etisal_eg.py`, `sites/orange_eg.py`, `sites/lcwaikiki_eg.py`, `sites/defacto_eg.py`, `sites/elaraby_eg.py`, `sites/miami_eg.py`, `sites/sigma_eg.py`, `sites/elnekhely_eg.py`, `sites/shopify.py` with `wayup_eg.py`, `gcshop_eg.py`, `azzam_eg.py`) | Inside each worker | Know how to fetch and read one listing page of each shop |
 | Telegram bot (@Jerrys_deals_bot) | Inside the coordinator | Sends deal alerts to approved subscribers and system warnings to you |
 
 Workers only make outgoing requests to the coordinator, so nothing needs to be opened on your Mac or on a
@@ -191,7 +191,7 @@ Adding a friend's computer as a worker (more crawling capacity from another conn
 1. On the server, create a token with `deals token`, add it under `[workers]` as `ahmed = "..."`, restart
    the coordinator.
 2. On their computer: clone the repo, do setup steps 1 and 2, then run
-   `DEALS_COORDINATOR=http://207.154.206.127:8787 DEALS_TOKEN=... DEALS_SITES=noon_eg,amazon_eg,jumia_eg,cairosales_eg,2b_eg,btech_eg,dream2000_eg,carrefour_eg,dubaiphone_eg,hardwaremarket_eg,amazon_now_eg,raya_eg,vodafone_eg,dokkantech_eg,etisal_eg,orange_eg,lcwaikiki_eg,defacto_eg,elaraby_eg .venv/bin/deals worker`.
+   `DEALS_COORDINATOR=http://207.154.206.127:8787 DEALS_TOKEN=... DEALS_SITES=noon_eg,amazon_eg,jumia_eg,cairosales_eg,2b_eg,btech_eg,dream2000_eg,carrefour_eg,dubaiphone_eg,hardwaremarket_eg,amazon_now_eg,raya_eg,vodafone_eg,dokkantech_eg,etisal_eg,orange_eg,lcwaikiki_eg,defacto_eg,elaraby_eg,miami_eg,sigma_eg,elnekhely_eg,wayup_eg,gcshop_eg,azzam_eg .venv/bin/deals worker`.
 
 Running everything on one machine without the server (for experiments): `cp config.example.toml config.toml`,
 then `.venv/bin/deals local` starts a coordinator and a worker in one process with a local database.
@@ -301,6 +301,8 @@ SKU; 95% show a discount that "ends" in 2027. [ETISAL.md](ETISAL.md).
 
 **elarabygroup.com.** The maker of Tornado and agent of Sharp, Toshiba, Seiko and Alba, on Magento: a public GraphQL API that answers the droplet, sold-out products listed with their price, almost no crossed-out prices. `from: 0` in its price filter finds nothing, `manufacturer` is a country, and its HTML pages answer 404 at random. [ELARABY.md](ELARABY.md).
 
+**The six of 5 November 2026's second batch.** Three more Shopify shops share `sites/shopify.py`: **wayupsports.com** (sportswear, about 35,000 products; only its sale collection, because a listing ends at page 100 and memory is short), **gcshopeg.com** and **azzamwatches.com** (watches, whole). **miamicenters.com** uses Hardware Market's WooCommerce API, but in whole pounds. **sigma-computer.com** is read from its search pages, where only `sortBy=createdAt` shows every product. **elnekhelytechnology.com** is OpenCart HTML, from home connections only. Each has its doc.
+
 **Amazon Now.** amazon.eg's 20-minute grocery store (from July 2026) is the ordinary amazon.eg search under its own
 browse root, node `211761638031`, so the amazon_eg parser and cookies serve it unchanged. It is a shop of its own
 because an ASIN on Amazon Now is a separate offer at its own price (Juhayna 6×1 L: EGP 275.95 from Amazon, 289.75
@@ -331,6 +333,10 @@ delivery location: the Mac's is served, the droplet's lists nothing. Details: [A
 | lcwaikiki.eg | Works with Chrome's fingerprint; plain curl gets 403 (tested 5 November) | Always refused (Cloudflare 403) |
 | defacto.com.eg | Works with Chrome's fingerprint; plain curl gets 403 (tested 5 November) | Works with Chrome's fingerprint |
 | elarabygroup.com | The API works, plain curl too; pages answer 404 at random (tested 5 November) | The API works |
+| miamicenters.com | Works (tested 5 November) | Works |
+| sigma-computer.com | Works (tested 5 November) | Works |
+| elnekhelytechnology.com | Works with Chrome's fingerprint (tested 5 November) | Cloudflare challenge, HTTP 403 |
+| wayupsports.com, gcshopeg.com, azzamwatches.com | Works (tested 5 November) | Works |
 | Amazon Now (amazon.eg) | Works, the default delivery location is served (tested 3 November) | Pages load but list nothing: the droplet's location has no Amazon Now store |
 
 **What is read from each product card** (no extra requests):
@@ -486,7 +492,8 @@ crawled like any other slice (same group, same interval and cap, same filters):
 | Hardware Market | `deals:<category id>` (the Store API sorted by last modified, one page of 50; a price edit moves a product to the top) | the category's most recently changed products | 50 a request |
 | Raya | not used: offer categories exist (`flash-sale` 1437, `daily-deals-offers` 3722) but would need a watch group of their own | | 22, 106 |
 | DeFacto | not a fast lane, a root: `woman-discount`, `man-discount`, `kids-discount` | | 5,328, 2,679, 2,935 |
-| Vodafone, Dokkan Tech, Etisal, Orange, El Araby | none needed: small catalogues, passes of a minute or two | | |
+| Vodafone, Dokkan Tech, Etisal, Orange, El Araby, Miami, Elnekhely, GC Shop, Azzam | none needed: small catalogues, passes of a minute or two | | |
+| Sigma, WayUp | none: no feed by date. Passes of 3 to 7 minutes, well inside their caps | | |
 | Dubai Phone | none needed: every root is one or two pages, read past Vercel's 10-minute cache (`flash-sale` holds 2 earbuds under every minimum) | | |
 
 A product seen on a deal feed is the same product as on its category page (same key), so a drop seen there
@@ -852,7 +859,7 @@ the price block (price, discount, crossed-out price) and the seller line ("shipp
 cropped to the title, the main image and the boxes: a friend sees the deal as the shop shows it. Every shop
 has its boxes (`SPECS` in `shots.py`, 3 Nov 2026). The seller box is there where the shop names one: Amazon,
 Amazon Now, noon, Jumia, B.TECH, Carrefour and Raya (marketplaces); 2B, Cairo Sales, Dubai Phone, Hardware Market,
-Dream 2000, Vodafone, Dokkan Tech, Etisal, Orange, LC Waikiki, DeFacto and El Araby sell their own stock and get the price box alone.
+Dream 2000, Vodafone, Dokkan Tech, Etisal, Orange, LC Waikiki, DeFacto, El Araby, Miami, Sigma, Elnekhely, WayUp, GC Shop and Azzam sell their own stock and get the price box alone.
 
 | Shop | Page | Price box | Seller box | Context | Time (Mac) |
 |---|---|---|---|---|---|
@@ -874,6 +881,12 @@ Dream 2000, Vodafone, Dokkan Tech, Etisal, Orange, LC Waikiki, DeFacto and El Ar
 | lcwaikiki_eg | no `/en` (redirects to the Arabic slug) | `div.product-detail__price` | | title, image | 3 to 5 s |
 | defacto_eg | no `/en-eg` | `div.product-detail__price` | | title, image | 2 s |
 | elaraby_eg | `/ar/` | `.product-info-main .product-info-price` | | title, image | 3 to 4 s |
+| miami_eg | `/ar/` | `.miamicenters-price-container` | | title, image | 4 s |
+| sigma_eg | `/ar/` | `article section div.flex.items-center:has(span.text-3xl)` | | title, image | 2 s |
+| elnekhely_eg | English | `div.product-price-group div.price-wrapper` | | title, image | 3 s |
+| wayup_eg | `/ar/` | `.product-info__price` | | title, image | 3 s |
+| gcshop_eg | English | `.price` | | title, image | 3.5 s |
+| azzam_eg | English (the Arabic page crops blank) | `.price-list--product` | | title, image | 3 s |
 
 The shop details (why each selector, what loads late) are in each shop's doc and, for Amazon and noon, in
 docs/CATEGORIES.md. Times include starting the browser and a 2 s wait for the page's last images.
@@ -941,7 +954,7 @@ nothing until `/start` again. `make report` (sending the report by hand) still g
 
 ## Shop settings
 
-With 19 shops, the web UI's **Shop settings** page (and the Settings card on each shop's page) switches them
+With 25 shops, the web UI's **Shop settings** page (and the Settings card on each shop's page) switches them
 without touching the server or any device (since 5 Nov 2026). A change works at once and stays until changed:
 it is all in the database (`shop_settings.py`) and enforced by the coordinator, so old workers need nothing.
 

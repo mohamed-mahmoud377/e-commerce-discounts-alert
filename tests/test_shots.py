@@ -47,6 +47,12 @@ SAVED = [
     ("lcwaikiki_eg", "lcwaikiki_product_rendered.html.gz", ("1,499.00", "1,999.00"), None),
     ("defacto_eg", "defacto_product_rendered.html.gz", ("799", "999"), None),
     ("elaraby_eg", "elaraby_product_rendered.html.gz", ("58,340", "60,770"), None),
+    ("miami_eg", "miami_product_rendered.html.gz", ("53,000",), None),
+    ("sigma_eg", "sigma_product_rendered.html.gz", ("45999", "47000"), None),
+    ("elnekhely_eg", "elnekhely_product_rendered.html.gz", ("48,999", "52,999"), None),
+    ("wayup_eg", "wayup_product_rendered.html.gz", ("1,600.00", "3,199.00"), None),
+    ("gcshop_eg", "gcshop_product_rendered.html.gz", ("6,360", "6,710"), None),
+    ("azzam_eg", "azzam_product_rendered.html.gz", ("27,995.00",), None),
 ]
 
 

@@ -44,6 +44,13 @@ even if one were somehow stored.
 | DeFacto | `defacto-promo-cards` | note | A few cards are promotions with no price | Skipped | 5 Nov 2026 |
 | El Araby | `elaraby-zero-price` | note | 42 sold-out products show a price of 0 | Read as no price | 5 Nov 2026 |
 | El Araby | `elaraby-manufacturer-is-country` | note | `manufacturer` holds the country of origin | Brand comes from the title | 5 Nov 2026 |
+| WayUp | `wayup-no-new-listing-alerts` | no_claim_alerts | 86% of in-stock variants crossed out, median 25% | No new-listing alerts | 5 Nov 2026 |
+| WayUp | `wayup-placeholder-1egp` | placeholder | 338 sold-out variants at 1 EGP | Under 10 EGP is no price | 5 Nov 2026 |
+| WayUp | `wayup-listing-cap` | note | A Shopify listing ends at page 100, 25,000 products | Stops there; only the sale and new-in roots are read | 5 Nov 2026 |
+| Azzam, GC Shop | `gcshop-azzam-wrong-counts` | note | `products_count` is far from what is listed (21,227 against 7,287) | Pages until a short page | 5 Nov 2026 |
+| Miami | `miami-prices-in-pounds` | note | Its API answers in whole pounds; `on_sale` means nothing (median 0.2% off) | Scales by the stated unit; only a real gap is a crossed-out price | 5 Nov 2026 |
+| Miami | `miami-preorders` | note | A pre-order's price is "estimated" | Skipped | 5 Nov 2026 |
+| Sigma | `sigma-default-order-repeats` | note | The default order repeats products: 15% missed | Always `sortBy=createdAt` | 5 Nov 2026 |
 | Raya | `raya-prebooking-deposits` | note | "Pre Booking" phones at a 10,000 EGP deposit | Skipped in the adapter | 5 Nov 2026 |
 | Vodafone | `vodafone-only-in-stock-read` | note | 4,085 listed, 921 in stock, no stock flag | Only what is in stock is asked for | 5 Nov 2026 |
 | Orange | `orange-sizes-hide-behind-one-price` | note | A product with several sizes lists its cheapest price; the page opens on any size (53 of 98 phones) | Its phones, tablets, laptops and consoles aren't watched | 5 Nov 2026 |

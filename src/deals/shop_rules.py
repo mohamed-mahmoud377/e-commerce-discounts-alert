@@ -150,6 +150,50 @@ RULES: tuple[ShopRule, ...] = (
         "(median 20%); 'November - Net %20 Discount' runs to 31 Dec. woman-discount alone holds 5,328 products",
         "5 Nov 2026"),
     ShopRule(
+        "wayup-no-new-listing-alerts", "wayup_eg", "no_claim_alerts",
+        "Most of what is in stock is discounted, and its sale pages hold over 12,000 products",
+        "No new-listing alerts from the crossed-out price; its products alert only from our own history",
+        "5 Nov 2026: a crossed-out price on 40,896 of 47,337 in-stock variants, median 25%, 60%+ on 110",
+        "5 Nov 2026"),
+    ShopRule(
+        "wayup-placeholder-1egp", "wayup_eg", "placeholder",
+        "Sold-out products sit at 1 EGP",
+        "Any price under 10 EGP is recorded as no price (not for sale)",
+        "5 Nov 2026: 338 variants at 1 EGP, none in stock, such as HOKA Arahi 9 Running Shoes (43 HOKA products)",
+        "5 Nov 2026", below=1000, where="shop_rules.py"),
+    ShopRule(
+        "wayup-listing-cap", "wayup_eg", "note",
+        "A Shopify listing ends at page 100, 25,000 products; page 101 answers HTTP 400",
+        "The adapter stops at page 100, and the watched root (all-sale) is under the cap. Products not on sale are "
+        "not read: the shop's whole catalogue is about 35,000",
+        "5 Nov 2026: /products.json answers 400 at page 101; the sitemap lists 69,512 links, two locales each",
+        "5 Nov 2026", where="sites/shopify.py"),
+    ShopRule(
+        "gcshop-azzam-wrong-counts", "azzam_eg", "note",
+        "Shopify's products_count is far from what a collection lists, at GC Shop too",
+        "The adapter pages until a short page, and reads the whole shop from /products.json; expect last_count != expected_total",
+        "5 Nov 2026: Azzam's best-selling-products counts 21,227 and lists 7,287; GC Shop's all counts 3,630 and lists 8,500, "
+        "the same as its sitemap",
+        "5 Nov 2026", where="sites/shopify.py"),
+    ShopRule(
+        "miami-prices-in-pounds", "miami_eg", "note",
+        "Its Store API answers in whole pounds (currency_minor_unit 0), and on_sale means nothing",
+        "The adapter scales by the unit the answer states, and reads the crossed-out price only from a real gap",
+        "5 Nov 2026: Hardware Market's same API answers in piastres; 602 of 2,991 products are on_sale at a median 0.2% off",
+        "5 Nov 2026", where="sites/miami_eg.py"),
+    ShopRule(
+        "miami-preorders", "miami_eg", "note",
+        "A pre-order's page says 'Estimated preorder price': the price isn't firm yet",
+        "Products whose name starts with 'Pre Order' are skipped",
+        "5 Nov 2026: 18 such, like Samsung Galaxy Z Fold8 Ultra at 156,999 'estimated'",
+        "5 Nov 2026", where="sites/miami_eg.py"),
+    ShopRule(
+        "sigma-default-order-repeats", "sigma_eg", "note",
+        "Its default order repeats products between pages and misses others",
+        "The adapter always asks for sortBy=createdAt",
+        "5 Nov 2026: the 37 pages of its 587 laptops gave 498 different products by default, 587 with sortBy=createdAt",
+        "5 Nov 2026", where="sites/sigma_eg.py"),
+    ShopRule(
         "lcwaikiki-empty-is-not-empty", "lcwaikiki_eg", "note",
         "An empty category or price range fills the page with 52 unrelated products, and asking past the last page "
         "answers page 1",

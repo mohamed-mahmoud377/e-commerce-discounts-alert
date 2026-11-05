@@ -1170,3 +1170,165 @@ def test_elaraby_unknown_category_and_refusals(monkeypatch):
         site.fetch_page(Slice("category", "155"), 1)
     with pytest.raises(UnknownTarget):
         site.fetch_page(Slice("deals", "155"), 1)
+
+
+class _Answer:
+    """A shop's answer, for the adapters' refusal and paging branches."""
+    def __init__(self, status=200, text="", data=None, ctype="application/json", headers=None):
+        self.status_code, self.text, self._data = status, text, data
+        self.headers = {"content-type": ctype, **(headers or {})}
+        self.url = "https://shop.example/page"
+
+    def json(self):
+        return self._data
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
+
+class _Session:
+    def __init__(self, *answers):
+        self.answers, self.urls = list(answers), []
+
+    def get(self, url, **_):
+        self.urls.append(url)
+        return self.answers.pop(0)
+
+
+def test_miami_prices_are_whole_pounds():
+    from deals.sites.miami_eg import parse_products
+    result = parse_products(fixture_json("miami_tablets.json.gz"), 84, 1, 1)
+    by = {x.sku: x for x in result.listings}
+    lenovo = by["241171"]
+    assert lenovo.price == 5_300_000 and lenovo.list_price is None and lenovo.in_stock and lenovo.brand == "Lenovo"
+    assert lenovo.url.startswith("https://miamicenters.com/product/lenovo-yoga-tab-plus")
+    assert by["223046"].price == 1_648_100 and not by["223046"].in_stock
+    assert result.total == 84 and result.has_next is False
+
+
+def test_miami_scales_by_the_unit_the_answer_states_and_skips_preorders():
+    from deals.sites.miami_eg import parse_products
+    item = fixture_json("miami_tablets.json.gz")[0]
+    piastres = {**item, "id": 1, "prices": {**item["prices"], "currency_minor_unit": 2, "price": "12345", "regular_price": "20000"}}
+    preorder = {**item, "id": 2, "name": "Pre Order &#8211; Samsung Galaxy Z Fold8 Ultra"}
+    free = {**item, "id": 3, "name": "Miami Product Protection", "prices": {**item["prices"], "price": "0", "regular_price": "0"}}
+    listings = {x.sku: x for x in parse_products([piastres, preorder, free], 3, 1, 1).listings}
+    assert set(listings) == {"1", "3"}  # no pre-order: its page says "Estimated preorder price"
+    assert (listings["1"].price, listings["1"].list_price, listings["1"].list_price_kind) == (12345, 20000, "list")
+    assert listings["3"].price is None and not listings["3"].in_stock
+
+
+def test_miami_url_and_refusals():
+    from deals.models import Blocked, Slice, UnknownTarget
+    from deals.sites.miami_eg import MiamiEG, products_url
+    url = products_url(Slice.from_key("category:52|price:2500-3000"), 2)
+    assert "category=52" in url and "min_price=2500&" in url and "max_price=3000&" in url and "page=2" in url  # pounds, not piastres
+    assert "orderby=id" in url and "stock_status" in url
+    site = MiamiEG()
+    site._categories = [{"id": 52, "slug": "mobiles-tablets", "parent": 0}]
+    with pytest.raises(UnknownTarget):  # the API itself answers an empty 200
+        site.fetch_page(Slice.from_key("category:99999"), 1)
+    site._session = _Session(_Answer(403, ctype="text/html"))
+    with pytest.raises(Blocked):
+        site.fetch_page(Slice.from_key("category:52"), 1)
+
+
+def test_sigma_listing():
+    from deals.sites.sigma_eg import parse_listing
+    result = parse_listing(fixture_text("sigma_laptops.html.gz"))
+    by = {x.sku: x for x in result.listings}
+    assert len(by) == 16 and result.total == 587 and result.has_next  # 393 sold out + 194 in stock
+    lenovo = by["a318b61b-0c16-43ff-b271-c8913d5a8d8c"]
+    assert (lenovo.price, lenovo.list_price, lenovo.list_price_kind, lenovo.brand) == (4_599_900, 4_700_000, "list", "Lenovo")
+    assert lenovo.url.startswith("https://www.sigma-computer.com/en/item?id=lenovo-ideapad-slim-3")
+    last = parse_listing(fixture_text("sigma_laptops.html.gz"), 37)
+    assert not last.has_next and last.total is None
+    past = parse_listing(fixture_text("sigma_past_end.html.gz"), 500)
+    assert past.listings == [] and not past.has_next
+
+
+def test_sigma_always_sorts_and_checks_the_category():
+    from deals.models import Blocked, Slice, UnknownTarget
+    from deals.sites.sigma_eg import SigmaEG, listing_url
+    assert "sortBy=createdAt" in listing_url("x", 1) and "sortBy=createdAt&page=2" in listing_url("x", 2)  # 15% missed without it
+    site = SigmaEG()
+    site._categories = [{"id": "known"}]
+    with pytest.raises(UnknownTarget):  # any id gives an empty 200
+        site.fetch_page(Slice.from_key("category:nope"), 1)
+    site._session = _Session(_Answer(403, ctype="text/html"))
+    with pytest.raises(Blocked):
+        site.fetch_page(Slice.from_key("category:known"), 1)
+    with pytest.raises(ValueError, match="layout changed"):
+        from deals.sites.sigma_eg import parse_listing
+        parse_listing("<html>no next data</html>")
+
+
+def test_elnekhely_listing():
+    from deals.sites.elnekhely_eg import parse_listing
+    result = parse_listing(fixture_text("elnekhely_gpu.html.gz"))
+    by = {x.sku: x for x in result.listings}
+    assert len(by) == 100 and result.total == 118 and result.has_next
+    aorus = by["2664"]
+    assert aorus.price == 5_999_900 and aorus.list_price is None and aorus.in_stock and aorus.brand == "Gigabyte"
+    assert aorus.url.startswith("https://www.elnekhelytechnology.com/graphics-card/aorus-") and "limit" not in aorus.url
+    sale = by["2973"]
+    assert (sale.price, sale.list_price, sale.list_price_kind) == (4_899_900, 5_299_900, "list")
+    assert by["3379"].price is None and not by["3379"].in_stock
+    assert not parse_listing(fixture_text("elnekhely_gpu.html.gz"), 2).has_next
+
+
+def test_elnekhely_refusals():
+    from deals.models import Blocked, Slice, UnknownTarget
+    from deals.sites.elnekhely_eg import ElnekhelyEG, parse_listing
+    site = ElnekhelyEG()
+    site._session = _Session(_Answer(404, ctype="text/html"), _Answer(403, ctype="text/html"))
+    with pytest.raises(UnknownTarget):
+        site.fetch_page(Slice.from_key("category:nope"), 1)
+    with pytest.raises(Blocked):
+        site.fetch_page(Slice.from_key("category:ram"), 1)
+    with pytest.raises(ValueError, match="layout changed"):
+        parse_listing("<html></html>")
+
+
+def test_shopify_shops_fold_what_was_counted():
+    from deals.sites.azzam_eg import parse_products as azzam
+    from deals.sites.gcshop_eg import parse_products as gc
+    from deals.sites.wayup_eg import parse_products as wayup
+    nike = {x.sku: x for x in wayup(fixture_json("wayup_sale.json.gz")).listings}["8871750303982"]  # sizes XS to XL, one listing
+    assert (nike.price, nike.list_price, nike.list_price_kind, nike.brand) == (160_000, 319_900, "list", "Nike") and nike.in_stock
+    assert nike.url == "https://wayupsports.com/products/r-hj2855-370"
+    casio = {x.sku: x for x in gc(fixture_json("gcshop_products.json.gz")).listings}["8241768202310"]
+    assert (casio.price, casio.list_price, casio.in_stock) == (2_064_000, 2_294_000, False)  # sold out, still listed
+    bentley = {x.sku: x for x in azzam(fixture_json("azzam_products.json.gz")).listings}["7608041668666"]
+    assert (bentley.price, bentley.list_price, bentley.brand) == (2_799_500, None, "Bentley")
+    colours = {"id": 1, "handle": "w", "title": "Watch", "vendor": "X", "options": [{"name": "Color"}], "variants": [
+        {"id": 2, "option1": "Black", "price": "100.00", "available": True}, {"id": 3, "option1": "Gold", "price": "200.00", "available": True}]}
+    assert len(azzam({"products": [colours]}).listings) == 2  # priced differently on 4 of 10: never folded here
+    assert len(wayup({"products": [colours]}).listings) == 1
+
+
+def test_shopify_stops_at_its_limit_and_always_gives_the_planner_a_number():
+    from deals.models import Slice, UnknownTarget
+    from deals.sites.shopify import MAX_PAGES
+    from deals.sites.wayup_eg import WayUpEG
+    full = {"products": [{"id": i, "handle": f"p{i}", "title": "T", "variants": [{"id": i, "price": "900.00", "available": True}]}
+                         for i in range(250)]}
+    site = WayUpEG()
+    target = Slice.from_key("category:all-sale")
+    site._session = _Session(_Answer(data={"collection": {"products_count": 12_434}}), _Answer(data=full))
+    first = site.fetch_page(target, 1)
+    assert first.total == 12_434 and first.has_next and "/collections/all-sale/products.json" in site._session.urls[1]
+    site._session = _Session(_Answer(data=full))
+    assert site.fetch_page(target, MAX_PAGES).has_next is False  # page 101 is an HTTP 400
+    site._session = _Session()
+    assert site.fetch_page(target, MAX_PAGES + 1).listings == [] and site._session.urls == []
+    # a count of 0 with products: the planner must not drop the root as empty
+    site._session = _Session(_Answer(data={"collection": {"products_count": 0}}), _Answer(data=full))
+    assert site.fetch_page(target, 1).total == 250
+    site._session = _Session(_Answer(data={"collection": {"products_count": 8_500}}), _Answer(data=full))
+    site.fetch_page(Slice.from_key("category:all"), 1)
+    assert site._session.urls[1].startswith("https://wayupsports.com/products.json")  # whole shop, stable order
+    site._session = _Session(_Answer(404, ctype="text/html"))
+    with pytest.raises(UnknownTarget):
+        site.fetch_page(Slice.from_key("category:nope"), 1)
