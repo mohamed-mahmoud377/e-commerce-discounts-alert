@@ -596,6 +596,14 @@ MIGRATIONS = [
     ALTER TABLE coupons ADD COLUMN read_at TEXT;         -- its page was read
     ALTER TABLE coupons ADD COLUMN read_tried_at TEXT;   -- a worker was last asked to read it
     """,
+    # An admin may rewrite a deal's public post before approving it (publish.py, docs/PUBLISHING.md).
+    """
+    ALTER TABLE reviews ADD COLUMN post_text TEXT;        -- the admin's own post (HTML); NULL means ours
+    ALTER TABLE reviews ADD COLUMN edited_by_name TEXT;
+    ALTER TABLE reviews ADD COLUMN edited_at TEXT;
+    ALTER TABLE reviews ADD COLUMN edit_price INTEGER;    -- the price when it was written: a move makes it stale
+    ALTER TABLE reviews ADD COLUMN edit_prompt_id INTEGER;  -- the message to reply to with the new text
+    """,
 ]
 
 # Price moves smaller than this are noise (amazon.eg prices creep by a piastre per

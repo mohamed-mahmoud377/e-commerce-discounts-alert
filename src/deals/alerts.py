@@ -506,10 +506,13 @@ class Telegram:
         return data["result"]
 
     def send(self, chat_id: int | str, text: str, buttons: list[list[dict]] | None = None,
-             reply_to: int | None = None) -> dict:
+             reply_to: int | None = None, force_reply: str | None = None) -> dict:
+        """`force_reply` opens a reply to this message on the reader's phone, with that hint in the box."""
+        markup = ({"force_reply": True, "input_field_placeholder": force_reply[:64]} if force_reply
+                  else {"inline_keyboard": buttons} if buttons else None)
         return self.call("sendMessage", chat_id=chat_id, text=text, parse_mode="HTML",
                          link_preview_options={"is_disabled": False, "prefer_small_media": True},
-                         reply_markup={"inline_keyboard": buttons} if buttons else None,
+                         reply_markup=markup,
                          reply_parameters={"message_id": reply_to} if reply_to else None)
 
     def send_photo(self, chat_id: int | str, photo: bytes | str, caption: str, buttons: list[list[dict]] | None = None,

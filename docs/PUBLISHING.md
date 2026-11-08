@@ -6,7 +6,8 @@ in a **private review group**. Code: `src/deals/publish.py`. Tests: `tests/test_
 
 ```
 crawl → the rules (unchanged) → alerts row → screenshot taken, kept on disk
-      → REVIEW GROUP: a detailed English card with [✅ Approve] [❌ Reject] [👁 Preview]
+      → REVIEW GROUP: a detailed English card with [✅ Approve] [❌ Reject] [👁 Preview] [✏️ Edit the post]
+            ├─ Edit    → an admin replies with their own text; it replaces ours in the post
             ├─ Approve → current price checked → PUBLIC CHANNEL: short Arabic post, screenshot, 🛒 button
             ├─ Reject  → a reason is chosen and stored
             └─ nobody decides for 6 hours → ⌛ the card closes
@@ -97,6 +98,30 @@ crossed-out price, a round usual price that may be the shop's placeholder (10,00
 [SHOP_RULES.md](SHOP_RULES.md)), low rating, few reviews.
 
 Cards carry no screenshot; **Preview** posts the exact public post into the group under the card.
+
+## Editing the post before it goes out
+
+Added 8 Nov 2026. **✏️ Edit the post** on the card sends the post as it stands into the group, as a message to reply to
+(Telegram opens the reply box, hint "New post for #1454: reply here"). Long-press it → Copy, paste it into the reply,
+change what you like and send. Telegram keeps bold, italic, strikethrough, spoilers and links when a message is copied,
+and the reply brings them back (`entities_html` turns them into the HTML the bot posts with; an emoji counts two in
+Telegram's offsets).
+
+Then the bot keeps the text (`reviews.post_text`), writes "✏️ Post text edited by …" on the card, posts the new post under the
+card as a preview with the screenshot and the 🛒 button, and swaps the Edit button for **✏️ Edit again** and **🗑 Undo
+edit** (back to our text). An edit decides nothing: **Approve** still sends it, and only the text changes; the
+screenshot and the button stay ours. The owner and the helper admins may edit; anyone else's reply, or a reply to the
+card itself (talking about the deal), changes nothing. A reply after the deal was decided or expired says so and changes nothing.
+
+- **The price moved since the edit** (by more than 1%, `edit_price` against the price now): the admin's text quotes the old
+  price, so Approve, and an old 📣 Post at button, don't post it. The card says "The price is X EGP now; the edited text was
+  written at Y" with Edit again, Undo edit and Reject. A price that is no longer a discount, or sold out, only rejects, as before.
+- **Longer than 1,024 characters** (a photo's caption): the bot warns when it is saved, and the post goes out as text,
+  without the screenshot. Over 4,096 (a message) it is refused.
+- Coupon messages can be edited the same way; their 🛒 button to all the products stays.
+
+The hook rotation carries on as if our own text went out. Edited posts can be found later with `edited_at IS NOT NULL`:
+it shows how often, and on which deals, the admins rewrote ours.
 
 Cards go out at one per loop round (about 19 a minute, below Telegram's 20 a minute for a group), best score
 first, so a burst like 31 Oct's 336 alerts takes about 18 minutes and the best deals don't wait behind it.

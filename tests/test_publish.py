@@ -28,9 +28,9 @@ class FakeTelegram:
         if self.fail and self.fail[0] == chat_id:
             raise self.fail[1]
 
-    def send(self, chat_id, text, buttons=None, reply_to=None):
+    def send(self, chat_id, text, buttons=None, reply_to=None, force_reply=None):
         self._check(chat_id)
-        self.sent.append({"chat": chat_id, "text": text, "buttons": buttons, "reply_to": reply_to})
+        self.sent.append({"chat": chat_id, "text": text, "buttons": buttons, "reply_to": reply_to, "force_reply": force_reply})
         return {"message_id": 1000 + len(self.sent), "chat": {"username": "deals_eg"}}
 
     def send_photo(self, chat_id, photo, caption, buttons=None, reply_to=None):
@@ -498,6 +498,151 @@ def test_preview_shows_the_exact_post_in_the_group_and_publishes_nothing(env):
     publish.step(conn, cfg, tg, utcnow())
     assert tg.photos[1]["chat"] == CHANNEL and tg.photos[1]["photo"] == "FILE-1"
     assert tg.photos[1]["caption"] == shown["caption"]  # the same post, the preview did not use up its hook
+
+
+def reply(conn, cfg, tg, to, text, entities=None, who=ADMIN, message_id=5000):
+    """An admin's message in the review group, replying to message `to`."""
+    msg = {"message_id": message_id, "chat": {"id": REVIEW, "type": "supergroup"}, "from": {"id": who, "first_name": "Mohamed"},
+           "text": text, "reply_to_message": {"message_id": to}}
+    if entities:
+        msg["entities"] = entities
+    bot.handle_update(conn, cfg, tg, {"update_id": 2, "message": msg})
+
+
+def with_shot(env, alert_id):
+    cfg, conn, _ = env
+    with conn:
+        conn.execute("INSERT INTO shots (alert_id, site, url, status, created_at, wait_until) "
+                     "VALUES (?, 'amazon_eg', 'u', 'ok', ?, ?)", (alert_id, iso(utcnow()), iso(utcnow())))
+    cfg.shots_dir.mkdir(exist_ok=True)
+    (cfg.shots_dir / f"{alert_id}.jpg").write_bytes(JPEG)
+
+
+def editing(env, alert_id):
+    """Press Edit; returns the message to reply to."""
+    cfg, conn, tg = env
+    press(conn, cfg, tg, f"rv_edit:{alert_id}")
+    prompt = tg.sent[-1]
+    assert prompt["chat"] == REVIEW and prompt["force_reply"] and prompt["reply_to"] == 1001
+    return prompt
+
+
+def test_the_card_has_an_edit_button(env):
+    _, _, tg = env
+    alert_id = carded(env)
+    assert [b["callback_data"] for b in tg.sent[0]["buttons"][1]] == [f"rv_edit:{alert_id}"]
+
+
+def test_an_admin_rewrites_the_post_and_approve_sends_their_text_with_the_screenshot(env):
+    cfg, conn, tg = env
+    alert_id = carded(env)
+    with_shot(env, alert_id)
+    prompt = editing(env, alert_id)
+    assert "6,000" in prompt["text"] and "<s>10,000</s>" in prompt["text"]  # the post as it stands, to copy
+    assert "Copy the text below" in tg.answers()[-1]
+
+    new = "🔥 تلفزيون سامسونج 55 بوصة\nبـ 6,000 جنيه بس <مش هيتكرر>"
+    reply(conn, cfg, tg, 1000 + len(tg.sent), new, entities=[{"type": "bold", "offset": 0, "length": 26}])
+    r = review(conn, alert_id)
+    want = "<b>🔥 تلفزيون سامسونج 55 بوصة</b>\nبـ 6,000 جنيه بس &lt;مش هيتكرر&gt;"
+    assert r["post_text"] == want and r["edited_by_name"] == "Mohamed" and r["edit_price"] == 600_000
+    assert r["status"] == "pending"  # an edit decides nothing
+    card = tg.edits()[-1]
+    assert "Post text edited by Mohamed" in card["text"]
+    assert [b["callback_data"] for b in card["reply_markup"]["inline_keyboard"][1]] == [f"rv_edit:{alert_id}", f"rv_undo:{alert_id}"]
+    shown = tg.photos[-1]  # the preview of what will go out
+    assert shown["chat"] == REVIEW and shown["caption"] == want and shown["buttons"][0][0]["url"] == "https://shop.example/TV1"
+    assert "Saved" in tg.sent[-1]["text"]
+
+    press(conn, cfg, tg, f"rv_ok:{alert_id}")
+    publish.step(conn, cfg, tg, utcnow())
+    post = tg.photos[-1]
+    assert post["chat"] == CHANNEL and post["caption"] == want and post["buttons"][0][0]["url"] == "https://shop.example/TV1"
+    assert review(conn, alert_id)["status"] == "published"
+    assert "Post text edited by Mohamed" in tg.edits()[-1]["text"] and "Approved by Mohamed" in tg.edits()[-1]["text"]
+
+
+def test_undo_goes_back_to_our_text(env):
+    cfg, conn, tg = env
+    alert_id = carded(env)
+    editing(env, alert_id)
+    reply(conn, cfg, tg, 1000 + len(tg.sent), "نص تاني")
+    press(conn, cfg, tg, f"rv_undo:{alert_id}")
+    assert review(conn, alert_id)["post_text"] is None
+    assert [b["callback_data"] for b in tg.edits()[-1]["reply_markup"]["inline_keyboard"][1]] == [f"rv_edit:{alert_id}"]
+    press(conn, cfg, tg, f"rv_ok:{alert_id}")
+    publish.step(conn, cfg, tg, utcnow())
+    assert "نص تاني" not in tg.to(CHANNEL)[0]["text"] and "6,000" in tg.to(CHANNEL)[0]["text"]
+
+
+def test_only_admins_replies_to_the_edit_prompt_count(env):
+    cfg, conn, tg = env
+    alert_id = carded(env)
+    editing(env, alert_id)
+    prompt_id = 1000 + len(tg.sent)
+    reply(conn, cfg, tg, prompt_id, "spam", who=FRIEND)
+    reply(conn, cfg, tg, 1001, "this one looks fake")  # talking about the card, not editing
+    assert review(conn, alert_id)["post_text"] is None
+    reply(conn, cfg, tg, prompt_id, "نص المساعد", who=HELPER)
+    assert review(conn, alert_id)["post_text"] == "نص المساعد"
+
+
+def test_a_price_move_after_the_edit_holds_the_edited_text_back(env):
+    cfg, conn, tg = env
+    alert_id = carded(env)
+    editing(env, alert_id)
+    reply(conn, cfg, tg, 1000 + len(tg.sent), "بـ 6,000 جنيه بس")
+    price_now(conn, alert_id, 500_000)  # lower: our own text would just post it, the admin's says 6,000
+    press(conn, cfg, tg, f"rv_ok:{alert_id}")
+    assert review(conn, alert_id)["status"] == "pending"
+    edit = tg.edits()[-1]
+    assert "5,000 EGP now" in edit["text"] and "6,000 EGP" in edit["text"]
+    actions = [b["callback_data"] for row in edit["reply_markup"]["inline_keyboard"] for b in row]
+    assert f"rv_edit:{alert_id}" in actions and f"rv_undo:{alert_id}" in actions and f"rv_force:{alert_id}" not in actions
+    press(conn, cfg, tg, f"rv_force:{alert_id}")  # an old button can't push it out either
+    assert review(conn, alert_id)["status"] == "pending"
+
+    editing(env, alert_id)  # written again at the new price, it goes
+    reply(conn, cfg, tg, 1000 + len(tg.sent), "بـ 5,000 جنيه بس")
+    press(conn, cfg, tg, f"rv_ok:{alert_id}")
+    publish.step(conn, cfg, tg, utcnow())
+    assert tg.to(CHANNEL)[0]["text"] == "بـ 5,000 جنيه بس"
+
+
+def test_an_edit_too_long_for_a_caption_goes_without_the_screenshot(env):
+    cfg, conn, tg = env
+    alert_id = carded(env)
+    with_shot(env, alert_id)
+    editing(env, alert_id)
+    reply(conn, cfg, tg, 1000 + len(tg.sent), "ا" * 1500)
+    assert "without the screenshot" in tg.sent[-1]["text"]
+    press(conn, cfg, tg, f"rv_ok:{alert_id}")
+    publish.step(conn, cfg, tg, utcnow())
+    assert [p["chat"] for p in tg.photos] == [] and len(tg.to(CHANNEL)[0]["text"]) == 1500
+    assert review(conn, alert_id)["status"] == "published"
+
+
+def test_a_reply_after_the_decision_changes_nothing(env):
+    cfg, conn, tg = env
+    alert_id = carded(env)
+    editing(env, alert_id)
+    prompt_id = 1000 + len(tg.sent)
+    press(conn, cfg, tg, f"rv_why:{alert_id}:boring")
+    reply(conn, cfg, tg, prompt_id, "late")
+    assert review(conn, alert_id)["post_text"] is None and "already rejected" in tg.sent[-1]["text"]
+
+
+def test_telegram_formatting_becomes_the_bots_html():
+    # an emoji counts two UTF-16 units; nested and adjacent entities; a link; text that looks like HTML
+    text = "😱 Big & bold sale link"
+    entities = [{"type": "bold", "offset": 0, "length": 18}, {"type": "italic", "offset": 9, "length": 4},
+                {"type": "strikethrough", "offset": 14, "length": 4},
+                {"type": "text_link", "offset": 19, "length": 4, "url": "https://x.eg/?a=1&b=2"},
+                {"type": "hashtag", "offset": 0, "length": 2}]
+    assert publish.entities_html(text, entities) == (
+        '<b>😱 Big &amp; <i>bold</i> <s>sale</s></b> <a href="https://x.eg/?a=1&amp;b=2">link</a>')
+    assert publish.entities_html("a < b", None) == "a &lt; b"
+    assert publish.visible_length("<b>a &amp; b</b>") == 5
 
 
 def test_a_deal_nobody_decided_expires_after_six_hours(env):

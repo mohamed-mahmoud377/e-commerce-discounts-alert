@@ -88,7 +88,7 @@ def handle_update(conn: sqlite3.Connection, cfg: Config, tg: Telegram, update: d
         return
     msg = update.get("message")
     if msg and msg.get("chat", {}).get("type") in ("group", "supergroup"):
-        _in_group(conn, tg, msg, owner)
+        _in_group(conn, cfg, tg, msg, owner, now)
     if not msg or msg.get("chat", {}).get("type") != "private":
         return  # ignore groups and edits
     chat_id = msg["chat"]["id"]
@@ -155,10 +155,14 @@ def _on_added(conn, tg: Telegram, change: dict, owner: int) -> None:
                           "\n⚠️ It can't post there yet: make it an administrator with the right to post messages."))
 
 
-def _in_group(conn, tg: Telegram, msg: dict, owner: int) -> None:
-    """A group's id changes when Telegram upgrades it to a supergroup; /id in the group tells it too."""
+def _in_group(conn, cfg: Config, tg: Telegram, msg: dict, owner: int, now: datetime) -> None:
+    """A group's id changes when Telegram upgrades it to a supergroup; /id in the group tells it too. In the
+    review group, an admin's reply with a new text for a post (publish.on_reply)."""
     chat_id = msg["chat"]["id"]
     who = (msg.get("from") or {}).get("id")
+    if (cfg.review_enabled and str(chat_id) == cfg.telegram_review_chat_id
+            and publish.on_reply(conn, cfg, tg, msg, who == owner or is_manager(conn, who), now)):
+        return
     if msg.get("migrate_to_chat_id"):
         tg.send(owner, f"A group the bot is in moved to a new id: <code>{msg['migrate_to_chat_id']}</code> "
                        f"(it was {chat_id}). If it is the review group, update [telegram] review_chat_id.")

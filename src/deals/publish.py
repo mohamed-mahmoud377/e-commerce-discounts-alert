@@ -1,8 +1,8 @@
 """The way to the public channel: the admins see every deal first, and only what they approve goes out.
 
 A deal alert gets a `reviews` row with a detailed English card. The card goes to the private review group
-with Approve, Reject and Preview buttons; a deal nobody decided on closes after `review.expire_hours`,
-because a flash sale goes stale. On approval the post goes to the public channel: short Arabic with a hook
+with Approve, Reject, Preview and Edit buttons; a deal nobody decided on closes after `review.expire_hours`,
+because a flash sale goes stale. Edit lets an admin rewrite the public post before approving it. On approval the post goes to the public channel: short Arabic with a hook
 line that rotates and gets louder the better the deal is, the screenshot, and a button to the shop.
 
 The bot only writes the decision and the loop here (`step`, every 3 seconds in AlertSender) does the sending,
@@ -13,6 +13,7 @@ import html
 import logging
 import re
 import sqlite3
+from collections import defaultdict
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -29,6 +30,8 @@ MAX_TRIES = 5  # posting to the channel: 30 s, 1, 2, 4 minutes apart, then the c
 SHOT_HOLD = timedelta(seconds=60)  # an approved deal waits this long for a screenshot still being taken
 IMAGE_DAYS = 2  # screenshots on disk are removed after this long; by then the deal is decided or expired
 BACKLOG = timedelta(minutes=30)  # the health check warns when a card has waited this long to go out
+CAPTION_MAX = 1024  # Telegram's limit for a photo's caption; a longer post goes without the screenshot
+TEXT_MAX = 4096  # and for a message
 
 REASONS = {
     "fake": "Inflated reference",
@@ -311,11 +314,11 @@ def _facts(conn, alert_id: int) -> dict | None:
 def _post(conn, f: sqlite3.Row) -> tuple[str, str, list[list[dict]]]:
     """The post for this deal at the product's price right now: (text, hook, buy button). A price that rose
     since the alert has lost what made it loud. The hook is the next unused one of its pool, so a preview and
-    the post that follows it are the same."""
+    the post that follows it are the same. An admin's own text replaces ours, with the same button."""
     if f["kind"] == "coupon":  # written when it was queued (coupon_messages.py)
         url = f["code_url"]
         text = f["message"].rsplit(COUPON_LINK, 1)[0] if url else f["message"]
-        return text, "coupon:0", [[{"text": "🛒 كل المنتجات", "url": url}]] if url else []
+        return f["post_text"] or text, "coupon:0", [[{"text": "🛒 كل المنتجات", "url": url}]] if url else []
     price = f["now_price"]
     rose = price > f["alert_price"] * (1 + PRICE_NOISE)
     kind = "price_drop" if rose and f["kind"] == "price_error" else f["kind"]
@@ -329,7 +332,7 @@ def _post(conn, f: sqlite3.Row) -> tuple[str, str, list[list[dict]]]:
                              coupon=None if f["coupon_gone"] or not (c := coupons.from_row(f))
                              else coupons.line(c, f["now_price"] if f["kind"] != "coupon_drop" else None))
     shop = SHOPS[f["site"]].arabic.split("(")[0].strip() if f["site"] in SHOPS else f["site"]
-    return text, hook, [[{"text": f"🛒 شوف العرض على {shop}", "url": f["url"]}]]
+    return f["post_text"] or text, hook, [[{"text": f"🛒 شوف العرض على {shop}", "url": f["url"]}]]
 
 
 def _photo(conn, cfg: Config, f: sqlite3.Row) -> bytes | str | None:
@@ -349,7 +352,7 @@ def _send_post(conn, cfg: Config, tg, chat: int | str, f: sqlite3.Row, text: str
                reply_to: int | None = None) -> dict:
     """Photo with the post as its caption, or the post alone. A photo Telegram refuses (not trouble that
     passes) never costs the post; passing trouble is raised, to try the whole post again."""
-    photo = _photo(conn, cfg, f)
+    photo = _photo(conn, cfg, f) if visible_length(text) <= CAPTION_MAX else None
     if photo is not None:
         try:
             result = tg.send_photo(chat, photo, text, buttons=buttons, reply_to=reply_to)
@@ -457,13 +460,13 @@ def _publish(conn, cfg: Config, tg, f: sqlite3.Row, now: datetime) -> None:
                      "error = NULL WHERE alert_id = ?", (f["now_price"] or None, hook, sent["message_id"], iso(now), f["alert_id"]))
     username = (sent.get("chat") or {}).get("username")
     link = f" → <a href=\"https://t.me/{username}/{sent['message_id']}\">the post</a>" if username else ""
-    _edit(tg, card_chat, f["message_id"], f"{f['card']}\n\n✅ <b>Approved by {who}</b>{link}")
+    _edit(tg, card_chat, f["message_id"], f"{_card(f)}\n\n✅ <b>Approved by {who}</b>{link}")
 
 
 def _failed(conn, tg, chat, f: sqlite3.Row, error: str) -> None:
     with conn:
         conn.execute("UPDATE reviews SET status = 'failed', error = ? WHERE alert_id = ?", (error[:300], f["alert_id"]))
-    _edit(tg, chat, f["message_id"], f"{f['card']}\n\n⚠️ <b>Posting failed</b>: {html.escape(error[:300], quote=False)}",
+    _edit(tg, chat, f["message_id"], f"{_card(f)}\n\n⚠️ <b>Posting failed</b>: {html.escape(error[:300], quote=False)}",
           [[{"text": "🔁 Try again", "callback_data": f"rv_ok:{f['alert_id']}"},
             {"text": "❌ Reject", "callback_data": f"rv_no:{f['alert_id']}"}]])
 
@@ -490,10 +493,21 @@ def sweep_images(cfg: Config, now: datetime) -> None:
 # --- the buttons
 
 
-def _decision_buttons(alert_id: int) -> list[list[dict]]:
-    return [[{"text": "✅ Approve", "callback_data": f"rv_ok:{alert_id}"},
+def _decision_buttons(alert_id: int, edited: bool = False) -> list[list[dict]]:
+    rows = [[{"text": "✅ Approve", "callback_data": f"rv_ok:{alert_id}"},
              {"text": "❌ Reject", "callback_data": f"rv_no:{alert_id}"},
              {"text": "👁 Preview", "callback_data": f"rv_view:{alert_id}"}]]
+    if edited:
+        return rows + [[{"text": "✏️ Edit again", "callback_data": f"rv_edit:{alert_id}"},
+                        {"text": "🗑 Undo edit", "callback_data": f"rv_undo:{alert_id}"}]]
+    return rows + [[{"text": "✏️ Edit the post", "callback_data": f"rv_edit:{alert_id}"}]]
+
+
+def _card(f) -> str:
+    """The card as it stands now: whose text the post will be."""
+    if not f["post_text"]:
+        return f["card"]
+    return f"{f['card']}\n\n✏️ <b>Post text edited by {html.escape(f['edited_by_name'] or '?', quote=False)}</b>"
 
 
 def _reason_buttons(alert_id: int) -> list[list[dict]]:
@@ -545,26 +559,41 @@ def on_button(conn: sqlite3.Connection, cfg: Config, tg, cq: dict, allowed: bool
     who = html.escape(name, quote=False)
 
     if action == "rv_no":
-        _edit(tg, chat, message_id, f"{f['card']}\n\n<b>Why reject it?</b>", _reason_buttons(f["alert_id"]))
+        _edit(tg, chat, message_id, f"{_card(f)}\n\n<b>Why reject it?</b>", _reason_buttons(f["alert_id"]))
         answer("")
     elif action == "rv_back":
-        _edit(tg, chat, message_id, f["card"], _decision_buttons(f["alert_id"]))
+        _edit(tg, chat, message_id, _card(f), _decision_buttons(f["alert_id"], bool(f["post_text"])))
         answer("")
+    elif action == "rv_edit":
+        _ask_for_text(conn, cfg, tg, f, answer)
+    elif action == "rv_undo":
+        with conn:
+            conn.execute("UPDATE reviews SET post_text = NULL, edited_by_name = NULL, edited_at = NULL, edit_price = NULL, "
+                         "edit_prompt_id = NULL WHERE alert_id = ?", (f["alert_id"],))
+        _edit(tg, chat, message_id, f["card"], _decision_buttons(f["alert_id"]))
+        answer("Back to our text")
     elif action == "rv_why" and reason in REASONS:
         if _decide(conn, f["alert_id"], "rejected", cq, name, now, reason=reason):
-            _edit(tg, chat, message_id, f"{f['card']}\n\n❌ <b>Rejected by {who}</b>: {REASONS[reason]}")
+            _edit(tg, chat, message_id, f"{_card(f)}\n\n❌ <b>Rejected by {who}</b>: {REASONS[reason]}")
             answer("Rejected")
         else:
             answer("Someone else already decided")
     elif action in ("rv_ok", "rv_force"):
         problem = _moved(f)
-        if problem and action == "rv_ok":
-            _edit(tg, chat, message_id, f"{f['card']}\n\n⚠️ <b>{problem}</b>", _moved_buttons(f))
+        if _stale_edit(f) and not (problem and not _can_force(f)):
+            # The admin's text quotes the price it was written at; it can't go out at another one.
+            was, now_at = f["edit_price"] / 100, f["now_price"] / 100
+            _edit(tg, chat, message_id, f"{_card(f)}\n\n⚠️ <b>The price is {now_at:,.0f} EGP now; the edited text was "
+                                        f"written at {was:,.0f} EGP.</b> Edit it again, or undo the edit.",
+                  _stale_buttons(f))
+            answer("The price moved since the edit")
+        elif problem and action == "rv_ok":
+            _edit(tg, chat, message_id, f"{_card(f)}\n\n⚠️ <b>{problem}</b>", _moved_buttons(f))
             answer("The price moved")
         elif problem and not _can_force(f):
             answer("The price is no longer a discount")
         elif _decide(conn, f["alert_id"], "approved", cq, name, now):
-            _edit(tg, chat, message_id, f"{f['card']}\n\n⏳ <b>Approved by {who}</b>, posting…")
+            _edit(tg, chat, message_id, f"{_card(f)}\n\n⏳ <b>Approved by {who}</b>, posting…")
             answer("Posting…")
         else:
             answer("Someone else already decided")
@@ -587,6 +616,20 @@ def _moved(f: sqlite3.Row) -> str | None:
 
 def _can_force(f: sqlite3.Row) -> bool:
     return f["kind"] != "coupon" and bool(f["in_stock"]) and f["now_price"] is not None and f["now_price"] < f["reference"]
+
+
+def _stale_edit(f) -> bool:
+    """The admin's text was written at another price than the product has now."""
+    if not f["post_text"] or f["edit_price"] is None or f["now_price"] is None or f["kind"] == "coupon":
+        return False
+    return abs(f["now_price"] - f["edit_price"]) > f["edit_price"] * PRICE_NOISE
+
+
+def _stale_buttons(f) -> list[list[dict]]:
+    return [[{"text": "✏️ Edit again", "callback_data": f"rv_edit:{f['alert_id']}"},
+             {"text": "🗑 Undo edit", "callback_data": f"rv_undo:{f['alert_id']}"}],
+            [{"text": "❌ Reject: price gone", "callback_data": f"rv_why:{f['alert_id']}:gone"}],
+            [{"text": "↩️ Back", "callback_data": f"rv_back:{f['alert_id']}"}]]
 
 
 def _moved_buttons(f: sqlite3.Row) -> list[list[dict]]:
@@ -621,3 +664,103 @@ def _preview(conn, cfg: Config, tg, f: sqlite3.Row, answer) -> None:
         answer("Telegram refused the preview, try again")
         return
     answer("")
+
+
+# --- an admin's own text for the post
+
+
+def _ask_for_text(conn, cfg: Config, tg, f, answer) -> None:
+    """Send the post as it stands, as a message to reply to: copy it, change it, send it back as the reply.
+    Telegram keeps bold, links and the like when a message is copied, and the reply brings them back."""
+    if f["now_price"] is None or not f["in_stock"]:
+        answer("It is sold out now")
+        return
+    text, _, _ = _post(conn, f)
+    try:
+        sent = tg.send(_chat(cfg.telegram_review_chat_id), text, reply_to=f["message_id"],
+                       force_reply=f"New post for #{f['alert_id']}: reply here")
+    except Exception as exc:
+        log.warning("edit prompt of alert %s failed (%s)", f["alert_id"], exc)
+        answer("Telegram refused, try again")
+        return
+    with conn:
+        conn.execute("UPDATE reviews SET edit_prompt_id = ? WHERE alert_id = ?", (sent["message_id"], f["alert_id"]))
+    answer("Copy the text below, change it, and send it as a reply to it")
+
+
+def on_reply(conn: sqlite3.Connection, cfg: Config, tg, msg: dict, allowed: bool, now: datetime) -> bool:
+    """A message in the review group. True when it was an admin's new text for a post (a reply to the
+    message `_ask_for_text` sent); it is kept, shown as a preview, and goes out on Approve."""
+    replied = (msg.get("reply_to_message") or {}).get("message_id")
+    r = conn.execute("SELECT alert_id FROM reviews WHERE edit_prompt_id = ?", (replied,)).fetchone() if replied else None
+    if r is None:
+        return False
+    chat = msg["chat"]["id"]
+    if not allowed:
+        return True  # someone else in the group replied: not theirs to change
+    f = _facts(conn, r["alert_id"])
+    if f["status"] not in ("pending", "failed") or (f["status"] == "pending" and iso(now) >= f["expires_at"]):
+        tg.send(chat, f"This deal is already {f['status']}: the text was not changed.", reply_to=msg["message_id"])
+        return True
+    raw = msg.get("text") or msg.get("caption") or ""
+    text = entities_html(raw, msg.get("entities") or msg.get("caption_entities")).strip()
+    if not raw.strip():
+        tg.send(chat, "Send the new post as text, as a reply to the message above.", reply_to=msg["message_id"])
+        return True
+    if len(raw) > TEXT_MAX:
+        tg.send(chat, f"Too long: {len(raw):,} characters, Telegram takes {TEXT_MAX:,}. Nothing was changed.",
+                reply_to=msg["message_id"])
+        return True
+    user = msg.get("from") or {}
+    name = user.get("first_name") or str(user.get("id"))
+    with conn:
+        conn.execute("UPDATE reviews SET post_text = ?, edited_by_name = ?, edited_at = ?, edit_price = ? WHERE alert_id = ?",
+                     (text, name, iso(now), f["now_price"], f["alert_id"]))
+    f = _facts(conn, f["alert_id"])
+    _edit(tg, chat, f["message_id"], _card(f), _decision_buttons(f["alert_id"], edited=True))
+    _, _, buttons = _post(conn, f)
+    note = (f"\n\n⚠️ {len(raw):,} characters: over a photo's {CAPTION_MAX:,}, so it will go without the screenshot."
+            if len(raw) > CAPTION_MAX and _photo(conn, cfg, f) is not None else "")
+    try:  # the exact post that Approve will send now
+        _send_post(conn, cfg, tg, chat, f, f["post_text"], buttons, reply_to=f["message_id"])
+        tg.send(chat, f"✏️ Saved: this is the post for #{f['alert_id']} now. Approve on the card to send it.{note}",
+                reply_to=f["message_id"])
+    except Exception as exc:
+        # Telegram took the text from a message, so it is valid; the preview just failed.
+        log.warning("preview of the edited alert %s failed (%s)", f["alert_id"], exc)
+        tg.send(chat, f"✏️ Saved, but the preview failed ({html.escape(str(exc)[:200], quote=False)}).",
+                reply_to=f["message_id"])
+    return True
+
+
+_TAGS = {"bold": "b", "italic": "i", "underline": "u", "strikethrough": "s", "spoiler": "tg-spoiler", "code": "code",
+         "pre": "pre", "blockquote": "blockquote", "expandable_blockquote": "blockquote expandable"}
+
+
+def entities_html(text: str, entities: list[dict] | None) -> str:
+    """A Telegram message's text with its formatting, as the HTML the bot posts with. Entity offsets count
+    UTF-16 code units (an emoji is two), and entities nest but never cross."""
+    units = text.encode("utf-16-le")
+    opens, closes = defaultdict(list), defaultdict(list)
+    for e in sorted(entities or [], key=lambda e: (e["offset"], -e["length"])):
+        if e["type"] == "text_link":
+            start, end = f'<a href="{html.escape(e["url"])}">', "</a>"
+        elif e["type"] in _TAGS:
+            tag = _TAGS[e["type"]]
+            start, end = f"<{tag}>", f"</{tag.split()[0]}>"
+        else:
+            continue  # links, @names and #tags Telegram finds again by itself
+        opens[e["offset"]].append(start)
+        closes[e["offset"] + e["length"]].insert(0, end)  # the inner one, opened later, closes first
+    cuts = sorted({0, len(units) // 2, *opens, *closes})
+    out = []
+    for at, to in zip(cuts, cuts[1:] + [None]):
+        out += closes.get(at, []) + opens.get(at, [])
+        if to is not None:
+            out.append(html.escape(units[2 * at:2 * to].decode("utf-16-le"), quote=False))
+    return "".join(out)
+
+
+def visible_length(post: str) -> int:
+    """How long a post is as Telegram counts it: without its tags."""
+    return len(html.unescape(re.sub(r"<[^>]+>", "", post)))
